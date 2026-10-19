@@ -13,7 +13,7 @@ import {
   type EspnConfig,
 } from "@fantasy-copilot/espn";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { scoringPeriodForDate } from "../lib/calendar";
+import { scoringPeriodForDate } from "../lib/nba/calendar";
 
 const [date, starterArg, benchArg, flag] = process.argv.slice(2);
 if (!date || !starterArg || !benchArg || flag !== "--confirm") {

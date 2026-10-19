@@ -17,12 +17,12 @@ import {
   scoringPeriodForDate,
   scoringPeriodsOf,
   shortDay,
-} from "@/lib/calendar";
-import { loadLeague } from "@/lib/data";
-import { buildDayBoard } from "@/lib/day";
+} from "@/lib/nba/calendar";
+import { loadLeague } from "@/lib/nba/data";
+import { buildDayBoard } from "@/lib/nba/day";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
-import { projectTeamWeek, winProbability } from "@/lib/week";
+import { projectTeamWeek, winProbability } from "@/lib/nba/week";
 import { PRO_TEAM_BY_ID, type FantasyTeam } from "@fantasy-copilot/espn";
 
 export default async function WeekPage() {

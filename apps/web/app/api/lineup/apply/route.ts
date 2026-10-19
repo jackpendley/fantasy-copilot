@@ -5,9 +5,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { submitLineup, type LineupMove } from "@fantasy-copilot/espn";
 import { auditAvailable, recordAction } from "@/lib/audit";
-import { LAST_SCORING_PERIOD, scoringPeriodForDate } from "@/lib/calendar";
-import { loadLeague } from "@/lib/data";
-import { buildDayBoard } from "@/lib/day";
+import { LAST_SCORING_PERIOD, scoringPeriodForDate } from "@/lib/nba/calendar";
+import { loadLeague } from "@/lib/nba/data";
+import { buildDayBoard } from "@/lib/nba/day";
 import { espnConfig } from "@/lib/env";
 
 export const dynamic = "force-dynamic";

@@ -1,8 +1,8 @@
 # fantasy-copilot — guide for Claude sessions
 
-A monorepo of tools for **winning Jack's ESPN fantasy leagues**. Right now it is NBA only. NFL comes once the NBA app is fully built, then MLB.
+A monorepo of tools for **winning Jack's ESPN fantasy leagues**: one web app with a section per sport, draft-room extensions, and data/ML. NBA is being built out first, then NFL, then MLB.
 
-- `apps/nba-manager`: the season-long team manager. Next.js 16 + Postgres (Neon) on Vercel.
+- `apps/web`: "Fantasy Copilot", the season-long manager (`/nba/...` now; `/nfl`, `/mlb` later). Next.js 16 + Postgres (Neon) on Vercel.
 - `apps/nba-ml`: data warehouse and ML (Python).
 - `apps/draft-nba`: the draft-room Chrome extension.
 
@@ -31,7 +31,7 @@ Jack's league is "FOX Champions League" (ESPN 322514556, team 13, 2026-27). Its 
 - **ESPN writes:** lineup moves, adds, drops and claims change Jack's real team.
   - They only happen from an explicit confirm in the UI, or a job Jack has turned on.
   - Every write is logged to `espn_actions` with the request and response.
-  - Never write to ESPN from tests or scripts. The one exception is `apps/nba-manager/scripts/espn-write-check.ts`, a zero-impact swap-and-restore that runs only with Jack's explicit approval for that run.
+  - Never write to ESPN from tests or scripts. The one exception is `apps/web/scripts/espn-write-check.ts`, a zero-impact swap-and-restore that runs only with Jack's explicit approval for that run.
 - **Private data stays out of git:**
   - ESPN cookies, league JSON dumps, other managers' names and team names.
   - Fixtures from real responses are trimmed and anonymized ("Team 14", "{OWNER-14}").

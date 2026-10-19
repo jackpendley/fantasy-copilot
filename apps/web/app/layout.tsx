@@ -7,9 +7,8 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Hoops Manager",
-  description:
-    "Daily lineups, matchup outlook and roster moves for an ESPN fantasy basketball team",
+  title: "Fantasy Copilot",
+  description: "Lineups, matchups, roster moves and season odds for ESPN fantasy leagues",
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };

@@ -21,7 +21,7 @@ NFL comes once the NBA app is fully built, then MLB.
 
 ## Phase 1: lineup MVP (before the first tip, Tue Oct 20 12:00 PM MST)
 
-- [x] `apps/nba-manager` scaffold: shadcn, password auth (Supabase schema moved to phase 2, ADR-008)
+- [x] `apps/web` scaffold: shadcn, password auth (Supabase schema moved to phase 2, ADR-008)
 - [x] Live loaders: ESPN league/rosters/locks, NBA schedule and tip times, ESPN injuries
 - [x] `/today` and any other day: games, injuries, projected points, recommended slots, exact moves
 - [x] `/week`: games grid, my projected total vs my opponent's, win chance
@@ -32,7 +32,7 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] Schema v1 + `pnpm db:migrate` (tested on local Postgres 17); apply to Neon once created
 
 - [x] ESPN write verified 2026-10-18: zero-impact swap + restore on sp 1, both `EXECUTED`
-- [x] One-click "Apply moves" (server recomputes, refuses stale, audit required; local JSONL until Supabase)
+- [x] One-click "Apply moves" (server recomputes, refuses stale, audit required; local JSONL until the database exists)
 - [x] NBA.com daily lineups on /today: starter badges, inactive -> 0 projected
 - [ ] Official injury report PDFs; `status_events` logging (news latency)
 - [ ] Questionable-player hedging (keep a later-tipping substitute)

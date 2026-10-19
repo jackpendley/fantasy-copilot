@@ -1,7 +1,7 @@
 // Smoke-test every live data source the app depends on. No database needed.
 //   pnpm test:sources            (from the repo root)
 // The private-league check runs only when ESPN_S2 / ESPN_SWID / ESPN_LEAGUE_ID are set
-// (it reads apps/nba-manager/.env.local if present).
+// (it reads apps/web/.env.local if present).
 
 import { existsSync, readFileSync } from "node:fs";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@fantasy-copilot/espn";
 import { fetchDailyLineups, fetchInjuries, fetchScoreboard } from "../src/index";
 
-const envFile = new URL("../../../apps/nba-manager/.env.local", import.meta.url);
+const envFile = new URL("../../../apps/web/.env.local", import.meta.url);
 if (existsSync(envFile)) {
   for (const line of readFileSync(envFile, "utf8").split("\n")) {
     const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
@@ -73,7 +73,7 @@ if (ESPN_S2 && ESPN_SWID && ESPN_LEAGUE_ID) {
   });
 } else {
   console.log(
-    "skip  ESPN private league           set ESPN_S2/ESPN_SWID/ESPN_LEAGUE_ID in apps/nba-manager/.env.local",
+    "skip  ESPN private league           set ESPN_S2/ESPN_SWID/ESPN_LEAGUE_ID in apps/web/.env.local",
   );
 }
 

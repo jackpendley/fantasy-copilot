@@ -1,12 +1,12 @@
 # fantasy-copilot
 
-Tools for winning ESPN fantasy leagues with data, optimization and machine learning.
+Tools for winning ESPN fantasy leagues with data, optimization and machine learning. NBA first, then NFL and MLB.
 
-| App                                    | What it does                                                                                                                                                                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`apps/nba-manager`](apps/nba-manager) | Season-long team manager: daily optimal lineups (one-click apply), waiver and streaming suggestions, injuries and lineup news, trade analysis, league odds. Next.js + Supabase. |
-| [`apps/nba-ml`](apps/nba-ml)           | Data warehouse and models: minutes, availability, production rate and expected shooting. Python.                                                                                |
-| [`apps/draft-nba`](apps/draft-nba)     | Chrome extension for the ESPN draft room: league-rescored projections, value over replacement, roster-aware picks.                                                              |
+| App                                | What it does                                                                                                                                                                                                                                                           |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`apps/web`](apps/web)             | **Fantasy Copilot**, one app with a section per sport (NBA now; NFL, MLB next). Daily optimal lineups (one-click apply), matchup outlook, injuries and lineup news. Coming: waivers and streaming, season odds (playoffs, #1 seed, title), trades. Next.js + Postgres. |
+| [`apps/nba-ml`](apps/nba-ml)       | Data warehouse and models: minutes, availability, production rate and expected shooting. Python.                                                                                                                                                                       |
+| [`apps/draft-nba`](apps/draft-nba) | Chrome extension for the ESPN draft room: league-rescored projections, value over replacement, roster-aware picks.                                                                                                                                                     |
 
 | Package                                          |                                                                                        |
 | ------------------------------------------------ | -------------------------------------------------------------------------------------- |

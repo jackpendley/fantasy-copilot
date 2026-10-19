@@ -9,9 +9,9 @@ export function SetupNotice({ message }: { message: string }) {
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         <p>
-          Copy <code>apps/nba-manager/.env.example</code> to <code>.env.local</code> and fill in the
-          ESPN cookies (<code>espn_s2</code>, <code>SWID</code>) from a signed-in browser: DevTools
-          → Application → Cookies → fantasy.espn.com. On Vercel, set the same variables in Project
+          Copy <code>apps/web/.env.example</code> to <code>.env.local</code> and fill in the ESPN
+          cookies (<code>espn_s2</code>, <code>SWID</code>) from a signed-in browser: DevTools →
+          Application → Cookies → fantasy.espn.com. On Vercel, set the same variables in Project
           Settings → Environment Variables.
         </p>
         <p className="text-muted-foreground">

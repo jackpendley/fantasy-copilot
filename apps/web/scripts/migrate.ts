@@ -1,8 +1,15 @@
 // Apply db/migrations/*.sql in order, each once, inside a transaction.
 //   pnpm db:migrate        (reads DATABASE_URL from .env.local)
+//   --production-only      what `pnpm build` passes: migrate only in a Vercel production
+//                          build, so local, CI and preview builds never touch the live database.
 
 import { readdirSync, readFileSync } from "node:fs";
 import postgres from "postgres";
+
+if (process.argv.includes("--production-only") && process.env.VERCEL_ENV !== "production") {
+  console.log("migrate: skipped (not a Vercel production build)");
+  process.exit(0);
+}
 
 const url = process.env.DATABASE_URL;
 if (!url) {

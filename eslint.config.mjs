@@ -1,4 +1,4 @@
-// Shared ESLint config for non-Next workspace packages (apps/nba-manager has its own).
+// Shared ESLint config for non-Next workspace packages (apps/web has its own).
 import js from "@eslint/js";
 import { defineConfig, globalIgnores } from "eslint/config";
 import tseslint from "typescript-eslint";
@@ -8,7 +8,7 @@ export default defineConfig([
     "**/node_modules/**",
     "**/dist/**",
     "**/coverage/**",
-    "apps/nba-manager/**",
+    "apps/web/**",
     "apps/draft-nba/**",
     "apps/nba-ml/**",
   ]),

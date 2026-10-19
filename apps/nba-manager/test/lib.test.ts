@@ -144,6 +144,39 @@ describe("buildDayBoard", () => {
   });
 });
 
+describe("NBA.com lineups", () => {
+  // Synthetic lineup entries (not real NBA.com data) in the feed's shape.
+  const entry = (name: string, team: string, starter: boolean, rosterStatus = "Active") => ({
+    nbaPersonId: 1,
+    name,
+    team,
+    gameId: "x",
+    lineupStatus: "Confirmed",
+    rosterStatus,
+    position: starter ? "C" : "",
+    starter,
+    timestamp: null,
+  });
+  it("marks starters and zeroes inactive players", () => {
+    const board = buildDayBoard({
+      roster,
+      slotCounts: settings.slotCounts,
+      games: OPENING,
+      scoreboard: [],
+      injuries: [],
+      lineups: [entry("Jalen Duren", "DET", true), entry("John Collins", "DET", false, "Inactive")],
+      now: new Date("2026-10-20T18:00:00Z"),
+    });
+    const duren = board.rows.find((r) => r.player.name === "Jalen Duren")!;
+    const collins = board.rows.find((r) => r.player.name === "John Collins")!;
+    expect(duren.nba).toEqual({ starter: true, confirmed: true, inactive: false });
+    expect(collins.value).toBe(0);
+    expect(collins.status).toBe("OUT");
+    expect(collins.injuryNote).toMatch(/Inactive/);
+    expect(["BE", "IR"]).toContain(collins.recommendedSlot);
+  });
+});
+
 describe("week", () => {
   it("projects starts only on days with games", () => {
     const wk = projectTeamWeek(roster, {

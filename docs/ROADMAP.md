@@ -29,10 +29,12 @@ NFL comes once the NBA app is fully built, then MLB.
 
 ## Phase 2: game-day edge (week 1)
 
-- [ ] Supabase schema v1 (`espn_actions`, `refresh_log`, `news_latency`, push subscriptions)
+- [ ] Supabase schema v1 written (`supabase/nba-manager/migrations/0001_schema.sql`); apply once the project exists
 
-- [ ] ESPN write test (harmless bench↔bench move), then one-click "Apply moves" with an `espn_actions` audit log
-- [ ] Daily lineups feed + late scratches; official injury report PDFs; `news_latency` logging
+- [x] ESPN write verified 2026-10-18: zero-impact swap + restore on sp 1, both `EXECUTED`
+- [x] One-click "Apply moves" (server recomputes, refuses stale, audit required; local JSONL until Supabase)
+- [x] NBA.com daily lineups on /today: starter badges, inactive -> 0 projected
+- [ ] Official injury report PDFs; `status_events` logging (news latency)
 - [ ] Questionable-player hedging (keep a later-tipping substitute)
 - [ ] PWA + web push alerts: lineup not optimal at T−30, a starter ruled OUT, sync/cookie failure
 

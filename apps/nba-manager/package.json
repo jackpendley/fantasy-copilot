@@ -15,6 +15,7 @@
     "@fantasy-copilot/espn": "workspace:*",
     "@fantasy-copilot/fantasy-core": "workspace:*",
     "@fantasy-copilot/nba-data": "workspace:*",
+    "@supabase/supabase-js": "^2.110.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
@@ -38,6 +39,7 @@
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3"
+    "vitest": "^3",
+    "tsx": "^4"
   }
 }

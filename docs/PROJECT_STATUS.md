@@ -2,31 +2,28 @@
 
 ## Where things stand
 
-- **One app, a section per sport (ADR-011):**
-  - `apps/web` ("Fantasy Copilot") with `/nba/today` and `/nba/week`.
-  - `/today` and `/week` redirect.
-  - Live at https://fantasy-copilot-nba.vercel.app. Its Vercel Root Directory must point at `apps/web` once the rename merges.
-- **One-click apply:**
-  - Built, and the ESPN write path was verified on Jack's team (zero-impact swap and restore, 2026-10-18).
-  - Disabled in production until the database exists, because writes must be audited.
-- **Database (ADR-010):** plain Postgres via `DATABASE_URL`; `pnpm db:migrate` was tested on local Postgres. Neon is not created yet.
-- **Draft extension:** `apps/draft-nba` builds from the monorepo. Chrome still loads the old `~/Projects/espn-hoops-copilot` copy.
-- **Tests:** espn 13, fantasy-core 14, nba-data 7, web 10, draft-nba 118, all passing.
-- **CI:** GitHub Actions had an incident on 2026-10-19 that queued runs. Merge only after checks register and pass.
+- **Phases 0, 1 and 2a are on `main`:**
+  - monorepo and packages;
+  - `/today` and `/week`;
+  - one-click ESPN apply, audit-gated; the write path was verified on Jack's team on 10/18;
+  - NBA.com lineups;
+  - plain-Postgres schema and migrations.
+- **PR #4 (`general-copilot`) is open:**
+  - `apps/nba-manager` → `apps/web` ("Fantasy Copilot"), NBA pages under `/nba/*`, with `/today` and `/week` redirects (ADR-011);
+  - VS Code workspace settings;
+  - migrations on production deploys (ADR-012).
+  - It's waiting for green CI: a GitHub Actions incident had every run queued on 10/19. Local checks all pass.
+- **Database:** Neon `fantasy-copilot` (Free, iad1) is created and connected to Vercel as `DATABASE_URL`. Empty `DATABASE_URL`/`SUPABASE_*` placeholders were removed from Vercel with Jack's OK.
+- **Browser access:** works in this session (Claude in Chrome).
 
-## Waiting on Jack
+## Blockers / Jack
 
-1. **Chrome:** at `chrome://extensions`, remove the old unpacked "Hoops Draft Copilot", then Load unpacked → `~/Projects/fantasy-copilot/apps/draft-nba/extension`. After that, Claude archives the old folder.
-2. **Vercel:** set Root Directory to `apps/web` (Settings → Build & Deployment).
-3. **Neon:** Vercel → Storage → Create → Neon (free), connected to the project. Copy the pooled `DATABASE_URL` into `apps/web/.env.local`.
-4. **Claude in Chrome:** install or enable the extension, then run `/chrome` in the VS Code terminal session, so Claude has browser access.
+1. **After PR #4 merges:** Vercel → fantasy-copilot-nba → Settings → Build and Deployment → Root Directory = `apps/web`, then Redeploy. That first production build applies the schema.
+2. **Chrome:** `chrome://extensions` → remove the old unpacked "Hoops Draft Copilot" → **Load unpacked** → `~/Projects/fantasy-copilot/apps/draft-nba/extension`. Then confirm, so the old `~/Projects/espn-hoops-copilot` can be zipped to `~/Projects/_archive` and removed.
+3. **Optional for local DB work:** paste the Neon `DATABASE_URL` (Vercel → Storage → fantasy-copilot → .env.local → Copy Snippet) into `apps/web/.env.local`.
 
 ## Next tasks
 
-1. After Neon: `pnpm --filter @fantasy-copilot/web db:migrate`, redeploy; production apply works.
-2. **Phase 2b:**
-   - `status_events` logging (ESPN injuries, NBA.com lineups, official injury PDFs).
-   - PWA + push alerts.
-   - `/api/cron/[job]` + cron-job.org.
-   - Questionable-player hedging.
-3. **Phase 3:** `/nba/outlook`, the TypeScript port of `apps/draft-nba/scripts/postdraft/league-sim.mjs`, seeded with actual results. Nightly playoff, #1-seed and title odds, with a history chart.
+1. Merge PR #4 once CI is green, set the root directory, and verify the production deploy (migrations applied, `/nba/today` live, apply enabled).
+2. **Phase 2b:** `status_events` logging, push alerts (PWA), cron routes driven by cron-job.org, questionable-player hedging.
+3. **Phase 3:** `/nba/outlook`, the season sim ported to TypeScript, nightly odds for playoffs, #1 seed and the title.

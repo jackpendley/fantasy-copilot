@@ -81,3 +81,10 @@
 - **Code layout:** shared code lives in `lib/`, sport code in `lib/<sport>/`, and sport-agnostic logic moves into `packages/*`. No generic sport-plugin layer until a second sport exists.
 - **Draft tools:** they stay per-sport extensions (`apps/draft-nba`; later `apps/draft-nfl`). Shared draft modules move to `packages/draft-core` when NFL arrives.
 - **Repo history:** the original `~/Projects/espn-hoops-copilot` folder (no git history) is archived after Chrome loads the monorepo copy.
+
+## ADR-012: migrations run on production deploys (2026-10-19)
+
+- **How:** `apps/web`'s `build` runs `scripts/migrate.ts --production-only` before `next build`. It applies pending `db/migrations/*.sql` only when `VERCEL_ENV=production`.
+  - Local, CI and preview builds skip it, so unmerged branches never touch the live database.
+- **Why:** the schema always matches the deployed code, and the Neon connection string never has to leave Vercel.
+- **Database:** the Neon `fantasy-copilot` database (Free, Washington D.C. iad1) is connected to the Vercel project as `DATABASE_URL` for Production and Preview. Previews share it, which is fine because previews never migrate.

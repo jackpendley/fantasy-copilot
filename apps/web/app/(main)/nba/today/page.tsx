@@ -20,9 +20,9 @@ import {
   matchupPeriodOf,
   scoringPeriodForDate,
   shortDay,
-} from "@/lib/calendar";
-import { loadLeague } from "@/lib/data";
-import { buildDayBoard, type DayRow } from "@/lib/day";
+} from "@/lib/nba/calendar";
+import { loadLeague } from "@/lib/nba/data";
+import { buildDayBoard, type DayRow } from "@/lib/nba/day";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip, slotRank } from "@/lib/format";
 
@@ -91,15 +91,15 @@ export default async function TodayPage({
           </p>
         </div>
         <div className="flex gap-2 text-sm">
-          <Link className="rounded border px-2 py-1" href={`/today?date=${addDays(date, -1)}`}>
+          <Link className="rounded border px-2 py-1" href={`/nba/today?date=${addDays(date, -1)}`}>
             ← Prev
           </Link>
           {date !== today && (
-            <Link className="rounded border px-2 py-1" href="/today">
+            <Link className="rounded border px-2 py-1" href="/nba/today">
               Today
             </Link>
           )}
-          <Link className="rounded border px-2 py-1" href={`/today?date=${addDays(date, 1)}`}>
+          <Link className="rounded border px-2 py-1" href={`/nba/today?date=${addDays(date, 1)}`}>
             Next →
           </Link>
         </div>

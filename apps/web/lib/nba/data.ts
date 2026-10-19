@@ -19,7 +19,7 @@ import {
   type InjuryReport,
 } from "@fantasy-copilot/nba-data";
 import { readFile } from "node:fs/promises";
-import { espnConfig } from "./env";
+import { espnConfig } from "../env";
 
 // The NBA schedule is ~400 KB and changes rarely: keep it in memory for 6 hours.
 let scheduleCache: { at: number; games: ProGame[] } | null = null;

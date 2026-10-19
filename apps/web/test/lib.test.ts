@@ -8,10 +8,10 @@ import {
   scoringPeriodForDate,
   scoringPeriodsOf,
   shortDay,
-} from "@/lib/calendar";
-import { buildDayBoard } from "@/lib/day";
-import { perGameProjection } from "@/lib/projection";
-import { projectTeamWeek, winProbability } from "@/lib/week";
+} from "@/lib/nba/calendar";
+import { buildDayBoard } from "@/lib/nba/day";
+import { perGameProjection } from "@/lib/nba/projection";
+import { projectTeamWeek, winProbability } from "@/lib/nba/week";
 
 // Anonymized 2026-27 league fixture (packages/espn): team 13's real draft-day roster.
 const league = JSON.parse(

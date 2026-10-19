@@ -7,6 +7,13 @@ const nextConfig: NextConfig = {
     "@fantasy-copilot/fantasy-core",
     "@fantasy-copilot/nba-data",
   ],
+  // Pre-rename URLs (home-screen bookmarks): query strings carry over.
+  async redirects() {
+    return [
+      { source: "/today", destination: "/nba/today", permanent: false },
+      { source: "/week", destination: "/nba/week", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

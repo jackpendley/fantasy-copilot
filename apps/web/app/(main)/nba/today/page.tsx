@@ -194,7 +194,14 @@ export default async function TodayPage({
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {r.player.positions.join("/")} · {r.player.proTeam}
-                    {r.injuryNote && <span className="hidden sm:inline"> · {r.injuryNote}</span>}
+                    {r.injuryNote && (
+                      <span
+                        className="hidden max-w-xs truncate align-bottom sm:inline-block"
+                        title={r.injuryNote}
+                      >
+                        &nbsp;· {r.injuryNote}
+                      </span>
+                    )}
                   </div>
                 </TableCell>
                 <TableCell className="text-sm">

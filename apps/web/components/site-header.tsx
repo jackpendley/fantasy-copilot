@@ -27,6 +27,12 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
+        <Link
+          href="/settings"
+          className="ml-auto text-sm text-muted-foreground hover:text-foreground"
+        >
+          Settings
+        </Link>
       </div>
     </header>
   );

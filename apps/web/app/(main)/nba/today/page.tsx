@@ -126,7 +126,10 @@ export default async function TodayPage({
             </div>
           )}
         </CardHeader>
-        {(board.moves.length > 0 || outStarters.length > 0 || board.idleStarters.length > 0) && (
+        {(board.moves.length > 0 ||
+          outStarters.length > 0 ||
+          board.idleStarters.length > 0 ||
+          board.hedges.length > 0) && (
           <CardContent className="space-y-2 text-sm">
             {board.moves.map((m) => (
               <div key={m.playerId} className="flex items-center gap-2">
@@ -141,6 +144,14 @@ export default async function TodayPage({
                 Starting but ruled out: {outStarters.map((r) => r.player.name).join(", ")}
               </p>
             )}
+            {board.hedges.map((h) => (
+              <p key={h.playerId} className="text-amber-700 dark:text-amber-400">
+                {h.name} ({h.status}, {fmtTip(h.tip)}):{" "}
+                {h.backup
+                  ? `if he's ruled out, swap in ${h.backup.name} (tips ${fmtTip(h.backup.tip)}).`
+                  : "no later-tipping bench option today."}
+              </p>
+            ))}
             {board.idleStarters.length > 0 && (
               <p className="text-muted-foreground">
                 No game today: {board.idleStarters.join(", ")}

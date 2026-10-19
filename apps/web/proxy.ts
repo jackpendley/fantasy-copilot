@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AUTH_COOKIE, isValidSession } from "@/lib/auth";
 
+const PWA_FILES = new Set(["/manifest.webmanifest", "/sw.js", "/icon", "/apple-icon"]);
+
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public: login page/API and the cron route (guarded by CRON_SECRET itself)
-  if (pathname === "/login" || pathname === "/api/login" || pathname.startsWith("/api/cron")) {
+  // Public: login page/API, the cron route (guarded by CRON_SECRET itself), and the PWA
+  // files the OS fetches without the session cookie (manifest, service worker, icons).
+  if (
+    pathname === "/login" ||
+    pathname === "/api/login" ||
+    pathname.startsWith("/api/cron") ||
+    PWA_FILES.has(pathname)
+  ) {
     return NextResponse.next();
   }
 

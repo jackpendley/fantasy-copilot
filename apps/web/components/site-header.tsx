@@ -6,6 +6,7 @@ const SPORTS = [{ key: "nba", label: "NBA" }];
 const NBA_NAV = [
   { href: "/nba/today", label: "Today" },
   { href: "/nba/week", label: "Week" },
+  { href: "/nba/outlook", label: "Outlook" },
 ];
 
 export function SiteHeader() {

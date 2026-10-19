@@ -122,6 +122,8 @@ export interface FantasyTeam {
   wins: number;
   losses: number;
   pointsFor: number;
+  /** Season-to-date lineup moves and waiver adds (`transactionCounter`), when ESPN sends it. */
+  activity: { lineupMoves: number; adds: number } | null;
   roster: RosterPlayer[];
 }
 
@@ -135,6 +137,12 @@ export function parseTeams(data: Json): FantasyTeam[] {
     wins: t.record?.overall?.wins ?? 0,
     losses: t.record?.overall?.losses ?? 0,
     pointsFor: t.record?.overall?.pointsFor ?? 0,
+    activity: t.transactionCounter
+      ? {
+          lineupMoves: t.transactionCounter.moveToActive ?? 0,
+          adds: t.transactionCounter.acquisitions ?? 0,
+        }
+      : null,
     roster: (t.roster?.entries ?? []).map((e: Json) =>
       parsePlayer(e.playerPoolEntry?.player ?? {}, season, e.lineupSlotId, e.injuryStatus),
     ),
@@ -192,4 +200,12 @@ export function parseProSchedule(data: Json): ProGame[] {
     }
   }
   return [...games.values()].sort((a, b) => a.date - b.date);
+}
+
+/** Players from a `kona_player_info` query (e.g. the free-agent pool). */
+export function parsePlayerPool(data: Json, season: number): RosterPlayer[] {
+  return (data?.players ?? [])
+    .map((e: Json) => e.player ?? e.playerPoolEntry?.player)
+    .filter(Boolean)
+    .map((p: Json) => parsePlayer(p, season));
 }

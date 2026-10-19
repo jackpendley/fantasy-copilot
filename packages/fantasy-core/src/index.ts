@@ -3,3 +3,4 @@ export * from "./lineup";
 export * from "./scoring";
 export * from "./availability";
 export { hungarian } from "./assignment";
+export * from "./sim";

@@ -17,7 +17,7 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] `packages/espn`: read client + parsers (settings, teams/rosters, matchups, NBA schedule)
 - [x] `packages/nba-data`: ESPN scoreboard/injuries, NBA.com daily lineups, name matching, `pnpm test:sources`
 - [x] GitHub repo (public) and CI
-- [ ] Supabase project + Vercel project (Jack)
+- [x] Vercel project (Jack). Database: Neon free via Vercel (ADR-010)
 
 ## Phase 1: lineup MVP (before the first tip, Tue Oct 20 12:00 PM MST)
 
@@ -29,7 +29,7 @@ NFL comes once the NBA app is fully built, then MLB.
 
 ## Phase 2: game-day edge (week 1)
 
-- [ ] Supabase schema v1 written (`supabase/nba-manager/migrations/0001_schema.sql`); apply once the project exists
+- [x] Schema v1 + `pnpm db:migrate` (tested on local Postgres 17); apply to Neon once created
 
 - [x] ESPN write verified 2026-10-18: zero-impact swap + restore on sp 1, both `EXECUTED`
 - [x] One-click "Apply moves" (server recomputes, refuses stale, audit required; local JSONL until Supabase)

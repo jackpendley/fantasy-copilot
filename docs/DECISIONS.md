@@ -14,7 +14,7 @@
 - Shared-password session auth, deployed on Vercel.
 - **Why:** proven in Jack's baseball app, and the fastest path to a working app before opening night.
 
-## ADR-003: scheduling with Supabase pg_cron (2026-10-18)
+## ADR-003: scheduling with Supabase pg_cron (2026-10-18). Superseded by ADR-010
 
 - **Why:** Vercel Hobby crons run once a day, which is too slow for late scratches.
 - **How:** `pg_cron` + `pg_net` call `/api/cron/[job]` (bearer `CRON_SECRET`):
@@ -64,3 +64,12 @@
 - **Disabled modes:** writes are disabled while `ESPN_LEAGUE_FILE` is set.
 - **No blind retries:** ESPN has no idempotency key. On a lost response, the UI refreshes and shows what ESPN actually has.
 - **Unverified:** whether ESPN accepts changes for future days. Football rejects non-current periods (`TRAN_INVALID_SCORINGPERIOD_NOT_CURRENT`). The UI surfaces ESPN's code if so.
+
+## ADR-010: plain Postgres (Neon free) + an external scheduler; supersedes ADR-003 (2026-10-19)
+
+- **Why not Supabase:** its free plan allows 2 active projects across all organizations Jack owns, and MarketScope and Pokemon-TCGP-DB use both. Jack rejected sharing either project's database and paying for Pro for a few tables.
+- **Database:** any Postgres reached through `DATABASE_URL` with the `postgres` client (`prepare: false` for poolers). In production that's **Neon's free plan**, created from Vercel → Storage.
+  - Schema: `apps/nba-manager/db/migrations/*.sql`, applied by `pnpm db:migrate` (a `schema_migrations` table records what ran).
+  - Only server code connects, so there is no RLS layer.
+- **Scheduling:** Neon scales to zero and has no pg_cron. Timed jobs are called by a free external scheduler (cron-job.org) at `/api/cron/[job]` with `Authorization: Bearer CRON_SECRET`, every 5 minutes in game windows. Vercel's daily cron remains a fallback.
+- **Size:** big ML data (box scores, shots) lives in local Parquet files (MarketScope pattern). Only small app tables go in Postgres, well under Neon's 0.5 GB.

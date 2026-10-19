@@ -1,0 +1,50 @@
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PushSettings } from "@/components/push-settings";
+import { db, dbConfigured } from "@/lib/db";
+import { fmtTip } from "@/lib/format";
+
+async function recentJobs() {
+  if (!dbConfigured()) return [];
+  return db()<{ job: string; status: string; detail: string | null; ran_at: Date }[]>`
+    select job, status, detail, ran_at from refresh_log order by ran_at desc limit 8
+  `;
+}
+
+export default async function SettingsPage() {
+  const jobs = await recentJobs().catch(() => []);
+  return (
+    <>
+      <h1 className="text-xl font-semibold">Settings</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Alerts</CardTitle>
+          <CardDescription>
+            On game days the app checks every 5 minutes and alerts you when a starter is ruled out,
+            when your lineup isn&apos;t optimal 30 minutes before tip, when a doubtful starter has a
+            later-tipping backup, and if the ESPN login stops working.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PushSettings />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent jobs</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-1 text-sm">
+          {jobs.length === 0 && <p className="text-muted-foreground">No job runs yet.</p>}
+          {jobs.map((j, i) => (
+            <div key={i} className="flex gap-2">
+              <span className={j.status === "ok" ? "" : "text-destructive"}>{j.job}</span>
+              <span className="text-muted-foreground">
+                {j.ran_at.toISOString().slice(5, 10)} {fmtTip(j.ran_at.toISOString())}
+              </span>
+              <span className="truncate text-muted-foreground">{j.detail}</span>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </>
+  );
+}

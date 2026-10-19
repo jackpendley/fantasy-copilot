@@ -9,6 +9,7 @@ import {
   isStartingSlot,
   optimizeLineup,
   playProbability,
+  slotAccepts,
   type Move,
   type Position,
 } from "@fantasy-copilot/fantasy-core";
@@ -54,6 +55,21 @@ export interface DayBoard {
   moves: (Move & { name: string })[];
   /** Starters in the current lineup who have no game today. */
   idleStarters: string[];
+  /** Recommended starters who may sit, and the bench player to swap in if they do. */
+  hedges: Hedge[];
+}
+
+/**
+ * Individual-game lock means a questionable starter can still be benched until his tip,
+ * as long as a bench player whose game tips later can take the slot.
+ */
+export interface Hedge {
+  playerId: number;
+  name: string;
+  status: string;
+  slot: string;
+  tip: string;
+  backup: { playerId: number; name: string; tip: string; value: number } | null;
 }
 
 export interface DayInputs {
@@ -155,8 +171,45 @@ export function buildDayBoard(input: DayInputs): DayBoard {
   for (const r of rows) r.recommendedSlot = best.slotOf.get(r.player.id) ?? r.currentSlot;
   const name = new Map(rows.map((r) => [r.player.id, r.player.name]));
 
+  const hedges: Hedge[] = rows
+    .filter(
+      (r) =>
+        isStartingSlot(r.recommendedSlot) &&
+        r.game?.state === "pre" &&
+        r.playProb > 0 &&
+        r.playProb < 1,
+    )
+    .map((r) => {
+      const backup = rows
+        .filter(
+          (b) =>
+            b.recommendedSlot === "BE" &&
+            b.game?.state === "pre" &&
+            b.playProb > 0 &&
+            Date.parse(b.game.tip) > Date.parse(r.game!.tip) &&
+            slotAccepts(r.recommendedSlot, b.player.positions as Position[]),
+        )
+        .sort((a, b) => b.value - a.value)[0];
+      return {
+        playerId: r.player.id,
+        name: r.player.name,
+        status: r.status,
+        slot: r.recommendedSlot,
+        tip: r.game!.tip,
+        backup: backup
+          ? {
+              playerId: backup.player.id,
+              name: backup.player.name,
+              tip: backup.game!.tip,
+              value: backup.value,
+            }
+          : null,
+      };
+    });
+
   return {
     rows,
+    hedges,
     currentPoints: currentPoints(lineupPlayers),
     optimalPoints: best.points,
     moves: best.moves.map((m) => ({ ...m, name: name.get(m.playerId) ?? String(m.playerId) })),

@@ -15,10 +15,12 @@ const PLAY_PROBABILITY: Record<string, number> = {
 /** "Day-To-Day", "day_to_day", "DAY_TO_DAY" -> "DAY_TO_DAY". */
 export function normalizeStatus(status: string | null | undefined): string {
   if (!status) return "ACTIVE";
-  return status
+  const s = status
     .trim()
     .toUpperCase()
     .replace(/[\s-]+/g, "_");
+  // Roster entries say NORMAL where the player record says ACTIVE.
+  return s === "NORMAL" ? "ACTIVE" : s;
 }
 
 export function playProbability(status: string | null | undefined): number {

@@ -11,7 +11,7 @@ import {
   parseSettings,
   parseTeams,
 } from "@fantasy-copilot/espn";
-import { fetchDailyLineups, fetchInjuries, fetchScoreboard } from "../src/index.js";
+import { fetchDailyLineups, fetchInjuries, fetchScoreboard } from "../src/index";
 
 const envFile = new URL("../../../apps/nba-manager/.env.local", import.meta.url);
 if (existsSync(envFile)) {

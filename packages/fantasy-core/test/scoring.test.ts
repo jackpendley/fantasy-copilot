@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fantasyPoints, scoringFromEspn, withDerived } from "../src/scoring.js";
-import { irEligible, normalizeStatus, playProbability } from "../src/availability.js";
+import { fantasyPoints, scoringFromEspn, withDerived } from "../src/scoring";
+import { irEligible, normalizeStatus, playProbability } from "../src/availability";
 
 // FOX Champions League 2026-27 scoring (no PTS stat; makes/misses instead).
 const LEAGUE = {
@@ -78,6 +78,7 @@ describe("availability priors", () => {
   it("normalizes ESPN status spellings", () => {
     expect(normalizeStatus("Day-To-Day")).toBe("DAY_TO_DAY");
     expect(normalizeStatus(undefined)).toBe("ACTIVE");
+    expect(normalizeStatus("NORMAL")).toBe("ACTIVE");
   });
 
   it("orders statuses sensibly", () => {

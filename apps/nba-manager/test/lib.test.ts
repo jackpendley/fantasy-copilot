@@ -1,0 +1,165 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { parseTeams, parseSettings, type ProGame } from "@fantasy-copilot/espn";
+import {
+  dateForScoringPeriod,
+  etDate,
+  matchupPeriodOf,
+  scoringPeriodForDate,
+  scoringPeriodsOf,
+  shortDay,
+} from "@/lib/calendar";
+import { buildDayBoard } from "@/lib/day";
+import { perGameProjection } from "@/lib/projection";
+import { projectTeamWeek, winProbability } from "@/lib/week";
+
+// Anonymized 2026-27 league fixture (packages/espn): team 13's real draft-day roster.
+const league = JSON.parse(
+  readFileSync(
+    new URL("../../../packages/espn/test/fixtures/league.json", import.meta.url),
+    "utf8",
+  ),
+);
+const settings = parseSettings(league);
+const roster = parseTeams(league).find((t) => t.id === 13)!.roster;
+const byName = (n: string) => roster.find((p) => p.name === n)!;
+
+// Opening night: BOS @ DET at 19:00Z (Tatum; Duren and Collins), plus a DAL game (Lively).
+const OPENING: ProGame[] = [
+  {
+    gameId: 1,
+    scoringPeriodId: 1,
+    date: Date.parse("2026-10-20T19:00:00Z"),
+    homeProTeamId: 8,
+    awayProTeamId: 2,
+  },
+  {
+    gameId: 2,
+    scoringPeriodId: 1,
+    date: Date.parse("2026-10-21T02:30:00Z"),
+    homeProTeamId: 6,
+    awayProTeamId: 24,
+  },
+];
+
+describe("calendar", () => {
+  it("anchors scoring period 1 on Tue Oct 20 and ends the league season on Mar 28", () => {
+    expect(scoringPeriodForDate("2026-10-20")).toBe(1);
+    expect(dateForScoringPeriod(160)).toBe("2027-03-28");
+    expect(shortDay("2026-10-20")).toBe("Tue 10/20");
+  });
+  it("uses the US/Eastern date (a 10:30 PM ET tip is still that day)", () => {
+    expect(etDate(new Date("2026-10-21T02:30:00Z"))).toBe("2026-10-20");
+  });
+  it("has a 6-day week 1, Monday weeks, the Cup week 8 and a merged All-Star week", () => {
+    expect(scoringPeriodsOf(1)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(dateForScoringPeriod(scoringPeriodsOf(2)[0]!)).toBe("2026-10-26"); // Monday
+    expect(scoringPeriodsOf(8).map(dateForScoringPeriod)).toEqual([
+      "2026-12-07",
+      "2026-12-08",
+      "2026-12-09",
+      "2026-12-10",
+      "2026-12-11",
+      "2026-12-12",
+      "2026-12-13",
+    ]);
+    const asb = scoringPeriodsOf(18);
+    expect(asb).toHaveLength(14);
+    expect(dateForScoringPeriod(asb[0]!)).toBe("2027-02-15");
+    expect(matchupPeriodOf(160)).toBe(22);
+  });
+});
+
+describe("projection", () => {
+  it("uses ESPN's league-scored projection before any games", () => {
+    const p = perGameProjection(byName("Jayson Tatum"));
+    expect(p.source).toBe("projection");
+    expect(p.fppg).toBeGreaterThan(30);
+  });
+});
+
+describe("buildDayBoard", () => {
+  const before = new Date("2026-10-20T18:00:00Z");
+  it("starts only players with games and lists the moves", () => {
+    const board = buildDayBoard({
+      roster,
+      slotCounts: settings.slotCounts,
+      games: OPENING,
+      scoreboard: [],
+      injuries: [],
+      now: before,
+    });
+    const starting = board.rows.filter(
+      (r) => r.recommendedSlot !== "BE" && r.recommendedSlot !== "IR",
+    );
+    const withGames = board.rows.filter((r) => r.game);
+    expect(withGames.map((r) => r.player.name).sort()).toEqual(
+      ["Dereck Lively II", "Jalen Duren", "Jayson Tatum", "John Collins"].sort(),
+    );
+    for (const r of withGames) expect(starting).toContain(r);
+    expect(board.optimalPoints).toBeGreaterThanOrEqual(board.currentPoints);
+    expect(board.optimalPoints).toBeCloseTo(
+      withGames.reduce((a, r) => a + r.value, 0),
+      6,
+    );
+  });
+
+  it("locks players whose game has tipped and never moves them", () => {
+    const board = buildDayBoard({
+      roster,
+      slotCounts: settings.slotCounts,
+      games: OPENING,
+      scoreboard: [],
+      injuries: [],
+      now: new Date("2026-10-20T19:30:00Z"),
+    });
+    const tatum = board.rows.find((r) => r.player.name === "Jayson Tatum")!;
+    expect(tatum.locked).toBe(true);
+    expect(tatum.recommendedSlot).toBe(tatum.currentSlot);
+    expect(board.moves.find((m) => m.name === "Jayson Tatum")).toBeUndefined();
+  });
+
+  it("zeroes a player ESPN lists as out", () => {
+    const board = buildDayBoard({
+      roster,
+      slotCounts: settings.slotCounts,
+      games: OPENING,
+      scoreboard: [],
+      injuries: [
+        {
+          playerId: byName("Jalen Duren").id,
+          name: "Jalen Duren",
+          teamId: 8,
+          status: "Out",
+          short: "Ankle",
+          long: "",
+          date: "",
+        },
+      ],
+      now: before,
+    });
+    const duren = board.rows.find((r) => r.player.name === "Jalen Duren")!;
+    expect(duren.value).toBe(0);
+    expect(duren.injuryNote).toBe("Ankle");
+  });
+});
+
+describe("week", () => {
+  it("projects starts only on days with games", () => {
+    const wk = projectTeamWeek(roster, {
+      periods: [1, 2],
+      fromPeriod: 1,
+      games: OPENING,
+      slotCounts: settings.slotCounts,
+      injuries: [],
+    });
+    expect(wk.startsByDay.get(1)!.size).toBe(4);
+    expect(wk.startsByDay.get(2)!.size).toBe(0);
+    expect(wk.remaining).toBeGreaterThan(0);
+  });
+  it("gives sensible win probabilities", () => {
+    expect(winProbability(0, 1000, 0, 1000)).toBeCloseTo(0.5, 6);
+    expect(winProbability(500, 500, 0, 900)).toBeGreaterThan(0.6);
+    expect(winProbability(900, 0, 800, 0)).toBe(1);
+  });
+});

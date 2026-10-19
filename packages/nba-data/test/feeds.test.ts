@@ -7,7 +7,7 @@ import {
   parseInjuries,
   parseScoreboard,
   toEspnTeam,
-} from "../src/index.js";
+} from "../src/index";
 
 const fixture = (f: string) =>
   JSON.parse(readFileSync(new URL(`./fixtures/${f}`, import.meta.url), "utf8"));

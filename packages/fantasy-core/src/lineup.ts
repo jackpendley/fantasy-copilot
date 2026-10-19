@@ -2,8 +2,8 @@
 // first maximize projected points in starting slots, then make as few moves as possible.
 // Players whose game has started are locked in place, as ESPN enforces.
 
-import { hungarian } from "./assignment.js";
-import { BENCH, IR, expandSlots, isStartingSlot, slotAccepts, type Position } from "./slots.js";
+import { hungarian } from "./assignment";
+import { BENCH, IR, expandSlots, isStartingSlot, slotAccepts, type Position } from "./slots";
 
 export interface LineupPlayer {
   id: number;

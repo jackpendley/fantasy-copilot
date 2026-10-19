@@ -1,13 +1,7 @@
 // Turn raw ESPN league JSON into the shapes the app uses. Defensive: ESPN omits fields
 // freely, so everything optional stays optional and unknown ids are dropped.
 
-import {
-  POSITIONAL_SLOT_IDS,
-  PRO_TEAM_BY_ID,
-  SLOT_BY_ID,
-  STAT_BY_ID,
-  statKey,
-} from "./constants.js";
+import { POSITIONAL_SLOT_IDS, PRO_TEAM_BY_ID, SLOT_BY_ID, STAT_BY_ID, statKey } from "./constants";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;

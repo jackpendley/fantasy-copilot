@@ -64,7 +64,9 @@ export function ApplyMoves({ date, moves }: { date: string; moves: PendingMove[]
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm">Apply {moves.length} moves to ESPN</Button>
+        <Button className="w-full">
+          Apply {moves.length} move{moves.length > 1 ? "s" : ""} to ESPN
+        </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>

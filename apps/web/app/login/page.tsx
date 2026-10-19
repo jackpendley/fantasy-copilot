@@ -31,11 +31,17 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-4">
+      <div className="flex items-center gap-2.5 text-lg font-semibold tracking-tight">
+        <span className="grid size-9 place-items-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">
+          FC
+        </span>
+        Fantasy Copilot
+      </div>
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>Fantasy Copilot</CardTitle>
-          <CardDescription>Enter your password.</CardDescription>
+          <CardTitle>Sign in</CardTitle>
+          <CardDescription>Lineups, matchups and season odds for your leagues.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-3">

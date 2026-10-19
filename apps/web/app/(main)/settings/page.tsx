@@ -1,5 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PushSettings } from "@/components/push-settings";
+import { PageHeader } from "@/components/fc/bits";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { db, dbConfigured } from "@/lib/db";
 import { fmtTip } from "@/lib/format";
 
@@ -14,7 +16,16 @@ export default async function SettingsPage() {
   const jobs = await recentJobs().catch(() => []);
   return (
     <>
-      <h1 className="text-xl font-semibold">Settings</h1>
+      <PageHeader title="Settings" />
+      <Card>
+        <CardHeader>
+          <CardTitle>Appearance</CardTitle>
+          <CardDescription>Dark by default. Light, or follow your device.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ThemeToggle />
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader>
           <CardTitle>Alerts</CardTitle>

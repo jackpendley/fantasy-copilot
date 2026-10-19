@@ -1,0 +1,19 @@
+node_modules/
+.DS_Store
+coverage/
+.next/
+*.tsbuildinfo
+.env
+.env*.local
+.vercel/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+apps/nba-ml/data/
+
+# Private league data: anything under a data/local folder stays local (see each app's README).
+**/data/local/*
+!**/data/local/*.example*

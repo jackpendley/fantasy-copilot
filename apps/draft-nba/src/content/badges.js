@@ -1,0 +1,81 @@
+// Decorates the draft site's own player rows with the model rank + market tag color, so the
+// augmentation shows up where your eyes already are. Every selector is best-effort and
+// wrapped: if the markup shifts this layer goes quiet rather than breaking the panel.
+//
+// The selectors live in platform.js because ESPN and Sleeper share nothing structurally.
+// Sleeper's board in particular is a virtualised React grid with hashed class names, so
+// its selectors are a best guess -- no badges there is an acceptable outcome, a thrown
+// error during a draft is not.
+
+import { TAG_COLOR, TAG_LABEL } from '../panel/format.js';
+import { marketTag } from '../core/board.js';
+import { send } from '../core/messaging.js';
+import { extensionAlive } from '../core/runtime.js';
+import { normalizeName } from '../core/names.js';
+import { PLATFORMS, ESPN } from '../core/platform.js';
+
+const MARK = 'data-dc-badged';
+
+let byName = null;
+let selectors = null;
+
+export async function attachBadges(platform = ESPN) {
+  const p = PLATFORMS[platform] || PLATFORMS[ESPN];
+  selectors = { rows: p.rowSelectors.join(','), names: p.nameSelectors };
+
+  const res = await send({ type: 'dataset' });
+  if (!res?.ok) return;
+  byName = new Map();
+  for (const p of res.dataset.players) {
+    byName.set(normalizeName(p.name), p);
+  }
+
+  let obs = null;
+  const run = () => {
+    // Once the extension is reloaded this script is orphaned; stop rather than throw.
+    if (!extensionAlive()) { obs?.disconnect(); return; }
+    try { decorate(); } catch { /* stay quiet during a draft */ }
+  };
+  run();
+  obs = new MutationObserver(debounce(run, 250));
+  obs.observe(document.body, { childList: true, subtree: true });
+}
+
+function decorate() {
+  if (!byName || !selectors) return;
+  const rows = document.querySelectorAll(selectors.rows);
+  for (const row of rows) {
+    if (row.hasAttribute(MARK)) continue;
+    const nameEl = firstMatch(row, selectors.names);
+    if (!nameEl) continue;
+    const p = byName.get(normalizeName(nameEl.textContent));
+    row.setAttribute(MARK, '1');
+    if (!p) continue;
+
+    const badge = document.createElement('span');
+    badge.className = 'dc-badge';
+    const tag = marketTag(p.model.rank, p.espn.adp);
+    badge.style.background = TAG_COLOR[tag] || TAG_COLOR.neutral;
+    badge.textContent = `#${p.model.rank}`;
+    const bits = [
+      `Model #${p.model.rank}`,
+      `${p.pos}${p.model.posRank}`,
+      p.model.tier != null ? `Tier ${p.model.tier}` : null,
+      `value ${p.model.value}`,
+      p.model.fppg != null ? `${p.model.fppg} FP/G` : null,
+      TAG_LABEL[tag] || null,
+    ].filter(Boolean);
+    badge.title = bits.join(' · ');
+    nameEl.parentElement?.appendChild(badge);
+  }
+}
+
+const firstMatch = (root, sels) => {
+  for (const s of sels) { const el = root.querySelector(s); if (el) return el; }
+  return null;
+};
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}

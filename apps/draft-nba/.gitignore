@@ -1,0 +1,10 @@
+node_modules/
+data/cache/*.json
+extension/build/
+dist/
+
+# Private / third-party inputs -- never commit these
+data/local/*
+!data/local/*.example*
+data/overrides/unmatched-report.txt
+.DS_Store

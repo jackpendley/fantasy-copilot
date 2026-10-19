@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Hoops Draft Copilot",
+  "version": "0.1.0",
+  "description": "League-adjusted fantasy basketball draft board inside the ESPN draft room.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://fantasy.espn.com/*",
+    "https://lm-api-reads.fantasy.espn.com/*"
+  ],
+  "background": { "service_worker": "build/background.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://fantasy.espn.com/basketball/*"],
+      "js": ["build/content.js"],
+      "css": ["build/panel.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "build/options.html",
+  "action": { "default_title": "Hoops Draft Copilot -- open options" },
+  "web_accessible_resources": [
+    {
+      "resources": ["build/dataset.json"],
+      "matches": ["https://fantasy.espn.com/*"]
+    }
+  ]
+}

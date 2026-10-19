@@ -1,0 +1,84 @@
+// ESPN reads. The player universe is public; league views need the user's cookies,
+// which we get for free from host_permissions + credentials: 'include'.
+
+import { leagueUrl, POSITION_BY_ID, PRO_TEAM_BY_ID, SLOT_BY_ID } from './espn-constants.js';
+import { fetchViaPageOrDirect } from './espn-fetch.js';
+
+// Private-league reads need the user's cookies; see espn-fetch.js for why this is
+// not a plain fetch.
+const getJson = (url, extraHeaders = {}, preferredTabId = null) => (
+  fetchViaPageOrDirect(url, extraHeaders, preferredTabId)
+);
+
+/** League settings + teams: size, roster slots, scoring, and who owns which draft slot. */
+export async function fetchLeague(leagueId, preferredTabId = null) {
+  const data = await getJson(leagueUrl(leagueId, ['mSettings', 'mTeam']), {}, preferredTabId);
+  const s = data.settings || {};
+  const draft = s.draftSettings || {};
+  const roster = s.rosterSettings || {};
+
+  const slotCounts = {};
+  for (const [slotId, count] of Object.entries(roster.lineupSlotCounts || {})) {
+    if (!count) continue;
+    slotCounts[LINEUP_SLOT[slotId] || `SLOT${slotId}`] = count;
+  }
+
+  return {
+    leagueId,
+    name: s.name || `League ${leagueId}`,
+    teams: (data.teams || []).length || s.size || 12,
+    rounds: countRounds(slotCounts),
+    slotCounts,
+    isKeeper: !!(draft.keeperCount || draft.keeperCountFuture),
+    keeperCount: draft.keeperCount ?? 0,
+    draftOrder: draft.pickOrder || [],
+    teamsById: Object.fromEntries((data.teams || []).map((t) => [
+      t.id, { id: t.id, name: [t.location, t.nickname].filter(Boolean).join(' ').trim() || t.name || `Team ${t.id}` },
+    ])),
+    raw: { draftSettings: draft },
+  };
+}
+
+/**
+ * Live draft picks. Poll this during the draft.
+ * `season` exists so last year's completed draft can be replayed as a real-data test
+ * of this whole path before the current draft room is open.
+ */
+export async function fetchDraftPicks(leagueId, season, preferredTabId = null) {
+  const data = await getJson(leagueUrl(leagueId, ['mDraftDetail'], season), {}, preferredTabId);
+  const dd = data.draftDetail || {};
+  const picks = [];
+  for (const p of dd.picks || []) {
+    // ESPN lists every slot up front with playerId -1 until it is filled.
+    if (!(p.playerId > 0)) continue;
+    // One unexpected record shape must cost that one pick, never the whole poll.
+    try {
+      picks.push({
+        overall: p.overallPickNumber,
+        round: p.roundId,
+        roundPick: p.roundPickNumber,
+        teamId: p.teamId,
+        playerId: p.playerId,
+        keeper: !!p.keeper,
+        autoDraft: !!p.autoDraftTypeId,
+      });
+    } catch (err) {
+      console.warn('[Draft Copilot] skipped an unparseable ESPN pick:', err, p);
+    }
+  }
+  return {
+    drafted: !!dd.drafted,
+    inProgress: !!dd.inProgress,
+    picks: picks.sort((a, b) => a.overall - b.overall),
+  };
+}
+
+const LINEUP_SLOT = SLOT_BY_ID;
+
+function countRounds(slotCounts) {
+  return Object.entries(slotCounts)
+    .filter(([k]) => k !== 'IR')
+    .reduce((n, [, c]) => n + c, 0) || 13;
+}
+
+export { POSITION_BY_ID, PRO_TEAM_BY_ID };

@@ -1,0 +1,13 @@
+{
+  "teams": 10,
+  "roster": { "PG": 1, "SG": 1, "SF": 1, "PF": 1, "C": 1, "G": 1, "F": 1, "UTIL": 3, "BE": 3, "IR": 1 },
+  "rounds": 13,
+  "scoringType": "H2H_POINTS",
+  "scoring": {
+    "type": "points",
+    "points": { "PTS": 1, "3PM": 1, "FGA": -1, "FGM": 2, "FTA": -1, "FTM": 1, "REB": 1, "AST": 2, "STL": 4, "BLK": 4, "TO": -2 }
+  },
+  "draft": { "type": "SNAKE", "keeperCount": 0 },
+  "basis": "season",
+  "house": { "notes": [], "statBonus": {}, "gpCap": null }
+}

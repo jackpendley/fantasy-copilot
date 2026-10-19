@@ -1,0 +1,25 @@
+{
+  "name": "@fantasy-copilot/nba-data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:sources": "node --import tsx scripts/test-sources.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "eslint": "^9",
+    "typescript": "^5",
+    "vitest": "^3",
+    "tsx": "^4"
+  },
+  "dependencies": {
+    "@fantasy-copilot/espn": "workspace:*"
+  }
+}

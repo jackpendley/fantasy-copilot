@@ -1,0 +1,170 @@
+{
+  "settings": {
+    "proTeams": [
+      {
+        "id": 13,
+        "abbrev": "LAL",
+        "name": "Lakers",
+        "proGamesByScoringPeriod": {
+          "2": [
+            {
+              "awayProTeamId": 9,
+              "date": 1792634400000,
+              "homeProTeamId": 13,
+              "id": 401909092,
+              "scoringPeriodId": 2,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "4": [
+            {
+              "awayProTeamId": 12,
+              "date": 1792807200000,
+              "homeProTeamId": 13,
+              "id": 401909851,
+              "scoringPeriodId": 4,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "6": [
+            {
+              "awayProTeamId": 13,
+              "date": 1792962000000,
+              "homeProTeamId": 26,
+              "id": 401909861,
+              "scoringPeriodId": 6,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "8": [
+            {
+              "awayProTeamId": 22,
+              "date": 1793156400000,
+              "homeProTeamId": 13,
+              "id": 401909880,
+              "scoringPeriodId": 8,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "9": [
+            {
+              "awayProTeamId": 13,
+              "date": 1793241000000,
+              "homeProTeamId": 12,
+              "id": 401909892,
+              "scoringPeriodId": 9,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "11": [
+            {
+              "awayProTeamId": 13,
+              "date": 1793412000000,
+              "homeProTeamId": 9,
+              "id": 401909285,
+              "scoringPeriodId": 11,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ]
+        }
+      },
+      {
+        "id": 0,
+        "abbrev": "FA",
+        "name": "FA",
+        "proGamesByScoringPeriod": {}
+      },
+      {
+        "id": 7,
+        "abbrev": "DEN",
+        "name": "Nuggets",
+        "proGamesByScoringPeriod": {
+          "3": [
+            {
+              "awayProTeamId": 7,
+              "date": 1792719000000,
+              "homeProTeamId": 25,
+              "id": 401909094,
+              "scoringPeriodId": 3,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "5": [
+            {
+              "awayProTeamId": 3,
+              "date": 1792890000000,
+              "homeProTeamId": 7,
+              "id": 401909859,
+              "scoringPeriodId": 5,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "7": [
+            {
+              "awayProTeamId": 9,
+              "date": 1793066400000,
+              "homeProTeamId": 7,
+              "id": 401909876,
+              "scoringPeriodId": 7,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "9": [
+            {
+              "awayProTeamId": 7,
+              "date": 1793232000000,
+              "homeProTeamId": 3,
+              "id": 401909889,
+              "scoringPeriodId": 9,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "11": [
+            {
+              "awayProTeamId": 7,
+              "date": 1793412000000,
+              "homeProTeamId": 21,
+              "id": 401909286,
+              "scoringPeriodId": 11,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ],
+          "14": [
+            {
+              "awayProTeamId": 22,
+              "date": 1793671200000,
+              "homeProTeamId": 7,
+              "id": 401909918,
+              "scoringPeriodId": 14,
+              "startTimeTBD": false,
+              "statsOfficial": false,
+              "validForLocking": true
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+# The draft extension predates the workspace and keeps its own style (single quotes, no lint).
+apps/draft-nba/
+apps/nba-ml/
+**/.next/

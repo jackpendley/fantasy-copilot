@@ -1,0 +1,406 @@
+{
+  "games": [
+    {
+      "gameId": "0022501171",
+      "gameStatus": 3,
+      "gameStatusText": "Final",
+      "homeTeam": {
+        "teamId": 1610612766,
+        "teamAbbreviation": "CHA",
+        "players": [
+          {
+            "personId": 1641706,
+            "teamId": 1610612766,
+            "firstName": "Brandon",
+            "lastName": "Miller",
+            "playerName": "Brandon Miller",
+            "lineupStatus": "Confirmed",
+            "position": "SG",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642851,
+            "teamId": 1610612766,
+            "firstName": "Kon",
+            "lastName": "Knueppel",
+            "playerName": "Kon Knueppel",
+            "lineupStatus": "Confirmed",
+            "position": "SF",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630163,
+            "teamId": 1610612766,
+            "firstName": "LaMelo",
+            "lastName": "Ball",
+            "playerName": "LaMelo Ball",
+            "lineupStatus": "Confirmed",
+            "position": "PG",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1628970,
+            "teamId": 1610612766,
+            "firstName": "Miles",
+            "lastName": "Bridges",
+            "playerName": "Miles Bridges",
+            "lineupStatus": "Confirmed",
+            "position": "PF",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1631217,
+            "teamId": 1610612766,
+            "firstName": "Moussa",
+            "lastName": "Diabaté",
+            "playerName": "Moussa Diabaté",
+            "lineupStatus": "Confirmed",
+            "position": "C",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1626192,
+            "teamId": 1610612766,
+            "firstName": "Pat",
+            "lastName": "Connaughton",
+            "playerName": "Pat Connaughton",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1629632,
+            "teamId": 1610612766,
+            "firstName": "Coby",
+            "lastName": "White",
+            "playerName": "Coby White",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1629684,
+            "teamId": 1610612766,
+            "firstName": "Grant",
+            "lastName": "Williams",
+            "playerName": "Grant Williams",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630182,
+            "teamId": 1610612766,
+            "firstName": "Josh",
+            "lastName": "Green",
+            "playerName": "Josh Green",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630214,
+            "teamId": 1610612766,
+            "firstName": "Xavier",
+            "lastName": "Tillman",
+            "playerName": "Xavier Tillman",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630544,
+            "teamId": 1610612766,
+            "firstName": "Tre",
+            "lastName": "Mann",
+            "playerName": "Tre Mann",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1641750,
+            "teamId": 1610612766,
+            "firstName": "Ryan",
+            "lastName": "Kalkbrenner",
+            "playerName": "Ryan Kalkbrenner",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642883,
+            "teamId": 1610612766,
+            "firstName": "Sion",
+            "lastName": "James",
+            "playerName": "Sion James",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1641787,
+            "teamId": 1610612766,
+            "firstName": "Tosan",
+            "lastName": "Evbuomwan",
+            "playerName": "Tosan Evbuomwan",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Inactive",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1641790,
+            "teamId": 1610612766,
+            "firstName": "PJ",
+            "lastName": "Hall",
+            "playerName": "PJ Hall",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Inactive",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1641810,
+            "teamId": 1610612766,
+            "firstName": "Antonio",
+            "lastName": "Reeves",
+            "playerName": "Antonio Reeves",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Inactive",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642275,
+            "teamId": 1610612766,
+            "firstName": "Tidjane",
+            "lastName": "Salaün",
+            "playerName": "Tidjane Salaün",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Inactive",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642862,
+            "teamId": 1610612766,
+            "firstName": "Liam",
+            "lastName": "McNeeley",
+            "playerName": "Liam McNeeley",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Inactive",
+            "timestamp": "2026-04-10T21:36:00"
+          }
+        ]
+      },
+      "awayTeam": {
+        "teamId": 1610612765,
+        "teamAbbreviation": "DET",
+        "players": [
+          {
+            "personId": 1629130,
+            "teamId": 1610612765,
+            "firstName": "Duncan",
+            "lastName": "Robinson",
+            "playerName": "Duncan Robinson",
+            "lineupStatus": "Confirmed",
+            "position": "SG",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1641709,
+            "teamId": 1610612765,
+            "firstName": "Ausar",
+            "lastName": "Thompson",
+            "playerName": "Ausar Thompson",
+            "lineupStatus": "Confirmed",
+            "position": "SF",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630595,
+            "teamId": 1610612765,
+            "firstName": "Cade",
+            "lastName": "Cunningham",
+            "playerName": "Cade Cunningham",
+            "lineupStatus": "Confirmed",
+            "position": "PG",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 202699,
+            "teamId": 1610612765,
+            "firstName": "Tobias",
+            "lastName": "Harris",
+            "playerName": "Tobias Harris",
+            "lineupStatus": "Confirmed",
+            "position": "PF",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1631105,
+            "teamId": 1610612765,
+            "firstName": "Jalen",
+            "lastName": "Duren",
+            "playerName": "Jalen Duren",
+            "lineupStatus": "Confirmed",
+            "position": "C",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1627747,
+            "teamId": 1610612765,
+            "firstName": "Caris",
+            "lastName": "LeVert",
+            "playerName": "Caris LeVert",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1628989,
+            "teamId": 1610612765,
+            "firstName": "Kevin",
+            "lastName": "Huerter",
+            "playerName": "Kevin Huerter",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1629750,
+            "teamId": 1610612765,
+            "firstName": "Javonte",
+            "lastName": "Green",
+            "playerName": "Javonte Green",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630191,
+            "teamId": 1610612765,
+            "firstName": "Isaiah",
+            "lastName": "Stewart",
+            "playerName": "Isaiah Stewart",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1630194,
+            "teamId": 1610612765,
+            "firstName": "Paul",
+            "lastName": "Reed",
+            "playerName": "Paul Reed",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1631204,
+            "teamId": 1610612765,
+            "firstName": "Marcus",
+            "lastName": "Sasser",
+            "playerName": "Marcus Sasser",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1641842,
+            "teamId": 1610612765,
+            "firstName": "Ronald",
+            "lastName": "Holland II",
+            "playerName": "Ronald Holland II",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642403,
+            "teamId": 1610612765,
+            "firstName": "Isaac",
+            "lastName": "Jones",
+            "playerName": "Isaac Jones",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642404,
+            "teamId": 1610612765,
+            "firstName": "Chaz",
+            "lastName": "Lanier",
+            "playerName": "Chaz Lanier",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642449,
+            "teamId": 1610612765,
+            "firstName": "Tolu",
+            "lastName": "Smith",
+            "playerName": "Tolu Smith",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1642450,
+            "teamId": 1610612765,
+            "firstName": "Daniss",
+            "lastName": "Jenkins",
+            "playerName": "Daniss Jenkins",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Active",
+            "timestamp": "2026-04-10T21:36:00"
+          },
+          {
+            "personId": 1631111,
+            "teamId": 1610612765,
+            "firstName": "Wendell",
+            "lastName": "Moore Jr.",
+            "playerName": "Wendell Moore Jr.",
+            "lineupStatus": "Confirmed",
+            "position": "",
+            "rosterStatus": "Inactive",
+            "timestamp": "2026-04-10T21:36:00"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,559 @@
+{
+  "builtAt": "2000-01-01T00:00:00.000Z",
+  "espnFetchedAt": "2000-01-01T00:00:00.000Z",
+  "source": "Synthetic test fixture",
+  "rules": {
+    "teams": 2,
+    "rounds": 4,
+    "roster": {
+      "PG": 1,
+      "C": 1,
+      "UTIL": 1,
+      "BE": 1
+    },
+    "draft": {
+      "type": "SNAKE",
+      "keeperCount": 0
+    },
+    "scoring": {
+      "type": "points",
+      "points": {
+        "PTS": 1,
+        "REB": 1,
+        "AST": 2,
+        "STL": 4,
+        "BLK": 4,
+        "TO": -2,
+        "FGM": 2,
+        "FGA": -1,
+        "FTM": 1,
+        "FTA": -1,
+        "3PM": 1
+      }
+    },
+    "basis": "season"
+  },
+  "replacement": {
+    "PG": 1047.7999999999997,
+    "SG": 1047.7999999999997,
+    "SF": 1047.7999999999997,
+    "PF": 662.4,
+    "C": 1047.7999999999997
+  },
+  "players": [
+    {
+      "espnId": 9000001,
+      "name": "Cal Center",
+      "pos": "C",
+      "eligible": [
+        "C"
+      ],
+      "team": "AAA",
+      "espn": {
+        "adp": 1.2,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 1,
+        "posRank": 1,
+        "tier": 1,
+        "value": 3449.9,
+        "raw": 4497.7,
+        "fppg": 60.78,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 74,
+          "MIN": 32,
+          "PTS": 26,
+          "REB": 12,
+          "AST": 8,
+          "STL": 1.4,
+          "BLK": 1,
+          "TO": 3,
+          "3PM": 1.5,
+          "3PA": 4.050000000000001,
+          "FGA": 18,
+          "FGM": 10.44,
+          "FG%": 0.58,
+          "FTA": 6,
+          "FTM": 4.800000000000001,
+          "FT%": 0.8,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000002,
+      "name": "Pat Point",
+      "pos": "PG",
+      "eligible": [
+        "PG",
+        "SG"
+      ],
+      "team": "BBB",
+      "espn": {
+        "adp": 2.4,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 2,
+        "posRank": 1,
+        "tier": 1,
+        "value": 2834.3,
+        "raw": 3882.1,
+        "fppg": 51.08,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 76,
+          "MIN": 32,
+          "PTS": 28,
+          "REB": 5,
+          "AST": 6,
+          "STL": 1.6,
+          "BLK": 0.8,
+          "TO": 2.8,
+          "3PM": 2.2,
+          "3PA": 5.940000000000001,
+          "FGA": 19,
+          "FGM": 9.88,
+          "FG%": 0.52,
+          "FTA": 8,
+          "FTM": 7.12,
+          "FT%": 0.89,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000004,
+      "name": "Wes Wing",
+      "pos": "SF",
+      "eligible": [
+        "SF",
+        "PF"
+      ],
+      "team": "CCC",
+      "espn": {
+        "adp": 3.6,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 3,
+        "posRank": 1,
+        "tier": 1,
+        "value": 2096.6,
+        "raw": 2759,
+        "fppg": 38.32,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 72,
+          "MIN": 32,
+          "PTS": 20,
+          "REB": 6,
+          "AST": 4,
+          "STL": 1.2,
+          "BLK": 0.6,
+          "TO": 2,
+          "3PM": 2.8,
+          "3PA": 7.56,
+          "FGA": 16,
+          "FGM": 7.52,
+          "FG%": 0.47,
+          "FTA": 4,
+          "FTM": 3.28,
+          "FT%": 0.82,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000003,
+      "name": "Gus Glass",
+      "pos": "PF",
+      "eligible": [
+        "PF",
+        "C"
+      ],
+      "team": "AAA",
+      "espn": {
+        "adp": 5.5,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 4,
+        "posRank": 1,
+        "tier": 1,
+        "value": 2085.1,
+        "raw": 2747.5,
+        "fppg": 39.25,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 70,
+          "MIN": 32,
+          "PTS": 18,
+          "REB": 10,
+          "AST": 3,
+          "STL": 0.8,
+          "BLK": 1.5,
+          "TO": 2,
+          "3PM": 0.5,
+          "3PA": 1.35,
+          "FGA": 13,
+          "FGM": 7.15,
+          "FG%": 0.55,
+          "FTA": 5,
+          "FTM": 3.25,
+          "FT%": 0.65,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000005,
+      "name": "Sam Shooter",
+      "pos": "SG",
+      "eligible": [
+        "SG"
+      ],
+      "team": "BBB",
+      "espn": {
+        "adp": 6.8,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 5,
+        "posRank": 1,
+        "tier": 2,
+        "value": 1151.8,
+        "raw": 2199.6,
+        "fppg": 28.2,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 78,
+          "MIN": 32,
+          "PTS": 16,
+          "REB": 3,
+          "AST": 3,
+          "STL": 0.9,
+          "BLK": 0.3,
+          "TO": 1.5,
+          "3PM": 3,
+          "3PA": 8.100000000000001,
+          "FGA": 13,
+          "FGM": 5.8500000000000005,
+          "FG%": 0.45,
+          "FTA": 3,
+          "FTM": 2.7,
+          "FT%": 0.9,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000006,
+      "name": "Ike Injured",
+      "pos": "PG",
+      "eligible": [
+        "PG"
+      ],
+      "team": "CCC",
+      "espn": {
+        "adp": 4,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "OUT",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 6,
+        "posRank": 2,
+        "tier": 2,
+        "value": 839.4,
+        "raw": 1887.2,
+        "fppg": 47.18,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 40,
+          "MIN": 32,
+          "PTS": 24,
+          "REB": 4,
+          "AST": 9,
+          "STL": 1.5,
+          "BLK": 0.4,
+          "TO": 3.5,
+          "3PM": 2.5,
+          "3PA": 6.75,
+          "FGA": 18,
+          "FGM": 8.459999999999999,
+          "FG%": 0.47,
+          "FTA": 6,
+          "FTM": 5.16,
+          "FT%": 0.86,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000007,
+      "name": "Ben Bench",
+      "pos": "C",
+      "eligible": [
+        "C"
+      ],
+      "team": "AAA",
+      "espn": {
+        "adp": 9.5,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 7,
+        "posRank": 2,
+        "tier": 2,
+        "value": 660.2,
+        "raw": 1708,
+        "fppg": 24.4,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 70,
+          "MIN": 22,
+          "PTS": 9,
+          "REB": 8,
+          "AST": 1,
+          "STL": 0.5,
+          "BLK": 1.2,
+          "TO": 1,
+          "3PM": 0,
+          "3PA": 0,
+          "FGA": 7,
+          "FGM": 4.2,
+          "FG%": 0.6,
+          "FTA": 2,
+          "FTM": 1.2,
+          "FT%": 0.6,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000008,
+      "name": "Rip Rookie",
+      "pos": "SF",
+      "eligible": [
+        "SF"
+      ],
+      "team": "BBB",
+      "espn": {
+        "adp": 7.5,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 8,
+        "posRank": 2,
+        "tier": 2,
+        "value": 460.7,
+        "raw": 1508.5,
+        "fppg": 21.55,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 70,
+          "MIN": 26,
+          "PTS": 12,
+          "REB": 4,
+          "AST": 2,
+          "STL": 0.8,
+          "BLK": 0.5,
+          "TO": 1.6,
+          "3PM": 1.5,
+          "3PA": 4.050000000000001,
+          "FGA": 10,
+          "FGM": 4.4,
+          "FG%": 0.44,
+          "FTA": 3,
+          "FTM": 2.25,
+          "FT%": 0.75,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000009,
+      "name": "Lou Late",
+      "pos": "SG",
+      "eligible": [
+        "SG",
+        "SF"
+      ],
+      "team": "CCC",
+      "espn": {
+        "adp": 12,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 9,
+        "posRank": 2,
+        "tier": null,
+        "value": 0,
+        "raw": 1047.8,
+        "fppg": 16.12,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 65,
+          "MIN": 20,
+          "PTS": 8,
+          "REB": 3,
+          "AST": 2,
+          "STL": 0.6,
+          "BLK": 0.2,
+          "TO": 1,
+          "3PM": 1.2,
+          "3PA": 3.24,
+          "FGA": 7,
+          "FGM": 3.01,
+          "FG%": 0.43,
+          "FTA": 1.5,
+          "FTM": 1.2000000000000002,
+          "FT%": 0.8,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    },
+    {
+      "espnId": 9000010,
+      "name": "Zed Zero",
+      "pos": "PF",
+      "eligible": [
+        "PF"
+      ],
+      "team": "AAA",
+      "espn": {
+        "adp": null,
+        "adpChange": 0,
+        "percentOwned": 90,
+        "auctionValue": 10,
+        "pointsRank": null,
+        "rotoRank": null,
+        "injuryStatus": "ACTIVE",
+        "seasonOutlook": "Synthetic test player."
+      },
+      "model": {
+        "rank": 10,
+        "posRank": 2,
+        "tier": null,
+        "value": 0,
+        "raw": 662.4,
+        "fppg": 11.04,
+        "z": null,
+        "dollars": null,
+        "sources": "ESPN",
+        "notes": [],
+        "proj": {
+          "GP": 60,
+          "MIN": 14,
+          "PTS": 5,
+          "REB": 3,
+          "AST": 1,
+          "STL": 0.3,
+          "BLK": 0.3,
+          "TO": 0.6,
+          "3PM": 0.3,
+          "3PA": 0.81,
+          "FGA": 4,
+          "FGM": 1.92,
+          "FG%": 0.48,
+          "FTA": 1,
+          "FTM": 0.7,
+          "FT%": 0.7,
+          "DD": 0,
+          "TD": 0
+        }
+      }
+    }
+  ]
+}

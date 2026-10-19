@@ -1,0 +1,42 @@
+{
+  "name": "@fantasy-copilot/draft-nba",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "League-adjusted fantasy basketball draft assistant: projections re-scored for your ESPN league's rules, and a Chrome extension board in the ESPN draft room",
+  "author": "Jack Pendley",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jackpendley/fantasy-copilot.git",
+    "directory": "apps/draft-nba"
+  },
+  "keywords": [
+    "fantasy-basketball",
+    "chrome-extension",
+    "espn",
+    "preact"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "fetch:players": "node scripts/fetch-espn-players.mjs",
+    "fetch:sleeper": "node scripts/fetch-sleeper-players.mjs",
+    "fetch:fp": "node scripts/fetch-fantasypros.mjs",
+    "fetch": "pnpm run fetch:players && pnpm run fetch:fp",
+    "import:league": "node scripts/import-league.mjs",
+    "build:data": "node scripts/build-dataset.mjs",
+    "build:ext": "node scripts/build-extension.mjs",
+    "build": "pnpm run build:data && pnpm run build:ext",
+    "test": "node --test test/*.test.js",
+    "sim:league": "node scripts/postdraft/league-sim.mjs data/local/postdraft dist/dataset.json data/local/postdraft/sim.json"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0",
+    "preact": "^10.25.0"
+  },
+  "dependencies": {
+    "preact-render-to-string": "^6.7.0"
+  }
+}

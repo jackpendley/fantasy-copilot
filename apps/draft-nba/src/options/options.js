@@ -1,0 +1,374 @@
+import { h, render } from 'preact';
+import { useState, useEffect, useMemo } from 'preact/hooks';
+import { parseKeeperPaste, simulatePickOrder } from '../core/keepers.js';
+import { buildIndex } from '../core/names.js';
+import { summarizeEspnPicks, summarizeSleeperPicks, resolveKeeperRows } from './diagnostics.js';
+import { DEFAULTS } from '../core/storage.js';
+import { ESPN, SLEEPER } from '../core/platform.js';
+import { draftIdFromUrl } from '../core/sleeper-constants.js';
+import { slotForUser } from '../core/sleeper-api.js';
+import { send } from '../core/messaging.js';
+
+
+// Optional pre-fill: build-extension inlines data/local/keepers.tsv (gitignored) when it
+// exists, so the Keepers box needs only "Parse & match", a draft slot per row, and
+// "Save" on draft day. Empty in a fresh clone and under test.
+const SEED_KEEPER_PASTE = typeof __SEED_KEEPER_PASTE__ === 'string' ? __SEED_KEEPER_PASTE__ : '';
+
+/**
+ * @param initialConfig  seeds the config synchronously instead of waiting on
+ *                       chrome.storage. Only the tests pass it -- the real page loads
+ *                       from storage in the effect below.
+ */
+export function App({ initialConfig = null } = {}) {
+  const [cfg, setCfg] = useState(initialConfig);
+  const [dataset, setDataset] = useState(null);
+  const [league, setLeague] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [paste, setPaste] = useState(SEED_KEEPER_PASTE);
+  const [parsed, setParsed] = useState(null);
+  const [diag, setDiag] = useState(null);
+  const [sleeperLeague, setSleeperLeague] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      setCfg({ ...DEFAULTS, ...(await chrome.storage.local.get(null)) });
+      const d = await send({ type: 'dataset' });
+      if (d?.ok) setDataset(d.dataset);
+    })();
+  }, []);
+
+  const index = useMemo(
+    () => (dataset ? buildIndex(dataset.players.map((p) => ({ ...p, name: p.name }))) : null),
+    [dataset],
+  );
+
+  const save = async (patch) => {
+    await chrome.storage.local.set(patch);
+    setCfg({ ...DEFAULTS, ...(await chrome.storage.local.get(null)) });
+  };
+
+  const testLeague = async () => {
+    setStatus({ kind: 'ok', text: 'Contacting ESPN…' });
+    const r = await send({ type: 'league', platform: ESPN, leagueId: cfg.leagueId, force: true });
+    if (!r?.ok) { setStatus({ kind: 'err', text: r?.error || 'Failed.' }); return; }
+    setLeague(r.league);
+    // Only the ESPN league defines the real draft, so only it writes teams/rounds.
+    await save({ teams: r.league.teams, rounds: r.league.rounds });
+    setStatus({
+      kind: 'ok',
+      text: `Connected: ${r.league.name} — ${r.league.teams} teams, ${r.league.rounds} rounds`
+          + `, slots ${Object.entries(r.league.slotCounts).map(([k, v]) => `${k}×${v}`).join(' ')}`,
+    });
+  };
+
+  // Sleeper is the rehearsal platform: it reproduces the one thing an ESPN mock cannot,
+  // which is keepers sitting in their proper rounds. Connecting checks the mirror league
+  // actually mirrors, and derives your seat from the draft order.
+  const testSleeper = async () => {
+    setStatus({ kind: 'ok', text: 'Contacting Sleeper…' });
+    const r = await send({ type: 'league', platform: SLEEPER, draftId: cfg.sleeperDraftId, force: true });
+    if (!r?.ok) { setStatus({ kind: 'err', text: r?.error || 'Failed.' }); return; }
+    const L = r.league;
+    setSleeperLeague(L);
+
+    let slot = slotForUser(L, cfg.sleeperUserId);
+    if (slot) await save({ sleeperSlot: slot });
+
+    const mismatch = [
+      L.teams !== (cfg.teams || 12) ? `${L.teams} teams (your league has ${cfg.teams || 12})` : null,
+      L.rounds !== (cfg.rounds || 15) ? `${L.rounds} rounds (your league has ${cfg.rounds || 15})` : null,
+      L.raw?.type !== 'snake' ? `a ${L.raw?.type} draft, not snake` : null,
+      L.raw?.reversalRound ? '3rd-round reversal switched on' : null,
+    ].filter(Boolean);
+
+    setStatus({
+      kind: mismatch.length ? 'err' : 'ok',
+      text: `Sleeper: ${L.name} — ${L.teams} teams, ${L.rounds} rounds, ${L.raw?.type}, ${L.raw?.status}`
+          + (slot ? `, you are slot ${slot}` : ', could not find your slot — set a username below')
+          + (mismatch.length ? `. Mirror mismatch: ${mismatch.join('; ')}.` : '.'),
+    });
+  };
+
+  const resolveSleeperUser = async () => {
+    if (!cfg.sleeperUsername) return;
+    setStatus({ kind: 'ok', text: 'Looking up that Sleeper user…' });
+    const r = await send({ type: 'sleeper-user', username: cfg.sleeperUsername });
+    if (!r?.ok) { setStatus({ kind: 'err', text: r?.error || 'Failed.' }); return; }
+    await save({ sleeperUserId: r.user.userId });
+    setStatus({ kind: 'ok', text: `Found ${r.user.displayName}. Hit "Connect to Sleeper" to read your draft slot.` });
+  };
+
+  // Replays a completed draft through the live sync path. This is the only way to prove
+  // pick-sync works before the 2026 draft room opens. Both platforms get one: ESPN replays
+  // your league's 2025 draft, Sleeper replays any finished draft you point it at.
+  const runSleeperDiagnostics = async () => {
+    setDiag({ running: true });
+    const draftId = cfg.sleeperDraftId;
+    const r = await send({ type: 'picks', platform: SLEEPER, draftId });
+    if (!r?.ok) { setDiag({ error: r?.error || 'Failed.' }); return; }
+
+    setDiag(summarizeSleeperPicks(r, draftId, dataset?.players, cfg.keepers));
+  };
+
+  const runDiagnostics = async () => {
+    setDiag({ running: true });
+    const season = 2026;
+    const r = await send({ type: 'picks', platform: ESPN, leagueId: cfg.leagueId, season });
+    if (!r?.ok) { setDiag({ error: r?.error || 'Failed.' }); return; }
+
+    setDiag(summarizeEspnPicks(r.picks, season, dataset?.players));
+  };
+
+  // ---- keeper paste ----
+  const doParse = () => {
+    if (!index) return;
+    const { rows, errors } = parseKeeperPaste(paste);
+    const resolved = resolveKeeperRows(rows, index);
+    setParsed({ rows: resolved, errors });
+  };
+
+  // Auto-parse the pre-filled seed once the guide dataset is ready, so the review table is
+  // already showing when the page opens -- one less click before setting draft slots.
+  // Keyed on `index` alone on purpose: it must run once per dataset load, not on every
+  // keystroke in the paste box.
+  useEffect(() => {
+    if (index && SEED_KEEPER_PASTE && paste === SEED_KEEPER_PASTE && !parsed) doParse();
+  }, [index]);
+
+  const commit = async () => {
+    if (!parsed) return;
+    const good = parsed.rows.filter((r) => r.espnId);
+    await save({ keepers: good.map((r) => ({
+      team: r.team, player: r.matchedName, round: r.round,
+      espnId: r.espnId, teamSlot: r.teamSlot ?? null,
+    })) });
+    setStatus({ kind: 'ok', text: `Saved ${good.length} keepers.` });
+  };
+
+  if (!cfg) return h('p', null, 'Loading…');
+
+  const keepers = cfg.keepers || [];
+  const order = simulatePickOrder({
+    teams: cfg.teams || 12, rounds: cfg.rounds || 15,
+    keeperSlots: keepers.filter((k) => k.teamSlot && k.round),
+  });
+  const myPicks = cfg.myTeamSlot ? order.picks.filter((p) => p.teamSlot === cfg.myTeamSlot) : [];
+  const myKeptRounds = new Set(keepers.filter((k) => k.teamSlot === cfg.myTeamSlot).map((k) => k.round));
+
+  const onSleeper = cfg.platform === SLEEPER;
+
+  return h('div', null,
+    h('h1', null, 'Hoops Draft Copilot'),
+    h('p', { class: 'sub' }, 'League-adjusted 2026-27 fantasy basketball board, inside the ESPN draft room.'),
+    status && h('div', { class: `status ${status.kind}` }, status.text),
+
+    // ---- league ----
+    h('div', { class: 'card' },
+      h('h2', { style: 'margin-top:0' }, 'League'),
+      h('div', { class: 'grid' },
+        h('div', null, h('label', null, 'ESPN League ID'),
+          h('input', {
+            value: cfg.leagueId || '', placeholder: '1234567',
+            onInput: (e) => save({ leagueId: e.target.value.trim() }),
+          })),
+        h('div', null, h('label', null, 'Your draft slot'),
+          h('input', {
+            type: 'number', min: 1, max: 20, value: cfg.myTeamSlot || '',
+            onInput: (e) => save({ myTeamSlot: Number(e.target.value) || null }),
+          })),
+        h('div', null, h('label', null, 'Teams'),
+          h('input', { type: 'number', value: cfg.teams || 12, onInput: (e) => save({ teams: Number(e.target.value) }) })),
+        h('div', null, h('label', null, 'Rounds'),
+          h('input', { type: 'number', value: cfg.rounds || 15, onInput: (e) => save({ rounds: Number(e.target.value) }) })),
+      ),
+      h('p', { class: 'hint' },
+        'The league ID is in your draft room URL: ',
+        h('code', null, 'fantasy.espn.com/basketball/draft?leagueId=1234567'),
+        '. Teams and rounds fill in automatically once you connect.'),
+      h('div', { class: 'row' },
+        h('button', { onClick: testLeague }, 'Connect to ESPN'),
+      ),
+    ),
+
+    // ---- your picks ----
+    cfg.myTeamSlot && h('div', { class: 'card' },
+      h('h2', { style: 'margin-top:0' }, `Your real picks from slot ${cfg.myTeamSlot}`),
+      h('div', { class: 'picks' },
+        Array.from({ length: cfg.rounds || 15 }, (_, i) => i + 1).map((rd) => {
+          if (myKeptRounds.has(rd)) {
+            const k = keepers.find((x) => x.teamSlot === cfg.myTeamSlot && x.round === rd);
+            return h('span', { class: 'pick kept', key: rd }, `R${rd} · ${k.player} (kept)`);
+          }
+          const p = myPicks.find((x) => x.round === rd);
+          return p ? h('span', { class: 'pick', key: rd }, `R${rd} · #${p.overall}`) : null;
+        }),
+      ),
+      h('p', { class: 'hint' },
+        'Every keeper anyone declares removes a slot from the snake, so these overall numbers shift as you add keepers below.'),
+    ),
+
+    // ---- keepers ----
+    h('div', { class: 'card' },
+      h('h2', { style: 'margin-top:0' }, 'Keepers'),
+      h('p', { class: 'hint' },
+        'Select the range in your Google Sheet, copy, and paste here. Columns: ',
+        h('code', null, 'Team'), ' ', h('code', null, 'Player'), ' ', h('code', null, 'Round'),
+        '. A header row is detected automatically. You can re-paste any time, including mid-draft.'),
+      h('textarea', {
+        value: paste, placeholder: 'Team\tPlayer\tRound\nJack\tJaxon Smith-Njigba\t6\n…',
+        onInput: (e) => setPaste(e.target.value),
+      }),
+      h('div', { class: 'row' },
+        h('button', { onClick: doParse, disabled: !index }, 'Parse & match'),
+        parsed && h('button', { class: 'secondary', onClick: commit }, `Save ${parsed.rows.filter((r) => r.espnId).length} keepers`),
+        keepers.length > 0 && h('button', { class: 'danger', onClick: () => save({ keepers: [] }) }, 'Clear all'),
+      ),
+
+      parsed && h('div', null,
+        parsed.errors.length > 0 && h('p', { class: 'hint', style: 'color:#8c1d18' },
+          `${parsed.errors.length} row(s) could not be read: `,
+          parsed.errors.map((e) => `line ${e.line} (${e.reason})`).join('; ')),
+        h('table', null,
+          h('thead', null, h('tr', null,
+            ['Team', 'Pasted name', 'Matched', 'Pos', 'Round', 'Draft slot', ''].map((t) => h('th', { key: t }, t)))),
+          h('tbody', null, parsed.rows.map((r, i) => h('tr', { key: i, class: r.espnId ? '' : 'bad' },
+            h('td', null, r.team),
+            h('td', null, r.player),
+            h('td', null, r.matchedName || '—'),
+            h('td', null, r.pos ? `${r.pos} ${r.nflTeam || ''}` : '—'),
+            h('td', null, r.round),
+            h('td', null, h('input', {
+              type: 'number', min: 1, max: cfg.teams || 12, style: 'width:64px', value: r.teamSlot || '',
+              onInput: (e) => {
+                const v = Number(e.target.value) || null;
+                setParsed((p) => ({ ...p, rows: p.rows.map((x, j) => (j === i ? { ...x, teamSlot: v } : x)) }));
+              },
+            })),
+            h('td', null, r.espnId
+              ? h('span', { class: 'pill ok' }, r.how === 'exact-name' || r.how === 'exact-name-pos' ? 'MATCHED' : String(r.how).toUpperCase())
+              : h('span', { class: 'pill err' }, 'NO MATCH')),
+          ))),
+        ),
+        h('p', { class: 'hint' },
+          'Set each keeper\'s draft slot (1–', String(cfg.teams || 12),
+          ') so the pick-order simulation knows whose round to burn. Rows with no match are skipped on save — fix the spelling and re-parse.'),
+      ),
+
+      keepers.length > 0 && h('div', null,
+        h('h2', null, `Saved keepers (${keepers.length})`),
+        h('table', null,
+          h('thead', null, h('tr', null, ['Team', 'Player', 'Round', 'Slot', ''].map((t) => h('th', { key: t }, t)))),
+          h('tbody', null, keepers.map((k, i) => h('tr', { key: i, class: k.teamSlot === cfg.myTeamSlot ? 'mine' : '' },
+            h('td', null, k.team),
+            h('td', null, k.player),
+            h('td', null, `R${k.round}`),
+            h('td', null, k.teamSlot ?? '—'),
+            h('td', null, k.teamSlot === cfg.myTeamSlot ? h('span', { class: 'pill mine' }, 'YOURS') : null),
+          ))),
+        ),
+      ),
+    ),
+
+    // ---- diagnostics ----
+    h('div', { class: 'card' },
+      h('h2', { style: 'margin-top:0' }, 'Pick-sync diagnostic'),
+      h('p', { class: 'hint' },
+        "Before the draft room opens, the live pick feed can't be tested directly. "
+        + "This replays a completed draft through the exact same code path — "
+        + 'same auth, same parsing, same player-id mapping.'),
+      h('div', { class: 'row' },
+        h('button', { onClick: runDiagnostics, disabled: !cfg.leagueId || !dataset }, 'Replay 2026 ESPN draft'),
+      ),
+      diag?.running && h('p', { class: 'hint' }, 'Fetching…'),
+      diag?.error && h('div', { class: 'status err', style: 'margin-top:12px' }, diag.error),
+      diag?.total != null && h('div', null,
+        h('div', { class: `status ${diag.resolved > 0 ? 'ok' : 'err'}`, style: 'margin-top:12px' },
+          `Read ${diag.total} picks from the ${diag.platform === SLEEPER ? 'Sleeper' : diag.season} draft`
+          + ` — ${diag.rounds} rounds, ${diag.teams} teams. `
+          + `${diag.resolved} mapped to players in the model dataset`
+          + (diag.unresolved ? `, ${diag.unresolved} not in it (expected: players outside the projected pool).` : '.')
+          + (diag.dst ? ` ${diag.dst} of them D/ST (negative ids).` : '')
+          + (diag.skipped ? ` ${diag.skipped} picks had no player attached.` : '')
+          + (diag.unmapped ? ` ${diag.unmapped} Sleeper ids had no ESPN counterpart at all — they still count toward the pick number, they just aren't struck off.` : '')
+          + (diag.keepers ? ` ${diag.keepers} removed as keepers and the rest renumbered.` : '')),
+
+        // A silent zero here is the one result that looks fine and isn't: the feed parsed,
+        // the names resolved, and the pick numbers are still those of a league where
+        // nobody kept anyone.
+        diag.platform === SLEEPER && !diag.keepers && h('div', {
+          class: 'status err', style: 'margin-top:8px',
+        }, diag.keepersConfigured
+          ? `No keeper picks were removed, but ${diag.keepersConfigured} keepers are saved — `
+            + 'none of them were drafted in this draft. Take each keeper by hand in its proper '
+            + 'round, or the pick numbers are those of a non-keeper league.'
+          : 'No keeper sheet saved, so nothing was removed. These 192 picks are a plain '
+            + '16-round draft — paste the keeper sheet above and replay to see the real numbers.'),
+        diag.keeperRows?.length > 0 && h('div', null,
+          h('h2', null, `Keepers found on the board (${diag.keeperRows.length})`),
+          h('p', { class: 'hint' },
+            'Sleeper flags none of these — they are recognized by sitting on the board before '
+            + 'the draft ran, which nothing but a keeper can do. Their rounds are burned out of '
+            + 'the snake, so every pick after them moves up. ',
+            h('strong', null, 'These live only in this Sleeper draft'),
+            ' — put them in the keeper sheet above as they get confirmed, because ESPN has no '
+            + 'board to read them from on draft day.'),
+          h('table', null,
+            h('thead', null, h('tr', null, ['Round', 'Slot', 'Player', ''].map((t) => h('th', { key: t }, t)))),
+            h('tbody', null, diag.keeperRows.map((k, i) => h('tr', { key: i, class: k.slot === cfg.sleeperSlot ? 'mine' : '' },
+              h('td', null, `R${k.round}`),
+              h('td', null, k.slot),
+              h('td', null, k.name),
+              h('td', null, k.slot === cfg.sleeperSlot ? h('span', { class: 'pill mine' }, 'YOURS') : null),
+            ))),
+          ),
+        ),
+
+        h('table', null,
+          h('thead', null, h('tr', null,
+            ['Overall', 'Round', diag.platform === SLEEPER ? 'Slot' : 'Team', 'Player', ''].map((t) => h('th', { key: t }, t)))),
+          h('tbody', null, diag.sample.map((p) => h('tr', { key: p.overall },
+            h('td', null, `#${p.overall}`),
+            h('td', null, `R${p.round}`),
+            h('td', null, p.teamId),
+            h('td', null, p.name),
+            h('td', null, p.keeper ? h('span', { class: 'pill ok' }, 'KEEPER') : null),
+          ))),
+        ),
+        h('p', { class: 'hint' },
+          'If this returns picks with real player names, the whole sync path works and the only '
+          + 'thing left untested is that ESPN populates it live during the draft.'),
+      ),
+    ),
+
+    // ---- safety net ----
+    h('div', { class: 'card' },
+      h('h2', { style: 'margin-top:0' }, 'Draft-day safety net'),
+      h('p', { class: 'hint' },
+        'If ESPN\'s pick sync lags or you veto a pick as commissioner, these override it. '
+        + 'Manually-marked players are treated as drafted; the un-drafted list wins over everything.'),
+      h('div', { class: 'row' },
+        h('button', {
+          class: 'secondary',
+          onClick: () => save({ manualDrafted: [], manualUndrafted: [] }),
+        }, `Clear manual overrides (${(cfg.manualDrafted || []).length} drafted, ${(cfg.manualUndrafted || []).length} un-drafted)`),
+        h('button', {
+          class: 'secondary',
+          onClick: () => window.open(chrome.runtime.getURL('build/standalone.html'), '_blank'),
+        }, 'Open standalone board'),
+      ),
+      h('p', { class: 'hint' },
+        'The standalone board is the escape hatch: if the in-page panel ever fails mid-draft, '
+        + 'open it in a second window. It still syncs picks from ESPN.'),
+    ),
+
+    dataset && h('p', { class: 'hint' },
+      `Model dataset: ${dataset.players.length} players, built ${new Date(dataset.builtAt).toLocaleString()}`,
+      `. ESPN ADP fetched ${new Date(dataset.espnFetchedAt).toLocaleString()}.`),
+  );
+}
+
+// Guarded so the component can be imported and rendered by the tests, where there is no
+// document to mount into.
+const root = typeof document !== 'undefined' && document.getElementById('root');
+if (root) render(h(App), root);

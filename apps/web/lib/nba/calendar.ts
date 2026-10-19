@@ -54,3 +54,13 @@ export function shortDay(ymd: string): string {
   const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
   return `${wd} ${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
+
+/** "Tuesday, Oct 20" for an ET date. */
+export function longDay(ymd: string): string {
+  return new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}

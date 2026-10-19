@@ -1,25 +1,15 @@
-import Link from "next/link";
-import { ArrowRight, Lock } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
-import { StatusBadge } from "@/components/status-badge";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { ApplyMoves } from "@/components/apply-moves";
+import { Callout, DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
+import { PlayerRow } from "@/components/fc/player-row";
+import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
   LAST_SCORING_PERIOD,
   addDays,
   etDate,
+  longDay,
   matchupPeriodOf,
   scoringPeriodForDate,
-  shortDay,
 } from "@/lib/nba/calendar";
 import { loadLeague } from "@/lib/nba/data";
 import { buildDayBoard, type DayRow } from "@/lib/nba/day";
@@ -28,17 +18,17 @@ import { fmtPts, fmtTip, slotRank } from "@/lib/format";
 
 const isStarting = (slot: string) => slot !== "BE" && slot !== "IR";
 
-function GameCell({ row }: { row: DayRow }) {
-  const g = row.game;
-  if (!g) return <span className="text-muted-foreground">—</span>;
-  const opp = `${g.home ? "vs" : "@"} ${g.opponent}`;
+function Group({ title, rows, aside }: { title: string; rows: DayRow[]; aside?: string }) {
+  if (!rows.length) return null;
   return (
-    <span className="whitespace-nowrap">
-      {opp}{" "}
-      <span className="text-muted-foreground">
-        {g.state === "pre" ? fmtTip(g.tip) : g.detail || (g.state === "post" ? "Final" : "Live")}
-      </span>
-    </span>
+    <section className="space-y-1.5">
+      <SectionTitle aside={aside}>{title}</SectionTitle>
+      <div className="divide-y overflow-hidden rounded-xl border bg-card">
+        {rows.map((r) => (
+          <PlayerRow key={r.player.id} row={r} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -69,173 +59,117 @@ export default async function TodayPage({
     injuries: data.injuries,
     lineups: data.lineups,
   });
-  const rows = [...board.rows].sort(
-    (a, b) => slotRank(a.recommendedSlot) - slotRank(b.recommendedSlot) || b.value - a.value,
-  );
+  const order = (a: DayRow, b: DayRow) =>
+    slotRank(a.recommendedSlot) - slotRank(b.recommendedSlot) || b.value - a.value;
+  const starters = board.rows.filter((r) => isStarting(r.recommendedSlot)).sort(order);
+  const bench = board.rows.filter((r) => r.recommendedSlot === "BE").sort(order);
+  const ir = board.rows.filter((r) => r.recommendedSlot === "IR");
   const gain = board.optimalPoints - board.currentPoints;
+  const playing = board.rows.filter((r) => r.game).length;
   const outStarters = board.rows.filter(
     (r) => isStarting(r.currentSlot) && r.game && r.playProb === 0 && !r.locked,
   );
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">
-            {shortDay(date)}
-            {date === today && <span className="text-muted-foreground"> · today</span>}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Week {matchupPeriodOf(sp)} · {games.length} NBA games ·{" "}
-            {board.rows.filter((r) => r.game).length} of your players play
-          </p>
-        </div>
-        <div className="flex gap-2 text-sm">
-          <Link className="rounded border px-2 py-1" href={`/nba/today?date=${addDays(date, -1)}`}>
-            ← Prev
-          </Link>
-          {date !== today && (
-            <Link className="rounded border px-2 py-1" href="/nba/today">
-              Today
-            </Link>
-          )}
-          <Link className="rounded border px-2 py-1" href={`/nba/today?date=${addDays(date, 1)}`}>
-            Next →
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title={longDay(date)}
+        subtitle={`Week ${matchupPeriodOf(sp)} · ${games.length} NBA games · ${playing} of your players play`}
+      >
+        <DateNav
+          prev={`/nba/today?date=${addDays(date, -1)}`}
+          next={`/nba/today?date=${addDays(date, 1)}`}
+          today={date !== today ? "/nba/today" : undefined}
+        />
+      </PageHeader>
 
       {data.warnings.map((w) => (
-        <p key={w} className="text-sm text-amber-600">
+        <Callout key={w} tone="warning">
           {w}
-        </p>
+        </Callout>
       ))}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-baseline gap-2">
-            {board.moves.length === 0 ? "Lineup is optimal" : `${board.moves.length} moves to make`}
-            {gain > 0.05 && <Badge>+{fmtPts(gain)} pts</Badge>}
-          </CardTitle>
-          <CardDescription>
-            Projected {fmtPts(board.currentPoints)} as set · {fmtPts(board.optimalPoints)} optimal.
-          </CardDescription>
-          {board.moves.length > 0 && (
-            <div className="pt-1">
-              <ApplyMoves date={date} moves={board.moves} />
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] lg:items-start">
+        <div className="space-y-4 lg:order-2 lg:sticky lg:top-20">
+          {/* Summary: the number that matters today and the one action to take. */}
+          <div className="rounded-xl border bg-card p-4">
+            <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Projected today
             </div>
-          )}
-        </CardHeader>
-        {(board.moves.length > 0 ||
-          outStarters.length > 0 ||
-          board.idleStarters.length > 0 ||
-          board.hedges.length > 0) && (
-          <CardContent className="space-y-2 text-sm">
-            {board.moves.map((m) => (
-              <div key={m.playerId} className="flex items-center gap-2">
-                <span className="font-medium">{m.name}</span>
-                <span className="text-muted-foreground">{m.from}</span>
-                <ArrowRight className="size-3" />
-                <span className="font-medium">{m.to}</span>
+            <div className="mt-1 flex items-baseline gap-2">
+              <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                {fmtPts(board.moves.length ? board.optimalPoints : board.currentPoints)}
+              </span>
+              <span className="text-sm text-muted-foreground">pts</span>
+            </div>
+            {board.moves.length === 0 ? (
+              <div className="mt-3 flex items-center gap-1.5 text-sm font-medium text-success">
+                <CheckCircle2 className="size-4" /> Lineup is optimal
               </div>
-            ))}
-            {outStarters.length > 0 && (
-              <p className="text-destructive">
-                Starting but ruled out: {outStarters.map((r) => r.player.name).join(", ")}
-              </p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                <div className="text-sm">
+                  <span className="font-semibold text-primary">+{fmtPts(gain)} pts</span>{" "}
+                  <span className="text-muted-foreground">
+                    with {board.moves.length} move{board.moves.length > 1 ? "s" : ""} (as set:{" "}
+                    {fmtPts(board.currentPoints)})
+                  </span>
+                </div>
+                <ul className="space-y-1.5 text-sm">
+                  {board.moves.map((m) => (
+                    <li key={m.playerId} className="flex items-center gap-2">
+                      <span className="truncate font-medium">{m.name}</span>
+                      <span className="ml-auto font-mono text-xs text-muted-foreground">
+                        {m.from}
+                      </span>
+                      <ArrowRight className="size-3 text-muted-foreground" />
+                      <span className="font-mono text-xs font-semibold text-primary">{m.to}</span>
+                    </li>
+                  ))}
+                </ul>
+                <ApplyMoves date={date} moves={board.moves} />
+              </div>
             )}
-            {board.hedges.map((h) => (
-              <p key={h.playerId} className="text-amber-700 dark:text-amber-400">
-                {h.name} ({h.status}, {fmtTip(h.tip)}):{" "}
-                {h.backup
-                  ? `if he's ruled out, swap in ${h.backup.name} (tips ${fmtTip(h.backup.tip)}).`
-                  : "no later-tipping bench option today."}
-              </p>
-            ))}
-            {board.idleStarters.length > 0 && (
-              <p className="text-muted-foreground">
-                No game today: {board.idleStarters.join(", ")}
-              </p>
-            )}
-          </CardContent>
-        )}
-      </Card>
+          </div>
 
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Slot</TableHead>
-            <TableHead>Player</TableHead>
-            <TableHead>Game</TableHead>
-            <TableHead className="text-right">Proj</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => {
-            const moved = r.recommendedSlot !== r.currentSlot;
-            return (
-              <TableRow key={r.player.id} className={r.game ? "" : "opacity-60"}>
-                <TableCell className="whitespace-nowrap font-mono text-xs">
-                  {moved ? (
+          {(outStarters.length > 0 || board.hedges.length > 0 || board.idleStarters.length > 0) && (
+            <div className="space-y-2">
+              {outStarters.map((r) => (
+                <Callout key={r.player.id} tone="danger">
+                  <span className="font-medium">{r.player.name}</span> is starting but ruled out.
+                </Callout>
+              ))}
+              {board.hedges.map((h) => (
+                <Callout key={h.playerId} tone="warning">
+                  <span className="font-medium">{h.name}</span> is{" "}
+                  {h.status.toLowerCase().replace(/_/g, "-")} ({fmtTip(h.tip)}).{" "}
+                  {h.backup ? (
                     <>
-                      <span className="text-muted-foreground line-through">{r.currentSlot}</span>{" "}
-                      <span className="font-semibold">{r.recommendedSlot}</span>
+                      If he sits, swap in <span className="font-medium">{h.backup.name}</span> (tips{" "}
+                      {fmtTip(h.backup.tip)}).
                     </>
                   ) : (
-                    r.currentSlot
+                    "No later-tipping bench option today."
                   )}
-                  {r.locked && <Lock className="ml-1 inline size-3" aria-label="locked" />}
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-medium">{r.player.name}</span>
-                    <StatusBadge status={r.status} note={r.injuryNote} />
-                    {r.nba?.starter && (
-                      <Badge
-                        variant="outline"
-                        title={
-                          r.nba.confirmed
-                            ? "Confirmed starter (NBA.com)"
-                            : "Expected starter (NBA.com)"
-                        }
-                      >
-                        {r.nba.confirmed ? "Starting" : "Exp. start"}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {r.player.positions.join("/")} · {r.player.proTeam}
-                    {r.injuryNote && (
-                      <span
-                        className="hidden max-w-xs truncate align-bottom sm:inline-block"
-                        title={r.injuryNote}
-                      >
-                        &nbsp;· {r.injuryNote}
-                      </span>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm">
-                  <GameCell row={r} />
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {r.game ? fmtPts(r.value) : ""}
-                  {r.game && r.playProb < 1 && r.playProb > 0 && (
-                    <div className="text-xs text-muted-foreground">
-                      {Math.round(r.playProb * 100)}% × {fmtPts(r.projection.fppg)}
-                    </div>
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-      <p className="text-xs text-muted-foreground">
-        Projection: ESPN&apos;s league-scored preseason projection, blended toward this
-        season&apos;s average as games are played. Injury chances are rough priors until the
-        availability model ships.
-      </p>
+                </Callout>
+              ))}
+              {board.idleStarters.length > 0 && (
+                <Callout tone="info">No game today: {board.idleStarters.join(", ")}</Callout>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4 lg:order-1">
+          <Group title="Starters" rows={starters} aside={`${fmtPts(board.optimalPoints)} proj`} />
+          <Group title="Bench" rows={bench} />
+          <Group title="IR" rows={ir} />
+          <p className="px-1 text-xs text-muted-foreground">
+            Projections: ESPN&apos;s league-scored projection, blended toward this season&apos;s
+            average. Injury chances are rough priors until the availability model ships.
+          </p>
+        </div>
+      </div>
     </>
   );
 }

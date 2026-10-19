@@ -94,6 +94,13 @@ export async function runOutlook(
   return { scoringPeriod: fromDay, teams };
 }
 
+/** The latest run and the one before it (for "change since last update"). */
+export async function latestOutlooks() {
+  return db()<{ run_at: Date; scoring_period: number; seasons: number; results: OutlookTeam[] }[]>`
+    select run_at, scoring_period, seasons, results from outlook_runs order by run_at desc limit 2
+  `;
+}
+
 export async function latestOutlook() {
   const rows = await db()<
     { run_at: Date; scoring_period: number; seasons: number; results: OutlookTeam[] }[]

@@ -16,7 +16,7 @@ export const pushConfigured = () =>
 
 function configure() {
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || "https://fantasy-copilot-nba.vercel.app",
+    process.env.VAPID_SUBJECT || "https://fantasycopilot.vercel.app",
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
     process.env.VAPID_PRIVATE_KEY!,
   );

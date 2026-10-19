@@ -1,3 +1,3 @@
-export * from "./names.js";
-export * from "./espn-site.js";
-export * from "./nba-lineups.js";
+export * from "./names";
+export * from "./espn-site";
+export * from "./nba-lineups";

@@ -6,7 +6,7 @@ import {
   parseProSchedule,
   parseSettings,
   parseTeams,
-} from "../src/index.js";
+} from "../src/index";
 
 // Trimmed from a real 2026-27 league response; team and owner names replaced.
 const league = JSON.parse(readFileSync(new URL("./fixtures/league.json", import.meta.url), "utf8"));

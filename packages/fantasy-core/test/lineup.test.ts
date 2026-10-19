@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { optimizeLineup, currentPoints, type LineupPlayer } from "../src/lineup.js";
+import { optimizeLineup, currentPoints, type LineupPlayer } from "../src/lineup";
 import {
   expandSlots,
   isStartingSlot,
   slotAccepts,
   NBA_POSITIONS,
   type Position,
-} from "../src/slots.js";
+} from "../src/slots";
 
 // FOX Champions League roster: PG SG SF PF C G F UTIL UTIL + 3 bench + 1 IR.
 const LEAGUE = { PG: 1, SG: 1, SF: 1, PF: 1, C: 1, G: 1, F: 1, UTIL: 2, BE: 3, IR: 1 };

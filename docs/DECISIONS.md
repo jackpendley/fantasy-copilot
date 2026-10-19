@@ -48,3 +48,10 @@
 - The objective is projected points first, then the fewest moves.
 - Locked players have only their current slot.
 - **Why:** greedy matching is optimal for points, but not for minimizing moves, locks and IR together. The exact solver handles all of them, and at this size it takes microseconds.
+
+## ADR-008: Phase 1 pages read live sources; the database comes with history (2026-10-18)
+
+- **How:** `/today` and `/week` call ESPN (league, NBA schedule, scoreboard, injuries) on each request. That's a handful of parallel fetches at ~100–300 ms each, with the NBA schedule cached in memory for 6 hours.
+- **Why:** the app works on opening night as soon as the ESPN cookies are set, with no schema or sync jobs to break.
+- **Next:** Supabase arrives in Phase 2, where history is needed: write audit, alerts, `news_latency`, then the warehouse.
+- **Dev override:** `ESPN_LEAGUE_FILE` renders the pages from a saved league JSON, for checks without cookies.

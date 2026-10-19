@@ -1,7 +1,7 @@
 // ESPN's unofficial fantasy API v3. A private league needs the signed-in user's
 // espn_s2 + SWID cookies; this client is for server code only.
 
-import { READ_HOST } from "./constants.js";
+import { READ_HOST } from "./constants";
 
 export interface EspnConfig {
   s2: string;

@@ -16,18 +16,20 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] `packages/fantasy-core`: league scoring, availability priors, exact lineup optimizer (Hungarian; brute-force-checked)
 - [x] `packages/espn`: read client + parsers (settings, teams/rosters, matchups, NBA schedule)
 - [x] `packages/nba-data`: ESPN scoreboard/injuries, NBA.com daily lineups, name matching, `pnpm test:sources`
-- [ ] GitHub repo (public) and CI
+- [x] GitHub repo (public) and CI
 - [ ] Supabase project + Vercel project (Jack)
 
 ## Phase 1: lineup MVP (before the first tip, Tue Oct 20 12:00 PM MST)
 
-- [ ] `apps/nba-manager` scaffold: shadcn, password auth, Supabase schema v1
-- [ ] Syncs: ESPN league/rosters/locks, NBA schedule and tip times, ESPN injuries
-- [ ] `/today` and tomorrow: games, injuries, projected points, recommended slots, exact moves
-- [ ] `/week`: games grid, my projected total vs my opponent's
+- [x] `apps/nba-manager` scaffold: shadcn, password auth (Supabase schema moved to phase 2, ADR-008)
+- [x] Live loaders: ESPN league/rosters/locks, NBA schedule and tip times, ESPN injuries
+- [x] `/today` and any other day: games, injuries, projected points, recommended slots, exact moves
+- [x] `/week`: games grid, my projected total vs my opponent's, win chance
 - [ ] Deploy behind the password
 
 ## Phase 2: game-day edge (week 1)
+
+- [ ] Supabase schema v1 (`espn_actions`, `refresh_log`, `news_latency`, push subscriptions)
 
 - [ ] ESPN write test (harmless bench↔bench move), then one-click "Apply moves" with an `espn_actions` audit log
 - [ ] Daily lineups feed + late scratches; official injury report PDFs; `news_latency` logging

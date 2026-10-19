@@ -1,5 +1,5 @@
-export * from "./slots.js";
-export * from "./lineup.js";
-export * from "./scoring.js";
-export * from "./availability.js";
-export { hungarian } from "./assignment.js";
+export * from "./slots";
+export * from "./lineup";
+export * from "./scoring";
+export * from "./availability";
+export { hungarian } from "./assignment";

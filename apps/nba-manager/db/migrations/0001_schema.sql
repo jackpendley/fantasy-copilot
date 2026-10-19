@@ -1,6 +1,5 @@
--- NBA manager schema v1 (Phase 2). Apply in the Supabase SQL editor or with psql.
--- All access goes through the service-role key from server code: RLS on, no policies,
--- so the anon key can read nothing.
+-- NBA manager schema v1 (Phase 2). Applied by `pnpm db:migrate` (scripts/migrate.ts).
+-- Only server code connects (DATABASE_URL); nothing is exposed to browsers.
 
 -- Every ESPN write (lineup moves; later adds/drops/claims), with request and response.
 create table espn_actions (
@@ -58,9 +57,3 @@ create table alerts_sent (
   body text not null,
   sent_at timestamptz not null default now()
 );
-
-alter table espn_actions enable row level security;
-alter table refresh_log enable row level security;
-alter table status_events enable row level security;
-alter table push_subscriptions enable row level security;
-alter table alerts_sent enable row level security;

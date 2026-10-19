@@ -2,7 +2,7 @@
 
 A monorepo of tools for **winning Jack's ESPN fantasy leagues**. Right now it is NBA only. NFL comes once the NBA app is fully built, then MLB.
 
-- `apps/nba-manager`: the season-long team manager. Next.js 16 + Supabase on Vercel.
+- `apps/nba-manager`: the season-long team manager. Next.js 16 + Postgres (Neon) on Vercel.
 - `apps/nba-ml`: data warehouse and ML (Python).
 - `apps/draft-nba`: the draft-room Chrome extension.
 

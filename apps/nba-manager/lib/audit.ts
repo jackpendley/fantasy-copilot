@@ -1,11 +1,11 @@
 import "server-only";
 // Every ESPN write is recorded with its request and ESPN's response (CLAUDE.md rule).
-// Sink: Supabase `espn_actions` when configured; a local JSONL file in development.
-// Production without Supabase has no sink, so writes are refused there.
+// Sink: the `espn_actions` table when DATABASE_URL is set; a local JSONL file in development.
+// Production without a database has no sink, so writes are refused there.
 
 import { appendFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { supabase, supabaseConfigured } from "./supabase";
+import { db, dbConfigured } from "./db";
 
 export interface EspnAction {
   kind: "lineup";
@@ -21,23 +21,19 @@ export interface EspnAction {
 const LOCAL_LOG = path.join(process.cwd(), "data", "local", "espn-actions.jsonl");
 
 export function auditAvailable(): boolean {
-  return supabaseConfigured() || process.env.NODE_ENV !== "production";
+  return dbConfigured() || process.env.NODE_ENV !== "production";
 }
 
 export async function recordAction(action: EspnAction): Promise<void> {
   const row = { at: new Date().toISOString(), ...action };
-  if (supabaseConfigured()) {
-    const { error } = await supabase().from("espn_actions").insert({
-      kind: row.kind,
-      scoring_period_id: row.scoringPeriodId,
-      request: row.request,
-      ok: row.ok,
-      http_status: row.httpStatus,
-      code: row.code,
-      message: row.message,
-      response: row.response,
-    });
-    if (error) throw new Error(`audit insert failed: ${error.message}`);
+  if (dbConfigured()) {
+    await db()`
+      insert into espn_actions
+        (kind, scoring_period_id, request, ok, http_status, code, message, response)
+      values
+        (${row.kind}, ${row.scoringPeriodId}, ${db().json(row.request as never)}, ${row.ok},
+         ${row.httpStatus}, ${row.code}, ${row.message}, ${db().json((row.response ?? null) as never)})
+    `;
     return;
   }
   if (process.env.NODE_ENV === "production") throw new Error("no audit sink configured");

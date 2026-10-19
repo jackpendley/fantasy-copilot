@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   }
   if (!auditAvailable()) {
     return NextResponse.json(
-      { error: "writes need the audit log: configure Supabase first" },
+      { error: "writes need the audit log: set DATABASE_URL first" },
       { status: 503 },
     );
   }

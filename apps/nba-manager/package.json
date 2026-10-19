@@ -9,18 +9,19 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:migrate": "node --env-file-if-exists=.env.local --import tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@fantasy-copilot/espn": "workspace:*",
     "@fantasy-copilot/fantasy-core": "workspace:*",
     "@fantasy-copilot/nba-data": "workspace:*",
-    "@supabase/supabase-js": "^2.110.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.23.0",
     "next": "16.2.10",
     "next-themes": "^0.4.6",
+    "postgres": "^3.4.5",
     "radix-ui": "^1.6.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -38,8 +39,8 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "tailwindcss": "^4",
+    "tsx": "^4",
     "typescript": "^5",
-    "vitest": "^3",
-    "tsx": "^4"
+    "vitest": "^3"
   }
 }

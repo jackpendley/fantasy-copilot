@@ -12,7 +12,13 @@ import {
   type Move,
   type Position,
 } from "@fantasy-copilot/fantasy-core";
-import type { InjuryReport, ScoreboardGame } from "@fantasy-copilot/nba-data";
+import {
+  buildMatcher,
+  toEspnTeam,
+  type InjuryReport,
+  type LineupEntry,
+  type ScoreboardGame,
+} from "@fantasy-copilot/nba-data";
 import { perGameProjection, type PerGame } from "./projection";
 
 export interface DayGame {
@@ -37,6 +43,8 @@ export interface DayRow {
   value: number;
   currentSlot: string;
   recommendedSlot: string;
+  /** NBA.com daily lineups, when published for this date and matched to him. */
+  nba: { starter: boolean; confirmed: boolean; inactive: boolean } | null;
 }
 
 export interface DayBoard {
@@ -56,6 +64,8 @@ export interface DayInputs {
   /** Live state and tip times for the same date, when available. */
   scoreboard: ScoreboardGame[];
   injuries: InjuryReport[];
+  /** NBA.com daily lineups for this date (null/absent before NBA.com publishes). */
+  lineups?: LineupEntry[] | null;
   now?: Date;
 }
 
@@ -91,9 +101,31 @@ export function buildDayBoard(input: DayInputs): DayBoard {
     };
   };
 
+  const match = buildMatcher(
+    input.roster.map((p) => ({ id: p.id, name: p.name, team: p.proTeam })),
+  );
+  const nbaById = new Map<number, LineupEntry>();
+  for (const e of input.lineups ?? []) {
+    const id = match(e.name, toEspnTeam(e.team));
+    if (id != null) nbaById.set(id, e);
+  }
+
   const rows: DayRow[] = input.roster.map((player) => {
     const game = gameOf(player.proTeamId);
-    const { status, note } = statusOf(player, injuries);
+    const entry = nbaById.get(player.id);
+    const nba = entry
+      ? {
+          starter: entry.starter,
+          confirmed: entry.lineupStatus === "Confirmed",
+          inactive: entry.rosterStatus === "Inactive",
+        }
+      : null;
+    const injury = statusOf(player, injuries);
+    // NBA.com's inactive list is the final word once a team files it.
+    const status = nba?.inactive ? "OUT" : injury.status;
+    const note = nba?.inactive
+      ? `Inactive (NBA.com)${injury.note ? ` · ${injury.note}` : ""}`
+      : injury.note;
     const playProb = game ? playProbability(status) : 0;
     const projection = perGameProjection(player);
     return {
@@ -107,6 +139,7 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       value: game ? playProb * projection.fppg : 0,
       currentSlot: player.slot ?? "BE",
       recommendedSlot: player.slot ?? "BE",
+      nba,
     };
   });
 

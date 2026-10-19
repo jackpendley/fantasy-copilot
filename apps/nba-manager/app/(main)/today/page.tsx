@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { StatusBadge } from "@/components/status-badge";
+import { ApplyMoves } from "@/components/apply-moves";
 import {
   LAST_SCORING_PERIOD,
   addDays,
@@ -66,6 +67,7 @@ export default async function TodayPage({
     games,
     scoreboard: data.scoreboard,
     injuries: data.injuries,
+    lineups: data.lineups,
   });
   const rows = [...board.rows].sort(
     (a, b) => slotRank(a.recommendedSlot) - slotRank(b.recommendedSlot) || b.value - a.value,
@@ -117,8 +119,12 @@ export default async function TodayPage({
           </CardTitle>
           <CardDescription>
             Projected {fmtPts(board.currentPoints)} as set · {fmtPts(board.optimalPoints)} optimal.
-            Make the moves in the ESPN app (one-click apply comes next).
           </CardDescription>
+          {board.moves.length > 0 && (
+            <div className="pt-1">
+              <ApplyMoves date={date} moves={board.moves} />
+            </div>
+          )}
         </CardHeader>
         {(board.moves.length > 0 || outStarters.length > 0 || board.idleStarters.length > 0) && (
           <CardContent className="space-y-2 text-sm">
@@ -173,6 +179,18 @@ export default async function TodayPage({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium">{r.player.name}</span>
                     <StatusBadge status={r.status} note={r.injuryNote} />
+                    {r.nba?.starter && (
+                      <Badge
+                        variant="outline"
+                        title={
+                          r.nba.confirmed
+                            ? "Confirmed starter (NBA.com)"
+                            : "Expected starter (NBA.com)"
+                        }
+                      >
+                        {r.nba.confirmed ? "Starting" : "Exp. start"}
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {r.player.positions.join("/")} · {r.player.proTeam}

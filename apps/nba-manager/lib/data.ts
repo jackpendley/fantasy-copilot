@@ -12,7 +12,12 @@ import {
   parseTeams,
   type ProGame,
 } from "@fantasy-copilot/espn";
-import { fetchInjuries, fetchScoreboard, type InjuryReport } from "@fantasy-copilot/nba-data";
+import {
+  fetchDailyLineups,
+  fetchInjuries,
+  fetchScoreboard,
+  type InjuryReport,
+} from "@fantasy-copilot/nba-data";
 import { readFile } from "node:fs/promises";
 import { espnConfig } from "./env";
 
@@ -58,10 +63,13 @@ async function leagueJson(
 
 export async function loadLeague(scoringPeriodId: number, ymd: string) {
   const { raw, teamId, season } = await leagueJson(scoringPeriodId);
-  const [games, scoreboard, injuries] = await Promise.all([
+  const yyyymmdd = ymd.replace(/-/g, "");
+  const [games, scoreboard, injuries, lineups] = await Promise.all([
     nbaSchedule(season),
-    fetchScoreboard(ymd.replace(/-/g, "")).catch(() => []),
+    fetchScoreboard(yyyymmdd).catch(() => []),
     safeInjuries(),
+    // Published on game days only; any failure just means no lineup info yet.
+    fetchDailyLineups(yyyymmdd).catch(() => null),
   ]);
   const settings = parseSettings(raw);
   const teams = parseTeams(raw);
@@ -75,6 +83,7 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
     games,
     scoreboard,
     injuries: injuries.list,
+    lineups,
     warnings: injuries.error ? [`Injury feed unavailable: ${injuries.error}`] : [],
   };
 }

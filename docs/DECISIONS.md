@@ -55,3 +55,12 @@
 - **Why:** the app works on opening night as soon as the ESPN cookies are set, with no schema or sync jobs to break.
 - **Next:** Supabase arrives in Phase 2, where history is needed: write audit, alerts, `news_latency`, then the warehouse.
 - **Dev override:** `ESPN_LEAGUE_FILE` renders the pages from a saved league JSON, for checks without cookies.
+
+## ADR-009: ESPN write safety (2026-10-18)
+
+- **Verified on basketball:** a two-item `ROSTER`/`LINEUP` transaction swapped two players on scoring period 1, and a second one restored them. Both returned `EXECUTED`, and a re-read confirmed each.
+- **Server-side checks:** `/api/lineup/apply` reloads ESPN and recomputes the moves, then **refuses (409 "stale") unless they equal what the user confirmed**. The client never dictates moves.
+- **Audit:** writes require an audit sink. That's Supabase `espn_actions`, or a local JSONL file in development. Production without Supabase refuses writes.
+- **Disabled modes:** writes are disabled while `ESPN_LEAGUE_FILE` is set.
+- **No blind retries:** ESPN has no idempotency key. On a lost response, the UI refreshes and shows what ESPN actually has.
+- **Unverified:** whether ESPN accepts changes for future days. Football rejects non-current periods (`TRAN_INVALID_SCORINGPERIOD_NOT_CURRENT`). The UI surfaces ESPN's code if so.

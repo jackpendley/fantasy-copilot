@@ -31,7 +31,7 @@ Jack's league is "FOX Champions League" (ESPN 322514556, team 13, 2026-27). Its 
 - **ESPN writes:** lineup moves, adds, drops and claims change Jack's real team.
   - They only happen from an explicit confirm in the UI, or a job Jack has turned on.
   - Every write is logged to `espn_actions` with the request and response.
-  - Never write to ESPN from tests or scripts.
+  - Never write to ESPN from tests or scripts. The one exception is `apps/nba-manager/scripts/espn-write-check.ts`, a zero-impact swap-and-restore that runs only with Jack's explicit approval for that run.
 - **Private data stays out of git:**
   - ESPN cookies, league JSON dumps, other managers' names and team names.
   - Fixtures from real responses are trimmed and anonymized ("Team 14", "{OWNER-14}").

@@ -57,6 +57,7 @@ export default async function WeekPage() {
       games: todayGames,
       scoreboard: data.scoreboard,
       injuries: data.injuries,
+      lineups: data.lineups,
     });
     return board.rows
       .filter((r) => !r.locked && r.recommendedSlot !== "BE" && r.recommendedSlot !== "IR")

@@ -10,6 +10,7 @@ import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calenda
 import { loadLeague } from "./nba/data";
 import { buildDayBoard } from "./nba/day";
 import { statusEventsFrom } from "./nba/news";
+import { runOutlook } from "./nba/outlook-run";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -92,4 +93,18 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   const result = { date, events: events.length, newEvents, alerts: alerts.length, sent };
   await log("gameday", "ok", JSON.stringify(result));
   return result;
+}
+
+/** Once a day, before the games: re-run the season outlook with yesterday's results. */
+export async function nightlyJob(): Promise<Record<string, unknown>> {
+  try {
+    const { scoringPeriod, teams } = await runOutlook();
+    const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
+    const result = { scoringPeriod, title: me?.champ, playoffs: me?.playoffs };
+    await log("nightly", "ok", JSON.stringify(result));
+    return result;
+  } catch (e) {
+    await log("nightly", "error", (e as Error).message);
+    throw e;
+  }
 }

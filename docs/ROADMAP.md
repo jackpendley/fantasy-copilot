@@ -34,9 +34,11 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] ESPN write verified 2026-10-18: zero-impact swap + restore on sp 1, both `EXECUTED`
 - [x] One-click "Apply moves" (server recomputes, refuses stale, audit required; local JSONL until the database exists)
 - [x] NBA.com daily lineups on /today: starter badges, inactive -> 0 projected
-- [ ] Official injury report PDFs; `status_events` logging (news latency)
-- [ ] Questionable-player hedging (keep a later-tipping substitute)
-- [ ] PWA + web push alerts: lineup not optimal at T−30, a starter ruled OUT, sync/cookie failure
+- [x] `status_events` logging (ESPN injuries, ESPN fantasy, NBA.com lineups) in the game window
+- [ ] Official injury report PDFs (moved to phase 4: parsed in Python with the warehouse)
+- [x] Questionable-player hedging: later-tipping bench backup on Today + alert
+- [x] PWA + web push alerts: lineup not optimal at T−30, a starter ruled OUT, hedge reminder, ESPN login expired; /settings
+- [ ] Production push keys in Vercel + cron-job.org calling /api/cron/gameday every 5 min (Jack)
 
 ## Phase 3: waivers and streaming (weeks 1–2)
 

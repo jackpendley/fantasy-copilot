@@ -67,6 +67,14 @@ describe("parseTeams", () => {
     expect(tatum.projection?.avg).toBeGreaterThan(30);
     expect(tatum.projection?.stats.FGM).toBeGreaterThan(5);
   });
+  it("reads activity counters when present", () => {
+    expect(mine.activity).toBeNull(); // the anonymized fixture has no transactionCounter
+    const withCounter = parseTeams({
+      seasonId: 2027,
+      teams: [{ id: 1, transactionCounter: { moveToActive: 12, acquisitions: 2 } }],
+    });
+    expect(withCounter[0]!.activity).toEqual({ lineupMoves: 12, adds: 2 });
+  });
   it("names bench players' slot", () => {
     expect(mine.roster.filter((p) => p.slot === "BE")).toHaveLength(3);
   });

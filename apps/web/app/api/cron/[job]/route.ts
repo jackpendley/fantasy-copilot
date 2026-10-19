@@ -2,13 +2,14 @@
 // (nightly), both with `Authorization: Bearer CRON_SECRET`.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { gamedayJob } from "@/lib/jobs";
+import { gamedayJob, nightlyJob } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 const JOBS: Record<string, () => Promise<Record<string, unknown>>> = {
   gameday: () => gamedayJob(),
+  nightly: () => nightlyJob(),
 };
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ job: string }> }) {

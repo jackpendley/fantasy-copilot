@@ -88,3 +88,11 @@
   - Local, CI and preview builds skip it, so unmerged branches never touch the live database.
 - **Why:** the schema always matches the deployed code, and the Neon connection string never has to leave Vercel.
 - **Database:** the Neon `fantasy-copilot` database (Free, Washington D.C. iad1) is connected to the Vercel project as `DATABASE_URL` for Production and Preview. Previews share it, which is fine because previews never migrate.
+
+## ADR-013: season outlook = the v3 sim in TypeScript, nightly (2026-10-19)
+
+- **Code:** `packages/fantasy-core/src/sim.ts` ports the calibrated v3 sim and is driven by live inputs (`apps/web/lib/nba/outlook.ts`).
+- **Parity:** on the draft-day files it reproduces the scratch sim within Monte Carlo noise. Jack: 12.7 wins, 90% playoffs, 24.6% title, against 12.7, 91% and 22.8% originally.
+- **Actual results:** completed weeks keep ESPN's actual winner. The current week starts from the points already scored, and only the remaining days are simulated.
+- **Manager activity:** this season's `transactionCounter` (lineup moves, adds), blended with last season's for the same owner. The prior weighs 21 days; new owners get a neutral prior (0.7, 0.6/wk). It's read from ESPN, so nothing private goes in git.
+- **Schedule:** Vercel cron runs `/api/cron/nightly` at 11:00 UTC (4 AM in Arizona, before games). The page also has a "Run now" button. Runs are stored in `outlook_runs` for the odds-over-time chart. 800 seasons take ~11 s.

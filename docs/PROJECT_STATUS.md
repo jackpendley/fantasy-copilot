@@ -1,27 +1,33 @@
-# Project status (2026-10-19)
+# Project status (2026-10-19, afternoon)
 
 ## Where things stand
 
-- **Phases 0, 1 and 2a are on `main`:**
-  - monorepo and packages;
-  - `/today` and `/week`;
-  - one-click ESPN apply, audit-gated; the write path was verified on Jack's team on 10/18;
-  - NBA.com lineups;
-  - plain-Postgres schema and migrations.
-- **PR #4 is merged** and live at fantasy-copilot-nba.vercel.app. Root Directory is `apps/web`, and the first production build applied `0001_schema.sql` to Neon:
-  - `apps/nba-manager` → `apps/web` ("Fantasy Copilot"), NBA pages under `/nba/*`, with `/today` and `/week` redirects (ADR-011);
-  - VS Code workspace settings;
-  - migrations on production deploys (ADR-012).
-- **Database:** Neon `fantasy-copilot` (Free, iad1) is created and connected to Vercel as `DATABASE_URL`. Empty `DATABASE_URL`/`SUPABASE_*` placeholders were removed from Vercel with Jack's OK.
-- **Browser access:** works in this session (Claude in Chrome).
+- **Live** at fantasy-copilot-nba.vercel.app: Today, Week, Settings; Outlook once PR #7 deploys.
+- **Phase 2b is merged (PR #6):**
+  - game-day alerts (starter out, lineup not optimal at T−30, hedge reminder, login expired);
+  - `status_events` logging;
+  - web push (PWA, `/settings`);
+  - hedges on Today.
+- **Phase 3 (PR #7):**
+  - `/nba/outlook` with playoff, #1-seed, final and title odds and an odds-over-time chart;
+  - nightly Vercel cron;
+  - the TypeScript sim, matching the v3 sim within noise (ADR-013).
+  - Checked end to end on a throwaway local Postgres with the live league: 2 runs at ~11 s each, page renders.
 
 ## Blockers / Jack
 
-1. **After PR #4 merges:** Vercel → fantasy-copilot-nba → Settings → Build and Deployment → Root Directory = `apps/web`, then Redeploy. That first production build applies the schema.
-2. **Chrome:** `chrome://extensions` → remove the old unpacked "Hoops Draft Copilot" → **Load unpacked** → `~/Projects/fantasy-copilot/apps/draft-nba/extension`. Then confirm, so the old `~/Projects/espn-hoops-copilot` can be zipped to `~/Projects/_archive` and removed.
-3. **Optional for local DB work:** paste the Neon `DATABASE_URL` (Vercel → Storage → fantasy-copilot → .env.local → Copy Snippet) into `apps/web/.env.local`.
+1. **Push keys in Vercel (needs OK, they're secrets):** `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`. The values are in `apps/web/.env.local`. Redeploy after adding.
+2. **5-minute game-day checks:** create a free cron-job.org account, then a job:
+   - GET `https://fantasy-copilot-nba.vercel.app/api/cron/gameday`, every 5 minutes;
+   - header `Authorization: Bearer <CRON_SECRET from .env.local>`.
+3. **iPhone:** open the app from the home screen → Settings → Enable notifications → Send test.
 
 ## Next tasks
 
-1. **Phase 2b:** `status_events` logging, push alerts (PWA), cron routes driven by cron-job.org, questionable-player hedging.
-2. **Phase 3:** `/nba/outlook`, the season sim ported to TypeScript, nightly odds for playoffs, #1 seed and the title.
+1. Merge PR #7, then tap "Run now" on `/nba/outlook` once (the nightly cron takes over from tomorrow).
+2. **Phase 3b, waivers and streaming:**
+   - free-agent pool (`parsePlayerPool` is ready);
+   - net added starts with the optimizer;
+   - ΔP(win this week);
+   - one-click add/drop.
+3. **Phase 4, data warehouse:** `apps/nba-ml` (Python), 2023-26 ESPN game summaries, injury PDFs.

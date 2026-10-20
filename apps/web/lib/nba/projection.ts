@@ -1,11 +1,16 @@
 // Per-game fantasy points used for lineup decisions until the ML models land (ROADMAP phase 5):
 // ESPN's preseason projection (already scored with this league's settings), shrunk toward
-// this season's actual average as games accumulate.
+// this season's actual average as games accumulate, then scaled by his recent minutes trend.
+// Changes here must pass the walk-forward backtest in docs/MODEL_CARD.md.
 
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 
 /** Games of actual data that count as much as the preseason projection. */
 const PRIOR_GAMES = 15;
+/** Minutes trend (MODEL_CARD.md): last 5 games' minutes vs his season, once he has 8 games. */
+const TREND_WINDOW = 5;
+const TREND_MIN_GAMES = 8;
+const TREND_STRENGTH = 0.5;
 
 export interface PerGame {
   fppg: number;
@@ -32,6 +37,21 @@ function seasonBefore(
   return gp > 0 ? { avg: rest / gp, total: rest } : null;
 }
 
+/**
+ * Role changes show up in minutes first: scale by recent minutes over season minutes
+ * (clipped to 0.6-1.4, half strength). Only games before `asOf` count.
+ */
+export function minutesTrend(p: RosterPlayer, asOf?: number): number {
+  const mins = (p.games ?? [])
+    .filter((g) => asOf == null || g.scoringPeriodId < asOf)
+    .map((g) => g.line.MIN ?? 0)
+    .filter((m) => m > 0);
+  if (mins.length < TREND_MIN_GAMES) return 1;
+  const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  const ratio = Math.min(1.4, Math.max(0.6, avg(mins.slice(-TREND_WINDOW)) / avg(mins)));
+  return 1 + TREND_STRENGTH * (ratio - 1);
+}
+
 /** `asOf`: ignore games from this scoring period on (a pregame projection for that day). */
 export function perGameProjection(p: RosterPlayer, asOf?: number): PerGame {
   const proj = p.projection?.avg ?? null;
@@ -39,8 +59,9 @@ export function perGameProjection(p: RosterPlayer, asOf?: number): PerGame {
   const seasonAvg = season?.avg ?? null;
   const gp = seasonAvg && season?.total ? Math.round(season.total / seasonAvg) : 0;
   if (proj == null && seasonAvg == null) return { fppg: 0, gamesPlayed: 0, source: "none" };
-  if (proj == null) return { fppg: seasonAvg!, gamesPlayed: gp, source: "season" };
+  const trend = minutesTrend(p, asOf);
+  if (proj == null) return { fppg: seasonAvg! * trend, gamesPlayed: gp, source: "season" };
   if (!gp || seasonAvg == null) return { fppg: proj, gamesPlayed: 0, source: "projection" };
   const w = gp / (gp + PRIOR_GAMES);
-  return { fppg: w * seasonAvg + (1 - w) * proj, gamesPlayed: gp, source: "blend" };
+  return { fppg: (w * seasonAvg + (1 - w) * proj) * trend, gamesPlayed: gp, source: "blend" };
 }

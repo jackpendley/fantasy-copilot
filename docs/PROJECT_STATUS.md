@@ -46,7 +46,11 @@
   - market-value acceptance (ESPN plus league draft), up to 3-for-3 with roster balancing, size filter, realism tiers (ADR-019);
   - Collins-for-Brown-style ideas are gone.
 
-- **Steadier Outlook (branch `outlook-steady`):** common random numbers, 2,000 seasons, and a "What changed" panel with the roster moves behind odds changes (ADR-020).
+- **Steadier Outlook (PR #15):** common random numbers, 2,000 seasons, and a "What changed" panel with the roster moves behind odds changes (ADR-020).
+
+- **Model backtest (branch `model-backtest`):**
+  - walk-forward backtest script and `docs/MODEL_CARD.md`;
+  - minutes trend pre-registered, passed a held-out season (2024-25), and ships.
 
 ## Plan in progress (approved 2026-10-20)
 

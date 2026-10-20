@@ -58,7 +58,8 @@ NFL comes once the NBA app is fully built, then MLB.
 
 - [ ] Minutes (LightGBM quantiles) · Availability (P(play)) · Production rate (empirical Bayes) · Expected shooting (xFG)
 - [ ] Combined per-game distribution; nightly rest-of-season projections; TypeScript GBM serving with parity test
-- [ ] `MODEL_CARD.md`; promote each model only after it passes its gate
+- [x] `MODEL_CARD.md` and walk-forward backtest harness; minutes trend passed a held-out season and ships
+- [ ] Promote each further model only after it passes its gate (next: availability, DARKO snapshots)
 
 ## Phase 6: trades (weeks 5–7)
 

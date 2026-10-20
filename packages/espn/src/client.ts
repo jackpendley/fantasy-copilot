@@ -74,3 +74,8 @@ export const freeAgentFilter = (limit = 300) => ({
     sortPercOwned: { sortPriority: 1, sortAsc: false },
   },
 });
+
+/** Specific players by id, whatever their roster status. */
+export const playerIdsFilter = (ids: number[]) => ({
+  players: { filterIds: { value: ids }, limit: ids.length },
+});

@@ -82,7 +82,7 @@ export function BottomNav() {
   const items = [...NBA_NAV, SETTINGS_NAV];
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {items.map(({ href, label, icon: Icon }) => {
           const active = path.startsWith(href);
           return (

@@ -111,3 +111,15 @@
   - an add is left (free agents only).
   - It then sends a `FREEAGENT` add or a `WAIVER` claim, audited as `add-drop` or `waiver-claim`.
   - There's no zero-impact test for adds (a drop can't be undone), so **Jack's first real claim or add is the live test of this path**.
+
+## ADR-015: players & trends from free ESPN sources (2026-10-19)
+
+- **Game logs:** ESPN's public athlete game log (`site.web.api.espn.com/.../athletes/{id}/gamelog`), no cookies. Athlete ids match fantasy ids.
+  - Each game is scored with the league's own scoring map, so player pages show _league_ fantasy points.
+  - Season averages are regular season only. "Last 5" includes playoffs.
+  - Before a player's first regular-season game, the page shows last season's log and says so.
+- **Trends:**
+  - **Hot & cold:** ESPN's last-7-day average vs projection, with at least 2 games in the window.
+  - **Free agents being added:** ESPN ownership change.
+  - **Minutes opening up:** a rule, not a model. For each NBA team with a projected 28+ FP/G player ruled out, list the healthy free agents on that team who share a position group (G/F/C).
+- **Usage rate is not shown.** The free game log doesn't include it, and it won't be estimated. It comes later with the data warehouse.

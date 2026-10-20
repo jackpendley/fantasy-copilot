@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLiveRosters, parseMatchups } from "../src/index";
+import { parseLiveRosters, parseMatchups, playerIdsFilter } from "../src/index";
 
 // Synthetic: the shape of an mMatchupScore + mBoxscore response, made-up numbers.
 const data = {
@@ -15,7 +15,27 @@ const data = {
         rosterForCurrentScoringPeriod: {
           appliedStatTotal: 42.5,
           entries: [
-            { playerId: 101, lineupSlotId: 0, playerPoolEntry: { id: 101, appliedStatTotal: 30 } },
+            {
+              playerId: 101,
+              lineupSlotId: 0,
+              playerPoolEntry: {
+                id: 101,
+                appliedStatTotal: 30,
+                player: {
+                  stats: [
+                    // PTS 0, REB 6, AST 3, FGM 13, FGA 14, MIN 40
+                    {
+                      id: "05401",
+                      statSourceId: 0,
+                      statSplitTypeId: 5,
+                      scoringPeriodId: 9,
+                      appliedTotal: 30,
+                      stats: { 0: 20, 6: 8, 3: 5, 13: 8, 14: 15, 40: 34 },
+                    },
+                  ],
+                },
+              },
+            },
             {
               playerId: 102,
               lineupSlotId: 12,
@@ -36,6 +56,12 @@ const data = {
   ],
 };
 
+describe("playerIdsFilter", () => {
+  it("never sends a limit (ESPN requires a sort with one)", () => {
+    expect(playerIdsFilter([1, 2])).toEqual({ players: { filterIds: { value: [1, 2] } } });
+  });
+});
+
 describe("live matchup parsing", () => {
   it("reads live totals and points by day, falling back to the settled total", () => {
     const m = parseMatchups(data).find((x) => x.period === 2)!;
@@ -47,9 +73,14 @@ describe("live matchup parsing", () => {
     const live = parseLiveRosters(data, 2);
     expect([...live.keys()]).toEqual([13]);
     expect(live.get(13)).toEqual([
-      { playerId: 101, slot: "PG", points: 30 },
-      { playerId: 102, slot: "BE", points: 12.5 },
-      { playerId: 103, slot: "IR", points: 0 },
+      {
+        playerId: 101,
+        slot: "PG",
+        points: 30,
+        line: { PTS: 20, REB: 8, AST: 5, FGM: 8, FGA: 15, MIN: 34 },
+      },
+      { playerId: 102, slot: "BE", points: 12.5, line: null },
+      { playerId: 103, slot: "IR", points: 0, line: null },
     ]);
   });
 });

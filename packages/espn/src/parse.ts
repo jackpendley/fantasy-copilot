@@ -73,16 +73,48 @@ export interface RosterPlayer {
   last7: StatWindow | null;
   last15: StatWindow | null;
   last30: StatWindow | null;
+  /** This season's single games ESPN sent with him ("05" + gameId entries), oldest first. */
+  games?: GameEntry[];
+}
+
+export interface GameEntry {
+  gameId: number;
+  scoringPeriodId: number;
+  /** Fantasy points in this league's scoring. */
+  points: number;
+  /** Box score by stat abbreviation (PTS, REB, AST, FGM, FGA, MIN...). */
+  line: Record<string, number>;
+}
+
+const rawStats = (obj: Record<string, unknown> | undefined): Record<string, number> => {
+  const raw: Record<string, number> = {};
+  for (const [id, v] of Object.entries(obj ?? {})) {
+    const stat = STAT_BY_ID[Number(id)];
+    if (stat) raw[stat] = Number(v);
+  }
+  return raw;
+};
+
+/** Single-game stat entries: actual (source 0), one scoring period (split 5), keyed "05"+gameId. */
+function gameEntries(stats: Json[]): GameEntry[] {
+  return stats
+    .filter(
+      (x: Json) =>
+        x.statSourceId === 0 && x.statSplitTypeId === 5 && String(x.id ?? "").startsWith("05"),
+    )
+    .map((x: Json) => ({
+      gameId: Number(String(x.id).slice(2)),
+      scoringPeriodId: x.scoringPeriodId,
+      points: Number(x.appliedTotal ?? 0),
+      line: rawStats(x.stats),
+    }))
+    .sort((a: GameEntry, b: GameEntry) => a.scoringPeriodId - b.scoringPeriodId);
 }
 
 function window(stats: Json[], key: string): StatWindow | null {
   const s = stats.find((x: Json) => x.id === key);
   if (!s) return null;
-  const raw: Record<string, number> = {};
-  for (const [id, v] of Object.entries(s.averageStats ?? s.stats ?? {})) {
-    const stat = STAT_BY_ID[Number(id)];
-    if (stat) raw[stat] = Number(v);
-  }
+  const raw = rawStats(s.averageStats ?? s.stats);
   const avg = typeof s.appliedAverage === "number" ? s.appliedAverage : null;
   const total = typeof s.appliedTotal === "number" ? s.appliedTotal : null;
   if (avg === null && total === null) return null;
@@ -114,6 +146,7 @@ export function parsePlayer(
     last7: window(stats, statKey(0, 1, season)),
     last15: window(stats, statKey(0, 2, season)),
     last30: window(stats, statKey(0, 3, season)),
+    games: gameEntries(stats),
   };
 }
 
@@ -263,6 +296,8 @@ export interface LiveEntry {
   slot: string;
   /** Fantasy points so far today. */
   points: number;
+  /** Today's box score (PTS, REB, AST, FGM, FGA, MIN...), once his game has started. */
+  line: Record<string, number> | null;
 }
 
 /**
@@ -282,6 +317,7 @@ export function parseLiveRosters(data: Json, matchupPeriod: number): Map<number,
           playerId: e.playerId ?? e.playerPoolEntry?.id ?? e.playerPoolEntry?.player?.id,
           slot: SLOT_BY_ID[e.lineupSlotId] ?? String(e.lineupSlotId),
           points: Number(e.playerPoolEntry?.appliedStatTotal ?? 0),
+          line: gameEntries(e.playerPoolEntry?.player?.stats ?? []).at(-1)?.line ?? null,
         })),
       );
     }

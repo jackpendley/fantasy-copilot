@@ -1,5 +1,7 @@
-import { Lock } from "lucide-react";
+import { Fragment } from "react";
+import { Lock, TrendingDown, TrendingUp } from "lucide-react";
 import type { DayRow } from "@/lib/nba/day";
+import { statLine, type LiveRow } from "@/lib/nba/live";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SlotChip } from "./bits";
@@ -7,13 +9,13 @@ import { PlayerAvatar } from "./player-avatar";
 import { Pill, StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
 
-function GameLine({ row }: { row: DayRow }) {
+function GameLine({ row, live }: { row: DayRow; live?: LiveRow }) {
   const g = row.game;
   if (!g) return <span className="text-muted-foreground">No game</span>;
   const when =
     g.state === "pre" ? fmtTip(g.tip) : g.detail || (g.state === "post" ? "Final" : "Live");
   return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+    <span className="inline-flex flex-wrap items-center gap-x-1.5 whitespace-nowrap">
       <span className="text-muted-foreground">{g.home ? "vs" : "@"}</span>
       <TeamLogo abbr={g.opponent} size={16} />
       <span className="font-medium">{g.opponent}</span>
@@ -22,31 +24,87 @@ function GameLine({ row }: { row: DayRow }) {
       >
         {when}
       </span>
+      {live?.score && (
+        <span className="text-muted-foreground tabular-nums">
+          {live.score.us}-{live.score.them}
+        </span>
+      )}
     </span>
   );
 }
 
-/** One roster player for a day: slot, headshot, status, game and projection. */
-export function PlayerRow({ row }: { row: DayRow }) {
-  const moved = row.recommendedSlot !== row.currentSlot;
+/** Live/final: big points, then the projection with an arrow when he's well off it. */
+function Points({ live }: { live: LiveRow }) {
+  const final = live.row.game?.state === "post";
+  return (
+    <>
+      <div
+        className={cn(
+          "text-base font-semibold tabular-nums",
+          live.row.game?.state === "in" && "text-success",
+        )}
+      >
+        {fmtPts(live.points)}
+      </div>
+      <div
+        className="flex items-center justify-end gap-0.5 text-[10px] text-muted-foreground tabular-nums"
+        title={
+          final
+            ? `Projected ${fmtPts(live.pregame)} before the game`
+            : `Projected ${fmtPts(live.projected)} now (${fmtPts(live.pregame)} before the game)`
+        }
+      >
+        {live.trend === "up" && (
+          <TrendingUp className="size-3 text-success" aria-label="Above projection" />
+        )}
+        {live.trend === "down" && (
+          <TrendingDown className="size-3 text-danger" aria-label="Below projection" />
+        )}
+        proj {fmtPts(final ? live.pregame : live.projected)}
+      </div>
+    </>
+  );
+}
+
+/**
+ * One roster player for a day: slot, headshot, status, game and projection. With live data
+ * (his game has started) it shows his box score and points, ESPN-app style.
+ * `showMoves`: show the optimizer's slot change (your team); off for an opponent's lineup.
+ */
+export function PlayerRow({
+  row,
+  live,
+  showMoves = true,
+}: {
+  row: DayRow;
+  live?: LiveRow;
+  showMoves?: boolean;
+}) {
+  const moved = showMoves && row.recommendedSlot !== row.currentSlot;
   const idle = !row.game;
+  const started = Boolean(live && row.game && row.game.state !== "pre");
+  const box = started ? statLine(live!.line) : null;
   return (
     <div
       className={cn(
         "flex items-center gap-3 px-3 py-2.5",
         moved && "bg-primary/5",
+        row.game?.state === "in" && started && "bg-success/5",
         idle && "opacity-55",
       )}
     >
       <div className="w-11 shrink-0 text-center">
-        <SlotChip slot={row.currentSlot} to={moved ? row.recommendedSlot : undefined} />
+        <SlotChip
+          slot={showMoves ? row.currentSlot : (live?.slot ?? row.currentSlot)}
+          to={moved ? row.recommendedSlot : undefined}
+        />
       </div>
       <PlayerAvatar id={row.player.id} name={row.player.name} size={40} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate font-medium">{row.player.name}</span>
           <StatusPill status={row.status} note={row.injuryNote} />
-          {row.nba?.starter && (
+          {!started && row.nba?.starter && (
             <Pill
               tone="success"
               title={
@@ -64,25 +122,38 @@ export function PlayerRow({ row }: { row: DayRow }) {
           )}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <span className="inline-flex items-center gap-1">
-            <TeamLogo abbr={row.player.proTeam} size={14} />
-            {row.player.positions.join("/")}
-          </span>
+          {box ? (
+            <span className="text-foreground/80 tabular-nums">
+              {box.split(" · ").map((t, i) => (
+                <Fragment key={t}>
+                  {i > 0 && " · "}
+                  <span className="whitespace-nowrap">{t}</span>
+                </Fragment>
+              ))}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <TeamLogo abbr={row.player.proTeam} size={14} />
+              {row.player.positions.join("/")}
+            </span>
+          )}
           <span className="sm:hidden">
-            <GameLine row={row} />
+            <GameLine row={row} live={live} />
           </span>
-          {row.injuryNote && (
+          {!box && row.injuryNote && (
             <span className="hidden max-w-sm truncate sm:inline" title={row.injuryNote}>
               {row.injuryNote}
             </span>
           )}
         </div>
       </div>
-      <div className="hidden w-52 shrink-0 text-sm sm:block">
-        <GameLine row={row} />
+      <div className="hidden w-56 shrink-0 text-sm sm:block">
+        <GameLine row={row} live={live} />
       </div>
-      <div className="w-14 shrink-0 text-right">
-        {row.game ? (
+      <div className="w-16 shrink-0 text-right">
+        {started ? (
+          <Points live={live!} />
+        ) : row.game ? (
           <>
             <div className="text-base font-semibold tabular-nums">{fmtPts(row.value)}</div>
             {row.playProb < 1 && row.playProb > 0 && (

@@ -18,6 +18,18 @@ export function gameElapsed(g: Pick<ScoreboardGame, "state" | "period" | "clock"
 
 export const isStarting = (slot: string) => slot !== "BE" && slot !== "IR";
 
+export type Trend = "up" | "down" | null;
+
+/**
+ * Running well above or below the pregame projection: at least 5 points and 20% away.
+ * Small projections need the 5 points; big ones need the 20%.
+ */
+export function trendOf(pregame: number, projected: number): Trend {
+  const gap = projected - pregame;
+  const bar = Math.max(5, 0.2 * pregame);
+  return gap >= bar ? "up" : gap <= -bar ? "down" : null;
+}
+
 export interface LiveRow {
   row: DayRow;
   /** Today's slot as ESPN has it. */
@@ -26,6 +38,13 @@ export interface LiveRow {
   points: number;
   /** Projected points still to come today (0 on the bench or once his game is over). */
   toCome: number;
+  /** Expected points before tip (fixed for the day: today's game doesn't feed it). */
+  pregame: number;
+  /** Points so far plus the unplayed share of the pregame projection; final once it's over. */
+  projected: number;
+  trend: Trend;
+  /** Today's box score from ESPN, once his game has started. */
+  line: Record<string, number> | null;
   /** His team's score and the opponent's, once the game has started. */
   score: { us: number; them: number } | null;
   elapsed: number;
@@ -50,12 +69,19 @@ export function liveRows(
           ? { us: sb.homeScore, them: sb.awayScore }
           : { us: sb.awayScore, them: sb.homeScore }
         : null;
+    const points = entry?.points ?? 0;
+    const started = Boolean(row.game && row.game.state !== "pre");
+    const projected = started ? points + row.value * (1 - elapsed) : row.value;
     return {
       row,
       slot,
       starting,
-      points: entry?.points ?? 0,
+      points,
       toCome: starting && row.game ? row.value * (1 - elapsed) : 0,
+      pregame: row.value,
+      projected,
+      trend: started ? trendOf(row.value, projected) : null,
+      line: entry?.line ?? null,
       score,
       elapsed,
     };
@@ -69,4 +95,19 @@ export function sortLive(rows: LiveRow[]): LiveRow[] {
   return [...rows].sort(
     (a, b) => rank(a) - rank(b) || b.points - a.points || b.row.value - a.row.value,
   );
+}
+
+/** ESPN-app style box score: "13 PTS · 4 REB · 11 AST · 6-23 FG · 0-7 3PT · 2 TO · 38 MIN". */
+export function statLine(line: Record<string, number> | null): string | null {
+  if (!line) return null;
+  const n = (k: string) => line[k] ?? 0;
+  const parts = [`${n("PTS")} PTS`, `${n("REB")} REB`, `${n("AST")} AST`];
+  if (n("STL")) parts.push(`${n("STL")} STL`);
+  if (n("BLK")) parts.push(`${n("BLK")} BLK`);
+  parts.push(`${n("FGM")}-${n("FGA")} FG`);
+  if (n("3PA")) parts.push(`${n("3PM")}-${n("3PA")} 3PT`);
+  if (n("FTA")) parts.push(`${n("FTM")}-${n("FTA")} FT`);
+  if (n("TO")) parts.push(`${n("TO")} TO`);
+  parts.push(`${n("MIN")} MIN`);
+  return parts.join(" · ");
 }

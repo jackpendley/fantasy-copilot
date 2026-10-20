@@ -196,3 +196,35 @@ describe("week", () => {
     expect(winProbability(900, 0, 800, 0)).toBe(1);
   });
 });
+
+describe("perGameProjection as of a day", () => {
+  // Synthetic: projected 30/g; 2 games played (20 and 40 points), the second on day 5.
+  const p = {
+    id: 1,
+    name: "X",
+    proTeamId: 1,
+    proTeam: "X",
+    positions: ["PG"],
+    slot: "BE",
+    injuryStatus: "ACTIVE",
+    percentOwned: 0,
+    percentChange: 0,
+    projection: { avg: 30, total: 2100, stats: {} },
+    season: { avg: 30, total: 60, stats: {} },
+    last7: null,
+    last15: null,
+    last30: null,
+    games: [
+      { gameId: 1, scoringPeriodId: 3, points: 20, line: {} },
+      { gameId: 2, scoringPeriodId: 5, points: 40, line: {} },
+    ],
+  };
+  it("leaves out games from that day on", () => {
+    const before = perGameProjection(p, 5);
+    expect(before.gamesPlayed).toBe(1);
+    // 1 game at 20 vs projection 30, shrunk with 15 prior games: (20 + 15*30) / 16
+    expect(before.fppg).toBeCloseTo((20 + 15 * 30) / 16, 6);
+    expect(perGameProjection(p).gamesPlayed).toBe(2);
+    expect(perGameProjection(p, 3).source).toBe("projection");
+  });
+});

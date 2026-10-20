@@ -1,4 +1,5 @@
-import { PageHeader, SectionTitle, SlotChip } from "@/components/fc/bits";
+import { PageHeader, SectionTitle } from "@/components/fc/bits";
+import { PlayerRow } from "@/components/fc/player-row";
 import { LiveRefresh } from "@/components/live-refresh";
 import { WinChart } from "@/components/win-chart";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
@@ -19,31 +20,12 @@ import { dbConfigured } from "@/lib/db";
 import { liveRows, sortLive, type LiveRow } from "@/lib/nba/live";
 import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
-import { fmtPts, fmtTip } from "@/lib/format";
+import { fmtPts } from "@/lib/format";
 import { matchupView } from "@/lib/nba/matchup";
 import { cn } from "@/lib/utils";
 import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
-
-function GameNote({ r }: { r: LiveRow }) {
-  const g = r.row.game;
-  if (!g) return <span>No game</span>;
-  const when = g.state === "pre" ? fmtTip(g.tip) : g.state === "post" ? "Final" : g.detail;
-  return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap">
-      {g.home ? "vs" : "@"}
-      <TeamLogo abbr={g.opponent} size={12} />
-      {g.opponent}
-      <span className={cn(g.state === "in" && "font-semibold text-success")}>· {when}</span>
-      {r.score && (
-        <span className="tabular-nums">
-          · {r.score.us}-{r.score.them}
-        </span>
-      )}
-    </span>
-  );
-}
 
 /** One side's players today: who's starting, live fantasy points, and what's still to come. */
 function TodaySide({ title, rows }: { title: string; rows: LiveRow[] }) {
@@ -62,36 +44,7 @@ function TodaySide({ title, rows }: { title: string; rows: LiveRow[] }) {
       </div>
       <div className="divide-y overflow-hidden rounded-xl border bg-card">
         {starters.map((r) => (
-          <div
-            key={r.row.player.id}
-            className={cn(
-              "flex items-center gap-2.5 px-3 py-2",
-              !r.row.game && "opacity-55",
-              r.row.game?.state === "in" && "bg-success/5",
-            )}
-          >
-            <div className="w-10 shrink-0 text-center">
-              <SlotChip slot={r.slot} />
-            </div>
-            <PlayerAvatar id={r.row.player.id} name={r.row.player.name} size={32} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-medium">{r.row.player.name}</span>
-                <StatusPill status={r.row.status} note={r.row.injuryNote} />
-              </div>
-              <div className="text-[11px] text-muted-foreground">
-                <GameNote r={r} />
-              </div>
-            </div>
-            <div className="shrink-0 text-right tabular-nums">
-              <div className="font-semibold">
-                {r.row.game && r.row.game.state !== "pre" ? fmtPts(r.points) : "—"}
-              </div>
-              {r.toCome > 0.05 && (
-                <div className="text-[11px] text-muted-foreground">+{fmtPts(r.toCome)}</div>
-              )}
-            </div>
-          </div>
+          <PlayerRow key={r.row.player.id} row={r.row} live={r} showMoves={false} />
         ))}
         {benchPts !== 0 && (
           <div className="px-3 py-2 text-xs text-muted-foreground">
@@ -237,7 +190,7 @@ export default async function WeekPage() {
           <SectionTitle aside="ESPN fantasy points; + is projected still to come">
             Today
           </SectionTitle>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <TodaySide title={data.me.name} rows={myLive} />
             <TodaySide title={opp.name} rows={oppLive} />
           </div>

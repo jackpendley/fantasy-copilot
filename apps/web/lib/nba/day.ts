@@ -143,7 +143,7 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       ? `Inactive (NBA.com)${injury.note ? ` · ${injury.note}` : ""}`
       : injury.note;
     const playProb = game ? playProbability(status) : 0;
-    const projection = perGameProjection(player);
+    const projection = perGameProjection(player, input.games[0]?.scoringPeriodId);
     return {
       player,
       game,

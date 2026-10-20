@@ -2,6 +2,7 @@ import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { ApplyMoves } from "@/components/apply-moves";
 import { Callout, DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerRow } from "@/components/fc/player-row";
+import { LiveRefresh } from "@/components/live-refresh";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
   LAST_SCORING_PERIOD,
@@ -11,21 +12,32 @@ import {
   matchupPeriodOf,
   scoringPeriodForDate,
 } from "@/lib/nba/calendar";
-import { loadLeague } from "@/lib/nba/data";
+import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
+import { liveRows, type LiveRow } from "@/lib/nba/live";
 import { buildDayBoard, type DayRow } from "@/lib/nba/day";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip, slotRank } from "@/lib/format";
 
 const isStarting = (slot: string) => slot !== "BE" && slot !== "IR";
 
-function Group({ title, rows, aside }: { title: string; rows: DayRow[]; aside?: string }) {
+function Group({
+  title,
+  rows,
+  aside,
+  live,
+}: {
+  title: string;
+  rows: DayRow[];
+  aside?: string;
+  live: Map<number, LiveRow>;
+}) {
   if (!rows.length) return null;
   return (
     <section className="space-y-1.5">
       <SectionTitle aside={aside}>{title}</SectionTitle>
       <div className="divide-y overflow-hidden rounded-xl border bg-card">
         {rows.map((r) => (
-          <PlayerRow key={r.player.id} row={r} />
+          <PlayerRow key={r.player.id} row={r} live={live.get(r.player.id)} />
         ))}
       </div>
     </section>
@@ -42,9 +54,13 @@ export default async function TodayPage({
   const date = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : today;
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
 
-  let data;
+  let data, liveRosters;
   try {
-    data = await loadLeague(sp, date);
+    [data, liveRosters] = await Promise.all([
+      loadLeague(sp, date),
+      // Live box scores are a bonus: the page works without them.
+      loadLiveRosters(sp, matchupPeriodOf(sp)).catch(() => null),
+    ]);
   } catch (e) {
     if (e instanceof SetupError) return <SetupNotice message={e.message} />;
     return <ErrorNotice title="Couldn't load the league" message={(e as Error).message} />;
@@ -59,6 +75,29 @@ export default async function TodayPage({
     injuries: data.injuries,
     lineups: data.lineups,
   });
+  const live = new Map(
+    liveRows(board.rows, liveRosters?.get(data.me.id), data.scoreboard).map((r) => [
+      r.row.player.id,
+      r,
+    ]),
+  );
+  // Once games start: points in the slots that count, and the projected final for the day
+  // (locked starters' live projection + the best lineup among players still to play).
+  const counting = board.rows.filter((r) =>
+    r.locked
+      ? isStarting(live.get(r.player.id)?.slot ?? r.currentSlot)
+      : isStarting(r.recommendedSlot),
+  );
+  const anyStarted = board.rows.some((r) => r.locked);
+  const scored = counting.reduce(
+    (a, r) => a + (r.locked ? (live.get(r.player.id)?.points ?? 0) : 0),
+    0,
+  );
+  const projectedFinal = counting.reduce(
+    (a, r) => a + (r.locked ? (live.get(r.player.id)?.projected ?? 0) : r.value),
+    0,
+  );
+  const gamesLive = board.rows.some((r) => r.game?.state === "in");
   const order = (a: DayRow, b: DayRow) =>
     slotRank(a.recommendedSlot) - slotRank(b.recommendedSlot) || b.value - a.value;
   const starters = board.rows.filter((r) => isStarting(r.recommendedSlot)).sort(order);
@@ -89,19 +128,37 @@ export default async function TodayPage({
         </Callout>
       ))}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px] lg:items-start">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px] lg:items-start">
         <div className="space-y-4 lg:order-2 lg:sticky lg:top-20">
           {/* Summary: the number that matters today and the one action to take. */}
           <div className="rounded-xl border bg-card p-4">
-            <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Projected today
-            </div>
-            <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                {fmtPts(board.moves.length ? board.optimalPoints : board.currentPoints)}
-              </span>
-              <span className="text-sm text-muted-foreground">pts</span>
-            </div>
+            {anyStarted ? (
+              <>
+                <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  {gamesLive ? "Scored so far" : "Scored today"}
+                </div>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                    {fmtPts(scored)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    pts · proj {fmtPts(projectedFinal)}
+                  </span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                  Projected today
+                </div>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                    {fmtPts(board.moves.length ? board.optimalPoints : board.currentPoints)}
+                  </span>
+                  <span className="text-sm text-muted-foreground">pts</span>
+                </div>
+              </>
+            )}
             {board.moves.length === 0 ? (
               <div className="mt-3 flex items-center gap-1.5 text-sm font-medium text-success">
                 <CheckCircle2 className="size-4" /> Lineup is optimal
@@ -161,15 +218,24 @@ export default async function TodayPage({
         </div>
 
         <div className="space-y-4 lg:order-1">
-          <Group title="Starters" rows={starters} aside={`${fmtPts(board.optimalPoints)} proj`} />
-          <Group title="Bench" rows={bench} />
-          <Group title="IR" rows={ir} />
+          <Group
+            title="Starters"
+            rows={starters}
+            aside={`${fmtPts(board.optimalPoints)} proj`}
+            live={live}
+          />
+          <Group title="Bench" rows={bench} live={live} />
+          <Group title="IR" rows={ir} live={live} />
           <p className="px-1 text-xs text-muted-foreground">
             Projections: ESPN&apos;s league-scored projection, blended toward this season&apos;s
-            average. Injury chances are rough priors until the availability model ships.
+            average (as of the morning: tonight&apos;s game doesn&apos;t move it). Live: points so
+            far, then &ldquo;proj&rdquo; = points so far plus the unplayed share of his pregame
+            projection; finals show the pregame projection. Arrows mark 5+ points and 20%+ off it.
+            Injury chances are rough priors until the availability model ships.
           </p>
         </div>
       </div>
+      <LiveRefresh active={gamesLive} />
     </>
   );
 }

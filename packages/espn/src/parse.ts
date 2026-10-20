@@ -66,6 +66,8 @@ export interface RosterPlayer {
   slot: string | null;
   injuryStatus: string | null;
   percentOwned: number | null;
+  /** Change in league-wide ownership over the last week (percentage points). */
+  percentChange: number | null;
   projection: StatWindow | null;
   season: StatWindow | null;
   last7: StatWindow | null;
@@ -106,6 +108,7 @@ export function parsePlayer(
     slot: slotId != null ? (SLOT_BY_ID[slotId] ?? null) : null,
     injuryStatus: entryInjury ?? player.injuryStatus ?? null,
     percentOwned: player.ownership?.percentOwned ?? null,
+    percentChange: player.ownership?.percentChange ?? null,
     projection: window(stats, statKey(1, 0, season)),
     season: window(stats, statKey(0, 0, season)),
     last7: window(stats, statKey(0, 1, season)),
@@ -123,7 +126,12 @@ export interface FantasyTeam {
   losses: number;
   pointsFor: number;
   /** Season-to-date lineup moves and waiver adds (`transactionCounter`), when ESPN sends it. */
-  activity: { lineupMoves: number; adds: number } | null;
+  activity: {
+    lineupMoves: number;
+    adds: number;
+    /** Adds made in each matchup week (the weekly cap counts these). */
+    addsByPeriod: Record<number, number>;
+  } | null;
   roster: RosterPlayer[];
 }
 
@@ -141,6 +149,12 @@ export function parseTeams(data: Json): FantasyTeam[] {
       ? {
           lineupMoves: t.transactionCounter.moveToActive ?? 0,
           adds: t.transactionCounter.acquisitions ?? 0,
+          addsByPeriod: Object.fromEntries(
+            Object.entries(t.transactionCounter.matchupAcquisitionTotals ?? {}).map(([k, v]) => [
+              Number(k),
+              Number(v),
+            ]),
+          ),
         }
       : null,
     roster: (t.roster?.entries ?? []).map((e: Json) =>
@@ -208,4 +222,22 @@ export function parsePlayerPool(data: Json, season: number): RosterPlayer[] {
     .map((e: Json) => e.player ?? e.playerPoolEntry?.player)
     .filter(Boolean)
     .map((p: Json) => parsePlayer(p, season));
+}
+
+export interface FreeAgent {
+  player: RosterPlayer;
+  /** FREEAGENT: add now. WAIVERS: claim; it processes at `waiverUntil`. */
+  status: "FREEAGENT" | "WAIVERS";
+  waiverUntil: number | null;
+}
+
+/** Free agents and waiver players from a `kona_player_info` query with `freeAgentFilter`. */
+export function parseFreeAgents(data: Json, season: number): FreeAgent[] {
+  return (data?.players ?? [])
+    .filter((e: Json) => e.player && (e.status === "FREEAGENT" || e.status === "WAIVERS"))
+    .map((e: Json) => ({
+      player: parsePlayer(e.player, season),
+      status: e.status,
+      waiverUntil: e.status === "WAIVERS" ? (e.waiverProcessDate ?? null) : null,
+    }));
 }

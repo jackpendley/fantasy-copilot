@@ -1,0 +1,59 @@
+import "server-only";
+// Everything the waivers page and the add/drop API need, computed the same way for both,
+// so the server can re-check a move against fresh data before writing it.
+
+import { isStartingSlot } from "@fantasy-copilot/fantasy-core";
+import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
+import { loadFreeAgents, loadLeague } from "./data";
+import { buildDayBoard } from "./day";
+import { matchupView } from "./matchup";
+import { waiverAnalysis } from "./waivers";
+
+export async function loadWaiverView(now = new Date()) {
+  const date = etDate(now);
+  const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
+  const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
+  const view = matchupView(data, sp);
+
+  const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
+  const board = buildDayBoard({
+    roster: data.me.roster,
+    slotCounts: data.settings.slotCounts,
+    games: todayGames,
+    scoreboard: data.scoreboard,
+    injuries: data.injuries,
+    lineups: data.lineups,
+    now,
+  });
+  const lockedToday = new Set(board.rows.filter((r) => r.locked).map((r) => r.player.id));
+  const live = new Map(data.scoreboard.map((g) => [g.gameId, g]));
+  const startedToday = new Set<number>();
+  for (const g of todayGames) {
+    const s = live.get(g.gameId);
+    const started = s ? s.state !== "pre" : g.date <= now.getTime();
+    if (started) {
+      startedToday.add(g.homeProTeamId);
+      startedToday.add(g.awayProTeamId);
+    }
+  }
+  const rosterLimit = Object.entries(data.settings.slotCounts)
+    .filter(([slot]) => slot !== "IR")
+    .reduce((a, [slot, n]) => a + (isStartingSlot(slot) || slot === "BE" ? n : 0), 0);
+
+  const analysis = waiverAnalysis({
+    roster: data.me.roster,
+    freeAgents,
+    week: view.weekInputs,
+    myBanked: view.myBanked,
+    oppBanked: view.oppBanked,
+    myRemaining: view.mine.remaining,
+    oppRemaining: view.theirs?.remaining ?? null,
+    lockedToday,
+    startedToday,
+    rosterLimit,
+    lastDay: LAST_SCORING_PERIOD,
+  });
+  const addsCap = data.settings.addsPerWeek ?? 3;
+  const addsUsed = data.me.activity?.addsByPeriod[view.mp] ?? 0;
+  return { sp, date, data, view, freeAgents, analysis, lockedToday, addsCap, addsUsed };
+}

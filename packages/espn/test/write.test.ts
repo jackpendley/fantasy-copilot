@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { lineupTransactionBody, submitLineup } from "../src/index";
+import { addDropBody, lineupTransactionBody, submitAddDrop, submitLineup } from "../src/index";
 
 // Synthetic config: no real credentials. These tests never reach ESPN (fetch is mocked).
 const cfg = { s2: "S2", swid: "{SWID}", leagueId: 1, season: 2027 };
@@ -76,5 +76,39 @@ describe("submitLineup", () => {
       fetchImpl as typeof fetch,
     );
     expect(res).toMatchObject({ ok: false, httpStatus: 409, code: "TRAN_LINEUP_LOCKED" });
+  });
+});
+
+describe("addDropBody", () => {
+  it("adds a free agent and drops a player in one FREEAGENT transaction", () => {
+    expect(addDropBody(cfg, 13, 5, { addId: 1, dropId: 2, claim: false })).toEqual({
+      isLeagueManager: false,
+      teamId: 13,
+      type: "FREEAGENT",
+      memberId: "{SWID}",
+      scoringPeriodId: 5,
+      executionType: "EXECUTE",
+      items: [
+        { playerId: 1, type: "ADD", toTeamId: 13 },
+        { playerId: 2, type: "DROP", fromTeamId: 13 },
+      ],
+    });
+  });
+  it("queues a WAIVER claim, and allows add-only with an open roster spot", () => {
+    const body = addDropBody(cfg, 13, 5, { addId: 1, dropId: null, claim: true });
+    expect(body.type).toBe("WAIVER");
+    expect(body.items).toEqual([{ playerId: 1, type: "ADD", toTeamId: 13 }]);
+  });
+  it("accepts ESPN's PENDING status for queued claims", async () => {
+    const fetchImpl = async () =>
+      new Response(JSON.stringify({ status: "PENDING" }), { status: 200 });
+    const res = await submitAddDrop(
+      cfg,
+      13,
+      5,
+      { addId: 1, dropId: 2, claim: true },
+      fetchImpl as typeof fetch,
+    );
+    expect(res).toMatchObject({ ok: true, code: "PENDING" });
   });
 });

@@ -10,7 +10,7 @@ import {
   shortDay,
 } from "@/lib/nba/calendar";
 import { buildDayBoard } from "@/lib/nba/day";
-import { perGameProjection } from "@/lib/nba/projection";
+import { minutesTrend, perGameProjection } from "@/lib/nba/projection";
 import { projectTeamWeek, winProbability } from "@/lib/nba/week";
 
 // Anonymized 2026-27 league fixture (packages/espn): team 13's real draft-day roster.
@@ -226,5 +226,41 @@ describe("perGameProjection as of a day", () => {
     expect(before.fppg).toBeCloseTo((20 + 15 * 30) / 16, 6);
     expect(perGameProjection(p).gamesPlayed).toBe(2);
     expect(perGameProjection(p, 3).source).toBe("projection");
+  });
+});
+
+describe("minutes trend", () => {
+  // Synthetic: 10 games, the last 5 at 36 minutes after 5 at 24 (a bigger role).
+  const games = Array.from({ length: 10 }, (_, i) => ({
+    gameId: i,
+    scoringPeriodId: i + 1,
+    points: 25,
+    line: { MIN: i < 5 ? 24 : 36 },
+  }));
+  const p = {
+    id: 1,
+    name: "X",
+    proTeamId: 1,
+    proTeam: "X",
+    positions: ["PG"],
+    slot: "BE",
+    injuryStatus: "ACTIVE",
+    percentOwned: 0,
+    percentChange: 0,
+    projection: { avg: 25, total: 25 * 70, stats: {} },
+    season: { avg: 25, total: 250, stats: {} },
+    last7: null,
+    last15: null,
+    last30: null,
+    games,
+  };
+  it("scales up for a rising role (half strength, clipped)", () => {
+    // ratio 36 / 30 = 1.2 -> factor 1.1
+    expect(minutesTrend(p)).toBeCloseTo(1.1, 6);
+    expect(perGameProjection(p).fppg).toBeCloseTo(25 * 1.1, 6);
+  });
+  it("needs 8 games before the day, and ignores later games", () => {
+    expect(minutesTrend(p, 8)).toBe(1); // only 7 games before day 8
+    expect(minutesTrend({ ...p, games: games.slice(0, 5) })).toBe(1);
   });
 });

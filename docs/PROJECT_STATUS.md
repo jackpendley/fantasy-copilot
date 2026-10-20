@@ -29,13 +29,27 @@
   - Auto-refreshes every minute during games.
   - **First real test is the opener (Oct 20):** check that live points match ESPN's app.
 
-- **League & trades (branch `league-trades`), the League tab:**
+- **League & trades, the League tab:**
   - `/nba/league`: standings, pts/wk strength, power rank, playoff and title odds.
   - `/nba/league/[id]`: team rosters.
   - `/nba/league/trades`:
     - trade analyzer (starting-point changes for both sides, raw gap, a "Simulate" button for playoff and title odds);
     - 1-for-1 trade targets across the league (ADR-017).
   - Settings moved to the header gear on phones.
+
+- **League & trades (PR #12)** shipped.
+- **Live stat lines (branch `today-live`):**
+  - Today and Matchup rows show ESPN box scores, live and final points, and the fixed pregame projection plus the updated projection with ▲/▼ (ADR-018).
+  - Fixed `playerIdsFilter`: ESPN rejects a limit without a sort.
+
+## Plan in progress (approved 2026-10-20)
+
+`~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
+
+- PR 1: Today live stat lines (this branch).
+- PR 2: realistic trades up to 3-for-3 (market value from ESPN + league draft).
+- PR 3: steadier Outlook (common random numbers, 2,000 seasons, "What changed").
+- PR 4: model backtests and free data sources.
 
 ## Deferred (Jack's call)
 

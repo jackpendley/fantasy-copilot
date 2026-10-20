@@ -39,7 +39,7 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   const startsByDay = new Map<number, Set<number>>();
   const gamesByDay = new Map<number, Set<number>>();
   const projectedByDay = new Map<number, number>();
-  const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p).fppg]));
+  const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, input.fromPeriod).fppg]));
   let remaining = 0;
   for (const sp of input.periods) {
     const teams = new Set(

@@ -155,3 +155,13 @@
 - **Power rankings** order teams by starting points per remaining regular-season week. Playoff and title odds come from the latest nightly outlook run.
 - **Navigation:** a League tab (standings → team → trades). On phones, Settings moved to a header gear, so the tab bar stays at 6.
 - **Not yet:** 2-for-1 targets, or manager tendencies (who accepts trades, what they value).
+
+## ADR-018: live stat lines and a fixed pregame projection (2026-10-20)
+
+- **Box scores:** each player's box score comes from ESPN's `mBoxscore` view (`stats` entry: source 0, split 5, keyed `"05"+gameId`). It's the same source as the live points, so the two always agree.
+- **Fixed pregame projection:** `perGameProjection(p, asOf)` ignores games from the `asOf` scoring period on. ESPN folds a game into the season line as soon as it's played; without this, a player's "projection" would chase his own game.
+  - The day board and the week projection pass today's period.
+  - Example: Tatum scored 8 on opening night, and his pregame projection stayed 34.0.
+- **Updated projection while live:** points so far + pregame × unplayed share of regulation. Once final, the pregame projection is shown under the final score.
+- **Arrows (▲/▼):** shown when the updated (or final) number is at least 5 points **and** 20% away from the pregame projection. Small projections need the 5 points; big ones need the 20%.
+- **Assumption, to confirm during a live game:** ESPN's season line already includes a game in progress. If it doesn't, the pregame projection only dips during that game and is right again at the final.

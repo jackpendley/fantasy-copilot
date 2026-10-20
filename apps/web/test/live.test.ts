@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import type { DayRow } from "@/lib/nba/day";
-import { gameElapsed, liveRows, sortLive } from "@/lib/nba/live";
+import { gameElapsed, liveRows, sortLive, statLine, trendOf } from "@/lib/nba/live";
 
 describe("gameElapsed", () => {
   const g = (state: ScoreboardGame["state"], period: number, clock: string) => ({
@@ -86,9 +86,14 @@ describe("liveRows", () => {
   ];
   const scoreboard = [sb(1, "in", 3, "0:00"), sb(2, "post", 4, "0.0"), sb(3, "pre", 0, "")];
   const live = [
-    { playerId: 1, slot: "PG", points: 22 },
-    { playerId: 2, slot: "SG", points: 31.5 },
-    { playerId: 4, slot: "BE", points: 0 },
+    {
+      playerId: 1,
+      slot: "PG",
+      points: 22,
+      line: { PTS: 14, REB: 5, AST: 3, FGM: 6, FGA: 11, MIN: 27 },
+    },
+    { playerId: 2, slot: "SG", points: 31.5, line: null },
+    { playerId: 4, slot: "BE", points: 0, line: null },
   ];
   const rows = liveRows(board, live, scoreboard);
   const by = (id: number) => rows.find((r) => r.row.player.id === id)!;
@@ -107,5 +112,51 @@ describe("liveRows", () => {
   });
   it("sorts live games first, then finals, then later games", () => {
     expect(sortLive(rows).map((r) => r.row.player.id)).toEqual([1, 2, 4, 3, 5]);
+  });
+});
+
+describe("pregame vs updated projection", () => {
+  const board = [row(1, "in", 40), row(2, "post", 30), row(3, "pre", 20)];
+  const scoreboard = [sb(1, "in", 3, "0:00"), sb(2, "post", 4, "0.0"), sb(3, "pre", 0, "")];
+  const live = [
+    { playerId: 1, slot: "PG", points: 22, line: null },
+    { playerId: 2, slot: "SG", points: 45, line: null },
+  ];
+  const rows = liveRows(board, live, scoreboard);
+  const by = (id: number) => rows.find((r) => r.row.player.id === id)!;
+
+  it("projects points so far plus the unplayed share; final once over", () => {
+    expect(by(1)).toMatchObject({ pregame: 40, projected: 32, trend: "down" }); // 22 + 40/4
+    expect(by(2)).toMatchObject({ pregame: 30, projected: 45, trend: "up" });
+    expect(by(3)).toMatchObject({ pregame: 20, projected: 20, trend: null });
+  });
+
+  it("flags only clear gaps: 5+ points and 20%+", () => {
+    expect(trendOf(10, 14)).toBeNull(); // +4: under 5 points
+    expect(trendOf(10, 15)).toBe("up");
+    expect(trendOf(40, 47)).toBeNull(); // +7: under 20%
+    expect(trendOf(40, 48)).toBe("up");
+    expect(trendOf(40, 32)).toBe("down");
+  });
+});
+
+describe("statLine", () => {
+  it("formats like the ESPN app, skipping empty extras", () => {
+    expect(
+      statLine({
+        PTS: 13,
+        REB: 4,
+        AST: 11,
+        FGM: 6,
+        FGA: 23,
+        "3PM": 0,
+        "3PA": 7,
+        FTM: 1,
+        FTA: 1,
+        TO: 2,
+        MIN: 38,
+      }),
+    ).toBe("13 PTS · 4 REB · 11 AST · 6-23 FG · 0-7 3PT · 1-1 FT · 2 TO · 38 MIN");
+    expect(statLine(null)).toBeNull();
   });
 });

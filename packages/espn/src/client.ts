@@ -77,5 +77,6 @@ export const freeAgentFilter = (limit = 300) => ({
 
 /** Specific players by id, whatever their roster status. */
 export const playerIdsFilter = (ids: number[]) => ({
-  players: { filterIds: { value: ids }, limit: ids.length },
+  // ESPN rejects a limit without a sort, so none is sent: the ids already bound the result.
+  players: { filterIds: { value: ids } },
 });

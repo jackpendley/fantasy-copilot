@@ -62,11 +62,12 @@ NFL comes once the NBA app is fully built, then MLB.
 
 ## Phase 6: trades (weeks 5–7)
 
-- [ ] Analyzer: Δ rest-of-season points, lineup fit, ΔP(playoffs/title) for both sides
-- [ ] Target finder: mutually plausible 1-for-1 and 2-for-1 deals, manager profiles
+- [x] Analyzer: Δ starting-lineup points (regular season and playoff weeks) for both sides, raw-value gap, ΔP(playoffs/title) by seeded simulation (ADR-017)
+- [x] Target finder: mutually plausible 1-for-1 deals across the league
+- [ ] 2-for-1 targets; manager profiles (who trades, what they value)
 
 ## Phase 7: league intelligence (week 6+)
 
 - [x] Live matchup: ESPN live points per player, in-game remainders, both teams' starts by day, daily win-chance snapshots (ADR-016)
-- [ ] Standings, weekly power rankings (playoff odds already on Outlook)
+- [x] Standings and power rankings (lineup strength per week), team pages with rosters
 - [ ] Opponent scouting; playoff-schedule planner

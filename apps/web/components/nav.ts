@@ -1,4 +1,12 @@
-import { CalendarCheck, CalendarRange, Settings, TrendingUp, UserPlus, Users } from "lucide-react";
+import {
+  CalendarCheck,
+  CalendarRange,
+  Settings,
+  TrendingUp,
+  Trophy,
+  UserPlus,
+  Users,
+} from "lucide-react";
 
 // One section per sport. NBA is live; NFL and MLB join when they ship.
 export const SPORTS = [
@@ -13,6 +21,7 @@ export const NBA_NAV = [
   { href: "/nba/waivers", label: "Waivers", icon: UserPlus },
   { href: "/nba/players", label: "Players", icon: Users },
   { href: "/nba/outlook", label: "Outlook", icon: TrendingUp },
+  { href: "/nba/league", label: "League", icon: Trophy },
 ] as const;
 
 export const SETTINGS_NAV = { href: "/settings", label: "Settings", icon: Settings } as const;

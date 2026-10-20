@@ -4,17 +4,22 @@ import "server-only";
 
 import { dbConfigured } from "@/lib/db";
 import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
-import { loadLeague } from "./data";
+import { loadDraftPicks, loadFreeAgents, loadLeague } from "./data";
+import { marketContext } from "./market";
 import { latestOutlook } from "./outlook-run";
 import { teamValue, valueContext, type TeamValue } from "./trade";
 
 export async function loadLeagueView(now = new Date()) {
   const date = etDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
-  const [data, outlook] = await Promise.all([
+  const [data, outlook, freeAgents, draftPicks] = await Promise.all([
     loadLeague(sp, date),
     dbConfigured() ? latestOutlook().catch(() => null) : Promise.resolve(null),
+    loadFreeAgents(sp).catch(() => []),
+    loadDraftPicks().catch(() => new Map<number, number>()),
   ]);
+  const free = freeAgents.map((f) => f.player);
+  const market = marketContext([...data.teams.flatMap((t) => t.roster), ...free], draftPicks);
   const ctx = valueContext(
     data.games,
     data.settings.slotCounts,
@@ -37,5 +42,14 @@ export async function loadLeagueView(now = new Date()) {
   }));
   const byStrength = [...teams].sort((a, b) => b.perWeek - a.perWeek);
   const power = new Map(byStrength.map((t, i) => [t.team.id, i + 1]));
-  return { sp, data, ctx, teams, power, outlookAt: outlook?.run_at ?? null };
+  return {
+    sp,
+    data,
+    ctx,
+    teams,
+    power,
+    market,
+    freeAgents: free,
+    outlookAt: outlook?.run_at ?? null,
+  };
 }

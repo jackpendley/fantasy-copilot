@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 const ids = (v: unknown) =>
-  Array.isArray(v) && v.length > 0 && v.length <= 4 && v.every((x) => Number.isInteger(x) && x > 0)
+  Array.isArray(v) && v.length > 0 && v.length <= 3 && v.every((x) => Number.isInteger(x) && x > 0)
     ? (v as number[])
     : null;
 
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   const get = ids(body?.get);
   if (!Number.isInteger(partnerId) || !give || !get) {
     return NextResponse.json(
-      { error: "partnerId, give and get (1-4 player ids each) are required" },
+      { error: "partnerId, give and get (1-3 player ids each) are required" },
       { status: 400 },
     );
   }

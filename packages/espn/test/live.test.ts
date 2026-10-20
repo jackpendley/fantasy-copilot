@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLiveRosters, parseMatchups, playerIdsFilter } from "../src/index";
+import { parseDraftPicks, parseLiveRosters, parseMatchups, playerIdsFilter } from "../src/index";
 
 // Synthetic: the shape of an mMatchupScore + mBoxscore response, made-up numbers.
 const data = {
@@ -81,6 +81,25 @@ describe("live matchup parsing", () => {
       },
       { playerId: 102, slot: "BE", points: 12.5, line: null },
       { playerId: 103, slot: "IR", points: 0, line: null },
+    ]);
+  });
+});
+
+describe("parseDraftPicks", () => {
+  it("maps drafted players to their overall pick, skipping keepers", () => {
+    // Synthetic mDraftDetail shape.
+    const picks = parseDraftPicks({
+      draftDetail: {
+        picks: [
+          { playerId: 11, overallPickNumber: 1, keeper: false },
+          { playerId: 12, overallPickNumber: 2, keeper: true },
+          { playerId: 13, overallPickNumber: 30 },
+        ],
+      },
+    });
+    expect([...picks]).toEqual([
+      [11, 1],
+      [13, 30],
     ]);
   });
 });

@@ -14,6 +14,7 @@ import { espnConfig } from "../env";
 import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
 import { loadLeague } from "./data";
 import { buildOutlookInput } from "./outlook";
+import { applyTrade, valueContext } from "./trade";
 
 export interface OutlookTeam {
   teamId: number;
@@ -156,23 +157,23 @@ export async function simulateTrade(
   if (give.length !== giveIds.length || get.length !== getIds.length) {
     throw new Error("a player in this trade is no longer on that roster");
   }
+  // Same roster balancing as the trade evaluation: uneven trades drop or add players.
+  const freeAgents = parsePlayerPool(faRaw, cfg.season);
+  const ctx = valueContext(
+    data.games,
+    data.settings.slotCounts,
+    fromDay,
+    LAST_SCORING_PERIOD,
+    data.settings.regularSeasonWeeks,
+  );
+  const taken = new Set<number>();
+  const mine = applyTrade(data.me.roster, give, get, ctx, freeAgents, taken);
+  const theirs = applyTrade(partner.roster, get, give, ctx, freeAgents, taken);
   const traded = data.teams.map((t) =>
     t.id === data.me.id
-      ? {
-          ...t,
-          roster: [
-            ...t.roster.filter((p) => !giveIds.includes(p.id)),
-            ...get.map((p) => ({ ...p, slot: "BE" })),
-          ],
-        }
+      ? { ...t, roster: mine.roster }
       : t.id === partnerId
-        ? {
-            ...t,
-            roster: [
-              ...t.roster.filter((p) => !getIds.includes(p.id)),
-              ...give.map((p) => ({ ...p, slot: "BE" })),
-            ],
-          }
+        ? { ...t, roster: theirs.roster }
         : t,
   );
   const run = (teams: FantasyTeam[]) =>
@@ -180,7 +181,7 @@ export async function simulateTrade(
       buildOutlookInput({
         teams,
         previousTeams,
-        freeAgents: parsePlayerPool(faRaw, cfg.season),
+        freeAgents: freeAgents.filter((f) => !taken.has(f.id)),
         games: data.games,
         matchups: data.matchups,
         slotCounts: data.settings.slotCounts,

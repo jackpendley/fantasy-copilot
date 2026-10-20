@@ -165,3 +165,26 @@
 - **Updated projection while live:** points so far + pregame × unplayed share of regulation. Once final, the pregame projection is shown under the final score.
 - **Arrows (▲/▼):** shown when the updated (or final) number is at least 5 points **and** 20% away from the pregame projection. Small projections need the 5 points; big ones need the 20%.
 - **Assumption, to confirm during a live game:** ESPN's season line already includes a game in progress. If it doesn't, the pregame projection only dips during that game and is right again at the final.
+
+## ADR-019: trades v2: market value for the partner, lineup points for Jack, up to 3-for-3 (2026-10-20)
+
+- **Why:** v1 judged fairness with the same projections it optimized. In this league's scoring, ESPN projects Jaylen Brown (24.0 FP/G) below John Collins (24.6), so v1 called Collins-for-Brown fair. No manager would take it: Brown is ADP 34 / $20, Collins ADP 113 / $2.
+- **Market value** (`lib/nba/market.ts`), in auction dollars:
+  - **Preseason:** the average of ESPN's average auction price, ESPN's own dollar value, and this league's draft slot converted to dollars on the ESPN price curve.
+  - **In-season:** shifts toward the player's in-season rank: ESPN's when published, else by FP/G with 3+ games. Weight = games / (games + 20).
+  - Dollars are convex, which prices stars correctly.
+- **Acceptance:**
+  - The partner must get ≥95% of the market value they send.
+  - +10% when they give up the deal's best player for more players (consolidation premium).
+  - Realism tiers: **likely** (≥105% and their lineup gains), **fair**, **long shot**.
+  - Targets show likely and fair only.
+- **Jack's side:**
+  - Starting-lineup points, regular season + 2× playoff weeks, as before.
+  - Jack never sends more than ~125% of the market value he gets. When market and projection disagree that much, the projection may be the one that's wrong.
+  - Example: the market prices Tatum like a top-10 player, while ESPN's projection in this scoring is 34 FP/G.
+- **Uneven trades** (`applyTrade`): the side getting more players drops its lowest rest-of-season values. The side getting fewer adds the best free agents (never the same one twice). The simulator uses the same balancing.
+- **Search:**
+  - Each roster's top 10 by market value; every subset pair up to 3-for-3 that could pass the market check.
+  - A quick estimate (each player's marginal lineup value), then the exact evaluation of the best 40 per size and partner.
+  - Filters: drop deals where anyone cuts a player they just received; merge deals that differ only by throw-ins (<$3); at most 2 ideas per size built on the same outgoing star; 8 per size.
+- **Speed:** lineups use the exact greedy (transversal matroid) from the simulator (`greedyStarters`, tested equal to the Hungarian optimizer). The whole search takes ~1.5 s, so it runs live, streamed into the page. This replaces the planned nightly table and second cron.

@@ -7,6 +7,7 @@ import {
   fetchLeague,
   fetchProSchedule,
   freeAgentFilter,
+  parseDraftPicks,
   parseFreeAgents,
   parseLiveRosters,
   parseMatchups,
@@ -111,4 +112,15 @@ export async function loadLiveRosters(scoringPeriodId: number, matchupPeriod: nu
     scoringPeriodId,
   });
   return parseLiveRosters(raw, matchupPeriod);
+}
+
+// The draft doesn't change: keep it for the life of the server instance.
+let draftCache: Map<number, number> | null = null;
+
+/** Overall pick per drafted player in this league (empty in ESPN_LEAGUE_FILE dev mode). */
+export async function loadDraftPicks(): Promise<Map<number, number>> {
+  if (process.env.ESPN_LEAGUE_FILE) return new Map();
+  if (draftCache) return draftCache;
+  draftCache = parseDraftPicks(await fetchLeague(espnConfig(), ["mDraftDetail"]));
+  return draftCache;
 }

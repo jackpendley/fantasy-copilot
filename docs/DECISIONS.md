@@ -96,3 +96,18 @@
 - **Actual results:** completed weeks keep ESPN's actual winner. The current week starts from the points already scored, and only the remaining days are simulated.
 - **Manager activity:** this season's `transactionCounter` (lineup moves, adds), blended with last season's for the same owner. The prior weighs 21 days; new owners get a neutral prior (0.7, 0.6/wk). It's read from ESPN, so nothing private goes in git.
 - **Schedule:** Vercel cron runs `/api/cron/nightly` at 11:00 UTC (4 AM in Arizona, before games). The page also has a "Run now" button. Runs are stored in `outlook_runs` for the odds-over-time chart. 800 seasons take ~11 s.
+
+## ADR-014: waivers & streaming = re-run the week with the swap (2026-10-19)
+
+- **Method:** for each shortlisted free agent (top 45 by fppg × games this week, plus the top 10 by rest-of-season value) and each drop candidate (the 5 lowest rest-of-season values among droppable players, or none with an open spot), re-run the week projection, i.e. the daily lineup optimizer for every remaining day.
+  - The change in projected points becomes a change in P(win this week), using the same model and baseline as `/nba/week` (`lib/nba/matchup.ts`).
+- **Timing:** a waiver player counts only from the day his claim processes. A player whose game already tipped today counts from tomorrow. Players in a game in progress are never dropped.
+- **Two lists:**
+  - **This week**: raises P(win), with the drop that helps most now.
+  - **Long term**: rest-of-season gain above 50 points, with the drop that keeps the most value, and this week's cost shown.
+- **Writes:** `/api/waivers/add` re-checks against fresh ESPN data before writing:
+  - the player is still available, with the same free-agent/waiver status;
+  - the drop is still rostered and not locked;
+  - an add is left (free agents only).
+  - It then sends a `FREEAGENT` add or a `WAIVER` claim, audited as `add-drop` or `waiver-claim`.
+  - There's no zero-impact test for adds (a drop can't be undone), so **Jack's first real claim or add is the live test of this path**.

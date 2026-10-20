@@ -8,7 +8,7 @@ import path from "node:path";
 import { db, dbConfigured } from "./db";
 
 export interface EspnAction {
-  kind: "lineup";
+  kind: "lineup" | "add-drop" | "waiver-claim";
   scoringPeriodId: number;
   request: unknown;
   ok: boolean;

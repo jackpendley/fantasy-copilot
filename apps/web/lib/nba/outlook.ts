@@ -20,11 +20,9 @@ export interface Activity {
   addsPerWeek: number;
 }
 
-export function managerActivity(
-  current: FantasyTeam["activity"],
-  prior: FantasyTeam["activity"] | null,
-  daysPlayed: number,
-): Activity {
+type Counts = { lineupMoves: number; adds: number } | null;
+
+export function managerActivity(current: Counts, prior: Counts, daysPlayed: number): Activity {
   const p = prior
     ? {
         act: Math.min(1, prior.lineupMoves / (MOVES_PER_ACTIVE_DAY * PRIOR_SEASON_DAYS)),

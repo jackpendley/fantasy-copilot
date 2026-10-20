@@ -13,12 +13,11 @@ import {
   shortDay,
 } from "@/lib/nba/calendar";
 import { loadLeague } from "@/lib/nba/data";
-import { buildDayBoard } from "@/lib/nba/day";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
-import { projectTeamWeek, winProbability } from "@/lib/nba/week";
+import { matchupView } from "@/lib/nba/matchup";
 import { cn } from "@/lib/utils";
-import { PRO_TEAM_BY_ID, type FantasyTeam } from "@fantasy-copilot/espn";
+import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
 
@@ -65,47 +64,7 @@ export default async function WeekPage() {
     return <ErrorNotice title="Couldn't load the league" message={(e as Error).message} />;
   }
 
-  const matchup = data.matchups.find(
-    (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
-  );
-  const iAmHome = matchup?.homeTeamId === data.me.id;
-  const oppId = matchup ? (iAmHome ? matchup.awayTeamId : matchup.homeTeamId) : null;
-  const opp: FantasyTeam | undefined = data.teams.find((t) => t.id === oppId);
-  const myBanked = matchup ? (iAmHome ? matchup.homePoints : (matchup.awayPoints ?? 0)) : 0;
-  const oppBanked = matchup ? (iAmHome ? (matchup.awayPoints ?? 0) : matchup.homePoints) : 0;
-
-  const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
-  // Today's remaining = best lineup among players whose games haven't started.
-  const remainingToday = (team: FantasyTeam) => {
-    const board = buildDayBoard({
-      roster: team.roster,
-      slotCounts: data.settings.slotCounts,
-      games: todayGames,
-      scoreboard: data.scoreboard,
-      injuries: data.injuries,
-      lineups: data.lineups,
-    });
-    return board.rows
-      .filter((r) => !r.locked && r.recommendedSlot !== "BE" && r.recommendedSlot !== "IR")
-      .reduce((a, r) => a + r.value, 0);
-  };
-  const common = {
-    periods,
-    fromPeriod: sp,
-    games: data.games,
-    slotCounts: data.settings.slotCounts,
-    injuries: data.injuries,
-  };
-  const mine = projectTeamWeek(data.me.roster, {
-    ...common,
-    todayRemaining: remainingToday(data.me),
-  });
-  const theirs = opp
-    ? projectTeamWeek(opp.roster, { ...common, todayRemaining: remainingToday(opp) })
-    : null;
-  const pWin = theirs
-    ? winProbability(myBanked, mine.remaining, oppBanked, theirs.remaining)
-    : null;
+  const { opp, myBanked, oppBanked, mine, theirs, pWin } = matchupView(data, sp);
 
   const days = periods.map((p) => ({ sp: p, date: dateForScoringPeriod(p) }));
   const opponentOf = (proTeamId: number, p: number) => {

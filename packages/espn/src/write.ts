@@ -67,7 +67,18 @@ export async function submitLineup(
   moves: readonly LineupMove[],
   fetchImpl: typeof fetch = fetch,
 ): Promise<WriteResult> {
-  const body = lineupTransactionBody(cfg, teamId, scoringPeriodId, moves);
+  return postTransaction(
+    cfg,
+    lineupTransactionBody(cfg, teamId, scoringPeriodId, moves),
+    fetchImpl,
+  );
+}
+
+async function postTransaction(
+  cfg: EspnConfig,
+  body: unknown,
+  fetchImpl: typeof fetch,
+): Promise<WriteResult> {
   const url = `${WRITE_HOST}/apis/v3/games/${cfg.game ?? "fba"}/seasons/${cfg.season}/segments/0/leagues/${cfg.leagueId}/transactions/`;
   const res = await fetchImpl(url, {
     method: "POST",
@@ -85,7 +96,10 @@ export async function submitLineup(
   } catch {
     json = { raw: text.slice(0, 500) };
   }
-  if (res.ok && (json?.status === "EXECUTED" || json?.status == null)) {
+  if (
+    res.ok &&
+    (json?.status === "EXECUTED" || json?.status === "PENDING" || json?.status == null)
+  ) {
     return {
       ok: true,
       httpStatus: res.status,
@@ -102,4 +116,39 @@ export async function submitLineup(
     message: err.message,
     response: json,
   };
+}
+
+/**
+ * Add a player (dropping one, unless there's an open roster spot). A FREEAGENT add takes
+ * effect immediately; a WAIVER claim is queued until the player's waiver period ends.
+ */
+export function addDropBody(
+  cfg: EspnConfig,
+  teamId: number,
+  scoringPeriodId: number,
+  move: { addId: number; dropId: number | null; claim: boolean },
+) {
+  const items: Record<string, unknown>[] = [
+    { playerId: move.addId, type: "ADD", toTeamId: teamId },
+  ];
+  if (move.dropId != null) items.push({ playerId: move.dropId, type: "DROP", fromTeamId: teamId });
+  return {
+    isLeagueManager: false,
+    teamId,
+    type: move.claim ? "WAIVER" : "FREEAGENT",
+    memberId: cfg.swid,
+    scoringPeriodId,
+    executionType: "EXECUTE",
+    items,
+  };
+}
+
+export async function submitAddDrop(
+  cfg: EspnConfig,
+  teamId: number,
+  scoringPeriodId: number,
+  move: { addId: number; dropId: number | null; claim: boolean },
+  fetchImpl: typeof fetch = fetch,
+): Promise<WriteResult> {
+  return postTransaction(cfg, addDropBody(cfg, teamId, scoringPeriodId, move), fetchImpl);
 }

@@ -42,10 +42,10 @@ NFL comes once the NBA app is fully built, then MLB.
 
 ## Phase 3: waivers and streaming (weeks 1–2)
 
-- [ ] Free-agent sync, 3-adds/week budget
-- [ ] Net added starts per candidate (optimizer run for each remaining day)
-- [ ] Drop candidates, IR, trends; one-click add/drop with a named-drop confirm
-- [ ] Rank by ΔP(win this week)
+- [x] Free-agent pool (waivers vs free agents), 3-adds/week budget from ESPN's weekly counter
+- [x] Net added starts and points per candidate (week re-run with each add/drop pair)
+- [x] Drop candidates, ownership trend; one-click add/drop or waiver claim with a named-drop confirm (first live use pending)
+- [x] Ranked by ΔP(win this week); separate long-term list (ADR-014)
 
 ## Phase 4: data warehouse (weeks 1–3)
 

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   fetchLeague,
+  parseFreeAgents,
   parseMatchups,
   parseProSchedule,
   parseSettings,
@@ -73,10 +74,50 @@ describe("parseTeams", () => {
       seasonId: 2027,
       teams: [{ id: 1, transactionCounter: { moveToActive: 12, acquisitions: 2 } }],
     });
-    expect(withCounter[0]!.activity).toEqual({ lineupMoves: 12, adds: 2 });
+    expect(withCounter[0]!.activity).toEqual({ lineupMoves: 12, adds: 2, addsByPeriod: {} });
+    const weekly = parseTeams({
+      seasonId: 2027,
+      teams: [{ id: 1, transactionCounter: { matchupAcquisitionTotals: { "3": 2 } } }],
+    });
+    expect(weekly[0]!.activity!.addsByPeriod).toEqual({ 3: 2 });
   });
   it("names bench players' slot", () => {
     expect(mine.roster.filter((p) => p.slot === "BE")).toHaveLength(3);
+  });
+});
+
+describe("parseFreeAgents", () => {
+  it("keeps free agents and waiver players with their status and ownership trend", () => {
+    // Synthetic response in kona_player_info's shape.
+    const fa = parseFreeAgents(
+      {
+        players: [
+          {
+            status: "WAIVERS",
+            waiverProcessDate: 1792479600000,
+            player: {
+              id: 1,
+              fullName: "A",
+              proTeamId: 2,
+              eligibleSlots: [0, 1],
+              ownership: { percentOwned: 50, percentChange: 3.2 },
+            },
+          },
+          {
+            status: "FREEAGENT",
+            player: { id: 2, fullName: "B", proTeamId: 3, eligibleSlots: [4] },
+          },
+          { status: "ONTEAM", player: { id: 3, fullName: "C", proTeamId: 3, eligibleSlots: [4] } },
+        ],
+      },
+      2027,
+    );
+    expect(fa.map((f) => [f.player.name, f.status, f.waiverUntil])).toEqual([
+      ["A", "WAIVERS", 1792479600000],
+      ["B", "FREEAGENT", null],
+    ]);
+    expect(fa[0]!.player.percentChange).toBe(3.2);
+    expect(fa[0]!.player.positions).toEqual(["PG", "SG"]);
   });
 });
 

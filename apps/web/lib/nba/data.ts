@@ -6,6 +6,8 @@ import "server-only";
 import {
   fetchLeague,
   fetchProSchedule,
+  freeAgentFilter,
+  parseFreeAgents,
   parseMatchups,
   parseProSchedule,
   parseSettings,
@@ -86,4 +88,15 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
     lineups,
     warnings: injuries.error ? [`Injury feed unavailable: ${injuries.error}`] : [],
   };
+}
+
+/** Free agents and waiver players, most-owned first (empty in ESPN_LEAGUE_FILE dev mode). */
+export async function loadFreeAgents(scoringPeriodId: number, limit = 250) {
+  if (process.env.ESPN_LEAGUE_FILE) return [];
+  const cfg = espnConfig();
+  const raw = await fetchLeague(cfg, ["kona_player_info"], {
+    filter: freeAgentFilter(limit),
+    scoringPeriodId,
+  });
+  return parseFreeAgents(raw, cfg.season);
 }

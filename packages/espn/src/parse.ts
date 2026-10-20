@@ -372,3 +372,47 @@ export function parseDraftPicks(data: Json): Map<number, number> {
   }
   return picks;
 }
+
+export interface LeagueTransaction {
+  type: "WAIVER" | "FREEAGENT" | "TRADE";
+  teamId: number;
+  /** When ESPN processed it (ms since epoch). */
+  at: number;
+  /** Players added to and dropped from `teamId`'s roster (for a trade: received and sent). */
+  adds: number[];
+  drops: number[];
+}
+
+/**
+ * Executed roster changes from the `mTransactions2` view: waiver claims, free-agent adds and
+ * accepted trades. Lineup moves are skipped. A trade becomes one entry per team involved.
+ */
+export function parseTransactions(data: Json): LeagueTransaction[] {
+  const out: LeagueTransaction[] = [];
+  for (const t of data?.transactions ?? []) {
+    if (t.status !== "EXECUTED" || !t.processDate) continue;
+    const items: Json[] = t.items ?? [];
+    if (t.type === "WAIVER" || t.type === "FREEAGENT") {
+      out.push({
+        type: t.type,
+        teamId: t.teamId,
+        at: t.processDate,
+        adds: items.filter((i) => i.type === "ADD").map((i) => i.playerId),
+        drops: items.filter((i) => i.type === "DROP").map((i) => i.playerId),
+      });
+    } else if (t.type === "TRADE_ACCEPT") {
+      const teams = new Set<number>(items.flatMap((i) => [i.fromTeamId, i.toTeamId]));
+      for (const team of teams) {
+        if (!team) continue;
+        out.push({
+          type: "TRADE",
+          teamId: team,
+          at: t.processDate,
+          adds: items.filter((i) => i.toTeamId === team).map((i) => i.playerId),
+          drops: items.filter((i) => i.fromTeamId === team).map((i) => i.playerId),
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
+}

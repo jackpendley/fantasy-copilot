@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseDraftPicks, parseLiveRosters, parseMatchups, playerIdsFilter } from "../src/index";
+import {
+  parseDraftPicks,
+  parseLiveRosters,
+  parseMatchups,
+  parseTransactions,
+  playerIdsFilter,
+} from "../src/index";
 
 // Synthetic: the shape of an mMatchupScore + mBoxscore response, made-up numbers.
 const data = {
@@ -100,6 +106,43 @@ describe("parseDraftPicks", () => {
     expect([...picks]).toEqual([
       [11, 1],
       [13, 30],
+    ]);
+  });
+});
+
+describe("parseTransactions", () => {
+  // Synthetic mTransactions2 shape.
+  const data = {
+    transactions: [
+      { status: "EXECUTED", type: "FUTURE_ROSTER", teamId: 1, processDate: 1, items: [] },
+      {
+        status: "EXECUTED",
+        type: "WAIVER",
+        teamId: 4,
+        processDate: 300,
+        items: [
+          { type: "ADD", playerId: 10, toTeamId: 4 },
+          { type: "DROP", playerId: 11, fromTeamId: 4 },
+        ],
+      },
+      { status: "CANCELED", type: "WAIVER", teamId: 5, processDate: 300, items: [] },
+      {
+        status: "EXECUTED",
+        type: "TRADE_ACCEPT",
+        teamId: 6,
+        processDate: 200,
+        items: [
+          { type: "TRADE", playerId: 20, fromTeamId: 6, toTeamId: 7 },
+          { type: "TRADE", playerId: 21, fromTeamId: 7, toTeamId: 6 },
+        ],
+      },
+    ],
+  };
+  it("keeps executed adds, drops and trades, oldest first, one trade entry per team", () => {
+    expect(parseTransactions(data)).toEqual([
+      { type: "TRADE", teamId: 6, at: 200, adds: [21], drops: [20] },
+      { type: "TRADE", teamId: 7, at: 200, adds: [20], drops: [21] },
+      { type: "WAIVER", teamId: 4, at: 300, adds: [10], drops: [11] },
     ]);
   });
 });

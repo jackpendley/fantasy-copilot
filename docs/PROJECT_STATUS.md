@@ -42,9 +42,11 @@
   - Today and Matchup rows show ESPN box scores, live and final points, and the fixed pregame projection plus the updated projection with ▲/▼ (ADR-018).
   - Fixed `playerIdsFilter`: ESPN rejects a limit without a sort.
 
-- **Trades v2 (branch `trades-v2`):**
+- **Trades v2 (PR #14):**
   - market-value acceptance (ESPN plus league draft), up to 3-for-3 with roster balancing, size filter, realism tiers (ADR-019);
   - Collins-for-Brown-style ideas are gone.
+
+- **Steadier Outlook (branch `outlook-steady`):** common random numbers, 2,000 seasons, and a "What changed" panel with the roster moves behind odds changes (ADR-020).
 
 ## Plan in progress (approved 2026-10-20)
 

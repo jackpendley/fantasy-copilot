@@ -20,6 +20,9 @@ export interface ScoreboardGame {
   tip: string;
   state: GameState;
   detail: string;
+  /** Quarter (5+ = overtime) and game clock ("5:12"), while in progress. */
+  period: number;
+  clock: string;
   homeTeamId: number;
   awayTeamId: number;
   homeScore: number | null;
@@ -44,6 +47,8 @@ export function parseScoreboard(data: Json): ScoreboardGame[] {
       tip: e.date,
       state: (e.status?.type?.state ?? "pre") as GameState,
       detail: e.status?.type?.shortDetail ?? "",
+      period: Number(e.status?.period ?? 0),
+      clock: e.status?.displayClock ?? "",
       homeTeamId: Number(home.team?.id),
       awayTeamId: Number(away.team?.id),
       homeScore: score(home),

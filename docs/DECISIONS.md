@@ -123,3 +123,18 @@
   - **Free agents being added:** ESPN ownership change.
   - **Minutes opening up:** a rule, not a model. For each NBA team with a projected 28+ FP/G player ruled out, list the healthy free agents on that team who share a position group (G/F/C).
 - **Usage rate is not shown.** The free game log doesn't include it, and it won't be estimated. It comes later with the data warehouse.
+
+## ADR-016: live matchup from ESPN's own live scoring (2026-10-19)
+
+- **Scores come from ESPN:**
+  - **Week totals:** `totalPointsLive`, falling back to `totalPoints`.
+  - **Today's per-player points and slots:** the `mBoxscore` view (`rosterForCurrentScoringPeriod`).
+  - Box scores aren't re-scored. ESPN's numbers are what decide the matchup.
+- **Projection during games:**
+  - Banked points already include the part of each game played.
+  - A starter in a game in progress adds `value × (1 − share of regulation played)`, from the scoreboard's quarter and clock. Overtime counts as finished.
+  - Players who haven't tipped add the best-lineup projection, as before.
+  - This fixes Week and Waivers too: they previously used `totalPoints` and ignored games in progress.
+- **Odds through the week:** the nightly job (11:00 UTC, before games) writes a row to `matchup_snapshots` (migration 0003). The chart shows those, plus "now" once today's games start.
+- **Refresh:** the page re-renders every 60 s while a game is live and the tab is visible. No push or websocket.
+- **Nav:** "Week" is now labeled **Matchup** (same URL, `/nba/week`), to keep the phone tab bar at 6 tabs.

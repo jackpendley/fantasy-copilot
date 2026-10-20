@@ -1,6 +1,8 @@
-import { PageHeader, SectionTitle } from "@/components/fc/bits";
+import { PageHeader, SectionTitle, SlotChip } from "@/components/fc/bits";
+import { LiveRefresh } from "@/components/live-refresh";
+import { WinChart } from "@/components/win-chart";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
-import { StatusPill } from "@/components/fc/status-pill";
+import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
@@ -12,14 +14,94 @@ import {
   scoringPeriodsOf,
   shortDay,
 } from "@/lib/nba/calendar";
-import { loadLeague } from "@/lib/nba/data";
+import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
+import { dbConfigured } from "@/lib/db";
+import { liveRows, sortLive, type LiveRow } from "@/lib/nba/live";
+import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
-import { fmtPts } from "@/lib/format";
+import { fmtPts, fmtTip } from "@/lib/format";
 import { matchupView } from "@/lib/nba/matchup";
 import { cn } from "@/lib/utils";
 import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
+
+function GameNote({ r }: { r: LiveRow }) {
+  const g = r.row.game;
+  if (!g) return <span>No game</span>;
+  const when = g.state === "pre" ? fmtTip(g.tip) : g.state === "post" ? "Final" : g.detail;
+  return (
+    <span className="inline-flex items-center gap-1 whitespace-nowrap">
+      {g.home ? "vs" : "@"}
+      <TeamLogo abbr={g.opponent} size={12} />
+      {g.opponent}
+      <span className={cn(g.state === "in" && "font-semibold text-success")}>· {when}</span>
+      {r.score && (
+        <span className="tabular-nums">
+          · {r.score.us}-{r.score.them}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** One side's players today: who's starting, live fantasy points, and what's still to come. */
+function TodaySide({ title, rows }: { title: string; rows: LiveRow[] }) {
+  const starters = sortLive(rows.filter((r) => r.starting));
+  const benchPts = rows.filter((r) => !r.starting).reduce((a, r) => a + r.points, 0);
+  const pts = starters.reduce((a, r) => a + r.points, 0);
+  const toCome = starters.reduce((a, r) => a + r.toCome, 0);
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between px-1 text-xs">
+        <span className="truncate font-medium">{title}</span>
+        <span className="text-muted-foreground tabular-nums">
+          <span className="font-semibold text-foreground">{fmtPts(pts)}</span> today
+          {toCome > 0.05 && <> · +{fmtPts(toCome)} to come</>}
+        </span>
+      </div>
+      <div className="divide-y overflow-hidden rounded-xl border bg-card">
+        {starters.map((r) => (
+          <div
+            key={r.row.player.id}
+            className={cn(
+              "flex items-center gap-2.5 px-3 py-2",
+              !r.row.game && "opacity-55",
+              r.row.game?.state === "in" && "bg-success/5",
+            )}
+          >
+            <div className="w-10 shrink-0 text-center">
+              <SlotChip slot={r.slot} />
+            </div>
+            <PlayerAvatar id={r.row.player.id} name={r.row.player.name} size={32} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate text-sm font-medium">{r.row.player.name}</span>
+                <StatusPill status={r.row.status} note={r.row.injuryNote} />
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                <GameNote r={r} />
+              </div>
+            </div>
+            <div className="shrink-0 text-right tabular-nums">
+              <div className="font-semibold">
+                {r.row.game && r.row.game.state !== "pre" ? fmtPts(r.points) : "—"}
+              </div>
+              {r.toCome > 0.05 && (
+                <div className="text-[11px] text-muted-foreground">+{fmtPts(r.toCome)}</div>
+              )}
+            </div>
+          </div>
+        ))}
+        {benchPts !== 0 && (
+          <div className="px-3 py-2 text-xs text-muted-foreground">
+            Bench and IR scored {fmtPts(benchPts)} (not counted)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function Side({
   label,
@@ -64,7 +146,26 @@ export default async function WeekPage() {
     return <ErrorNotice title="Couldn't load the league" message={(e as Error).message} />;
   }
 
-  const { opp, myBanked, oppBanked, mine, theirs, pWin } = matchupView(data, sp);
+  const { opp, myBanked, oppBanked, myToday, oppToday, mine, theirs, pWin } = matchupView(data, sp);
+  const [live, history] = await Promise.all([
+    loadLiveRosters(sp, mp).catch(() => null),
+    dbConfigured() ? matchupHistory(mp).catch(() => []) : Promise.resolve([]),
+  ]);
+  const myLive = liveRows(myToday, live?.get(data.me.id), data.scoreboard);
+  const oppLive = opp && oppToday ? liveRows(oppToday, live?.get(opp.id), data.scoreboard) : null;
+  const playing = (rows: LiveRow[] | null) => (rows ?? []).some((r) => r.starting && r.row.game);
+  const gamesLive = [...myLive, ...(oppLive ?? [])].some((r) => r.row.game?.state === "in");
+  // Snapshots are taken before each day's games; "Now" is added once today's games start.
+  const started = [...myLive, ...(oppLive ?? [])].some(
+    (r) => r.row.game && r.row.game.state !== "pre",
+  );
+  const winPoints = [
+    ...history.map((h) => ({
+      label: shortDay(dateForScoringPeriod(h.scoring_period)).split(" ")[0]!,
+      pWin: h.p_win,
+    })),
+    ...(pWin != null && started ? [{ label: "Now", pWin }] : []),
+  ];
 
   const days = periods.map((p) => ({ sp: p, date: dateForScoringPeriod(p) }));
   const opponentOf = (proTeamId: number, p: number) => {
@@ -107,6 +208,12 @@ export default async function WeekPage() {
               align="right"
             />
           </div>
+          {gamesLive && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Pill tone="success">Live</Pill>
+              Updates every minute while games are on.
+            </div>
+          )}
           <div className="mt-4">
             <div className="mb-1.5 flex justify-between text-xs font-semibold tabular-nums">
               <span className="text-primary">{Math.round(pWin * 100)}% to win</span>
@@ -121,6 +228,31 @@ export default async function WeekPage() {
             volatility.
           </p>
         </div>
+      )}
+
+      <LiveRefresh active={gamesLive} />
+
+      {opp && oppLive && (playing(myLive) || playing(oppLive)) && (
+        <section className="space-y-1.5">
+          <SectionTitle aside="ESPN fantasy points; + is projected still to come">
+            Today
+          </SectionTitle>
+          <div className="grid gap-3 md:grid-cols-2">
+            <TodaySide title={data.me.name} rows={myLive} />
+            <TodaySide title={opp.name} rows={oppLive} />
+          </div>
+        </section>
+      )}
+
+      {winPoints.length > 1 && (
+        <section className="space-y-1.5">
+          <SectionTitle aside="Before each day's games, then live">
+            Win chance this week
+          </SectionTitle>
+          <div className="rounded-xl border bg-card p-3">
+            <WinChart points={winPoints} />
+          </div>
+        </section>
       )}
 
       <section className="space-y-1.5">
@@ -148,6 +280,11 @@ export default async function WeekPage() {
                   {shortDay(d.date).split(" ")[0]}
                 </div>
                 <div className="text-lg font-semibold tabular-nums">{past ? "–" : s}</div>
+                {theirs && !past && (
+                  <div className="text-[10px] text-muted-foreground tabular-nums">
+                    opp {theirs.startsByDay.get(d.sp)?.size ?? 0}
+                  </div>
+                )}
                 <div
                   className={cn(
                     "text-[10px] font-medium",

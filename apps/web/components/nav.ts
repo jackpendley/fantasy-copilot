@@ -9,7 +9,7 @@ export const SPORTS = [
 
 export const NBA_NAV = [
   { href: "/nba/today", label: "Today", icon: CalendarCheck },
-  { href: "/nba/week", label: "Week", icon: CalendarRange },
+  { href: "/nba/week", label: "Matchup", icon: CalendarRange },
   { href: "/nba/waivers", label: "Waivers", icon: UserPlus },
   { href: "/nba/players", label: "Players", icon: Users },
   { href: "/nba/outlook", label: "Outlook", icon: TrendingUp },

@@ -4,7 +4,8 @@
 import type { FantasyTeam } from "@fantasy-copilot/espn";
 import { matchupPeriodOf, scoringPeriodsOf } from "./calendar";
 import type { loadLeague } from "./data";
-import { buildDayBoard } from "./day";
+import { buildDayBoard, type DayRow } from "./day";
+import { gameElapsed, isStarting } from "./live";
 import { projectTeamWeek, winProbability, type TeamWeek, type WeekInputs } from "./week";
 
 type LeagueData = Awaited<ReturnType<typeof loadLeague>>;
@@ -13,8 +14,12 @@ export interface MatchupView {
   mp: number;
   periods: number[];
   opp: FantasyTeam | undefined;
+  /** Points so far this week, including games in progress (ESPN live totals). */
   myBanked: number;
   oppBanked: number;
+  /** Today's day boards (each side's roster against today's games). */
+  myToday: DayRow[];
+  oppToday: DayRow[] | null;
   /** Inputs for projectTeamWeek (from today), reusable for what-if rosters. */
   weekInputs: WeekInputs;
   mine: TeamWeek;
@@ -31,24 +36,32 @@ export function matchupView(data: LeagueData, sp: number): MatchupView {
   const iAmHome = matchup?.homeTeamId === data.me.id;
   const oppId = matchup ? (iAmHome ? matchup.awayTeamId : matchup.homeTeamId) : null;
   const opp = data.teams.find((t) => t.id === oppId);
-  const myBanked = matchup ? (iAmHome ? matchup.homePoints : (matchup.awayPoints ?? 0)) : 0;
-  const oppBanked = matchup ? (iAmHome ? (matchup.awayPoints ?? 0) : matchup.homePoints) : 0;
+  const myBanked = matchup ? (iAmHome ? matchup.homeLive : (matchup.awayLive ?? 0)) : 0;
+  const oppBanked = matchup ? (iAmHome ? (matchup.awayLive ?? 0) : matchup.homeLive) : 0;
 
   const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
-  // Today's remaining = best lineup among players whose games haven't started.
-  const remainingToday = (team: FantasyTeam) => {
-    const board = buildDayBoard({
+  const scoreboard = new Map(data.scoreboard.map((g) => [g.gameId, g]));
+  const boardOf = (team: FantasyTeam) =>
+    buildDayBoard({
       roster: team.roster,
       slotCounts: data.settings.slotCounts,
       games: todayGames,
       scoreboard: data.scoreboard,
       injuries: data.injuries,
       lineups: data.lineups,
-    });
-    return board.rows
-      .filter((r) => !r.locked && r.recommendedSlot !== "BE" && r.recommendedSlot !== "IR")
-      .reduce((a, r) => a + r.value, 0);
-  };
+    }).rows;
+  const myToday = boardOf(data.me);
+  const oppToday = opp ? boardOf(opp) : null;
+  // Today's remaining = best lineup among players whose games haven't started, plus the rest
+  // of the games in progress for players starting in them (banked points cover the part played).
+  const remainingToday = (rows: DayRow[]) =>
+    rows.reduce((a, r) => {
+      if (!r.locked) return a + (isStarting(r.recommendedSlot) ? r.value : 0);
+      const g = r.game && scoreboard.get(r.game.gameId);
+      return g && g.state === "in" && isStarting(r.currentSlot)
+        ? a + r.value * (1 - gameElapsed(g))
+        : a;
+    }, 0);
   const weekInputs: WeekInputs = {
     periods,
     fromPeriod: sp,
@@ -58,13 +71,25 @@ export function matchupView(data: LeagueData, sp: number): MatchupView {
   };
   const mine = projectTeamWeek(data.me.roster, {
     ...weekInputs,
-    todayRemaining: remainingToday(data.me),
+    todayRemaining: remainingToday(myToday),
   });
   const theirs = opp
-    ? projectTeamWeek(opp.roster, { ...weekInputs, todayRemaining: remainingToday(opp) })
+    ? projectTeamWeek(opp.roster, { ...weekInputs, todayRemaining: remainingToday(oppToday!) })
     : null;
   const pWin = theirs
     ? winProbability(myBanked, mine.remaining, oppBanked, theirs.remaining)
     : null;
-  return { mp, periods, opp, myBanked, oppBanked, weekInputs, mine, theirs, pWin };
+  return {
+    mp,
+    periods,
+    opp,
+    myBanked,
+    oppBanked,
+    myToday,
+    oppToday,
+    weekInputs,
+    mine,
+    theirs,
+    pWin,
+  };
 }

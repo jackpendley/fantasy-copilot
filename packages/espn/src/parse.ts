@@ -171,8 +171,19 @@ export interface Matchup {
   awayTeamId: number | null;
   homePoints: number;
   awayPoints: number | null;
+  /** Including games in progress (ESPN's totalPointsLive); falls back to the settled total. */
+  homeLive: number;
+  awayLive: number | null;
+  /** Points per scoring period (day) of this matchup, as ESPN has them. */
+  homeByPeriod: Record<number, number>;
+  awayByPeriod: Record<number, number> | null;
   winner: string;
 }
+
+const byPeriod = (side: Json): Record<number, number> =>
+  Object.fromEntries(
+    Object.entries(side?.pointsByScoringPeriod ?? {}).map(([k, v]) => [Number(k), Number(v)]),
+  );
 
 export function parseMatchups(data: Json): Matchup[] {
   return (data?.schedule ?? [])
@@ -184,6 +195,10 @@ export function parseMatchups(data: Json): Matchup[] {
       awayTeamId: m.away?.teamId ?? null,
       homePoints: m.home.totalPoints ?? 0,
       awayPoints: m.away ? (m.away.totalPoints ?? 0) : null,
+      homeLive: m.home.totalPointsLive ?? m.home.totalPoints ?? 0,
+      awayLive: m.away ? (m.away.totalPointsLive ?? m.away.totalPoints ?? 0) : null,
+      homeByPeriod: byPeriod(m.home),
+      awayByPeriod: m.away ? byPeriod(m.away) : null,
       winner: m.winner ?? "UNDECIDED",
     }));
 }
@@ -240,4 +255,36 @@ export function parseFreeAgents(data: Json, season: number): FreeAgent[] {
       status: e.status,
       waiverUntil: e.status === "WAIVERS" ? (e.waiverProcessDate ?? null) : null,
     }));
+}
+
+export interface LiveEntry {
+  playerId: number;
+  /** Lineup slot today (BE/IR don't count). */
+  slot: string;
+  /** Fantasy points so far today. */
+  points: number;
+}
+
+/**
+ * Today's per-player fantasy points for each team in a matchup period, from the `mBoxscore`
+ * view (`rosterForCurrentScoringPeriod`). Keyed by fantasy team id.
+ */
+export function parseLiveRosters(data: Json, matchupPeriod: number): Map<number, LiveEntry[]> {
+  const out = new Map<number, LiveEntry[]>();
+  for (const m of data?.schedule ?? []) {
+    if (m.matchupPeriodId !== matchupPeriod) continue;
+    for (const side of [m.home, m.away]) {
+      const roster = side?.rosterForCurrentScoringPeriod;
+      if (!side || !roster) continue;
+      out.set(
+        side.teamId,
+        (roster.entries ?? []).map((e: Json) => ({
+          playerId: e.playerId ?? e.playerPoolEntry?.id ?? e.playerPoolEntry?.player?.id,
+          slot: SLOT_BY_ID[e.lineupSlotId] ?? String(e.lineupSlotId),
+          points: Number(e.playerPoolEntry?.appliedStatTotal ?? 0),
+        })),
+      );
+    }
+  }
+  return out;
 }

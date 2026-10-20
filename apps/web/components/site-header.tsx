@@ -17,7 +17,7 @@ export function Logo() {
   );
 }
 
-/** Top bar. On phones it shows the logo and sport; navigation moves to the bottom tab bar. */
+/** Top bar. On phones it shows the logo, sport and Settings; navigation moves to the bottom tab bar. */
 export function SiteHeader() {
   const path = usePathname();
   return (
@@ -58,6 +58,16 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
+        <Link
+          href={SETTINGS_NAV.href}
+          className={cn(
+            "ml-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground md:hidden",
+            path.startsWith(SETTINGS_NAV.href) && "text-foreground",
+          )}
+          aria-label="Settings"
+        >
+          <SETTINGS_NAV.icon className="size-5" />
+        </Link>
         <div className="ml-auto hidden items-center gap-3 md:flex">
           <ThemeToggle compact />
           <Link
@@ -79,7 +89,7 @@ export function SiteHeader() {
 /** Phone navigation: fixed bottom tab bar, clear of the iPhone home indicator. */
 export function BottomNav() {
   const path = usePathname();
-  const items = [...NBA_NAV, SETTINGS_NAV];
+  const items = NBA_NAV;
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
       <div className="grid grid-cols-6">

@@ -127,3 +127,78 @@ export async function outlookHistory(teamId: number) {
       expWins: r.t!.expWins,
     }));
 }
+
+/**
+ * A trade's effect on playoff and title odds: the season simulated with and without it, same
+ * seed and the same number of seasons, so most of the noise cancels.
+ */
+export async function simulateTrade(
+  partnerId: number,
+  giveIds: number[],
+  getIds: number[],
+  seasons = 500,
+) {
+  const date = etDate();
+  const fromDay = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
+  const cfg = espnConfig();
+  const [data, previousTeams, faRaw] = await Promise.all([
+    loadLeague(fromDay, date),
+    previousSeasonTeams(),
+    fetchLeague(cfg, ["kona_player_info"], {
+      filter: freeAgentFilter(150),
+      scoringPeriodId: fromDay,
+    }),
+  ]);
+  const partner = data.teams.find((t) => t.id === partnerId);
+  if (!partner) throw new Error("unknown team");
+  const give = data.me.roster.filter((p) => giveIds.includes(p.id));
+  const get = partner.roster.filter((p) => getIds.includes(p.id));
+  if (give.length !== giveIds.length || get.length !== getIds.length) {
+    throw new Error("a player in this trade is no longer on that roster");
+  }
+  const traded = data.teams.map((t) =>
+    t.id === data.me.id
+      ? {
+          ...t,
+          roster: [
+            ...t.roster.filter((p) => !giveIds.includes(p.id)),
+            ...get.map((p) => ({ ...p, slot: "BE" })),
+          ],
+        }
+      : t.id === partnerId
+        ? {
+            ...t,
+            roster: [
+              ...t.roster.filter((p) => !getIds.includes(p.id)),
+              ...give.map((p) => ({ ...p, slot: "BE" })),
+            ],
+          }
+        : t,
+  );
+  const run = (teams: FantasyTeam[]) =>
+    simulateSeason(
+      buildOutlookInput({
+        teams,
+        previousTeams,
+        freeAgents: parsePlayerPool(faRaw, cfg.season),
+        games: data.games,
+        matchups: data.matchups,
+        slotCounts: data.settings.slotCounts,
+        addCapPerWeek: data.settings.addsPerWeek ?? 3,
+        regularWeeks: data.settings.regularSeasonWeeks,
+        fromDay,
+        seasons,
+      }).input,
+    );
+  const before = run(data.teams);
+  const after = run(traded);
+  const pick = (rs: typeof before, id: number) => {
+    const r = rs.find((x) => x.teamId === id)!;
+    return { playoffs: r.playoffs, champ: r.champ, expWins: r.expWins };
+  };
+  return {
+    seasons,
+    mine: { before: pick(before, data.me.id), after: pick(after, data.me.id) },
+    theirs: { before: pick(before, partnerId), after: pick(after, partnerId) },
+  };
+}

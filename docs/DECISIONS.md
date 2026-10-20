@@ -138,3 +138,20 @@
 - **Odds through the week:** the nightly job (11:00 UTC, before games) writes a row to `matchup_snapshots` (migration 0003). The chart shows those, plus "now" once today's games start.
 - **Refresh:** the page re-renders every 60 s while a game is live and the tab is visible. No push or websocket.
 - **Nav:** "Week" is now labeled **Matchup** (same URL, `/nba/week`), to keep the phone tab bar at 6 tabs.
+
+## ADR-017: trades judged by starting-lineup points, then simulated (2026-10-19)
+
+- **Team value:** projected starting-lineup points for the rest of the season. For every remaining day, take the best lineup from the players with a game, each worth `fppg × min(1, projected games / 82)`.
+  - Regular season and playoff weeks are kept separate.
+  - Each distinct set of players playing is solved once (memoized), so a team value takes about 5 ms.
+  - This captures what raw totals miss: positional fit, schedule overlap, and bench players who never start.
+- **Analyzer:** shows the change in starting points for both sides, plus the raw rest-of-season gap (what most managers look at).
+  - **"Simulate"** runs the season simulator with and without the trade: 500 seasons each, same seed. It's read-only and runs on demand (~10–30 s).
+  - Changes under ~2 points are noise, and the page says so.
+- **Target finder:** every 1-for-1 deal with every team (~1,600 pairs, ~5 s, streamed into the page). A deal must:
+  1. raise Jack's starting points, ranked by regular-season points plus playoff-week points counted twice;
+  2. send the partner at least 95% of the raw season points they give up;
+  3. not cost the partner's lineup more than 50 points.
+- **Power rankings** order teams by starting points per remaining regular-season week. Playoff and title odds come from the latest nightly outlook run.
+- **Navigation:** a League tab (standings → team → trades). On phones, Settings moved to a header gear, so the tab bar stays at 6.
+- **Not yet:** 2-for-1 targets, or manager tendencies (who accepts trades, what they value).

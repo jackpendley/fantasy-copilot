@@ -67,5 +67,6 @@ NFL comes once the NBA app is fully built, then MLB.
 
 ## Phase 7: league intelligence (week 6+)
 
-- [ ] Standings, live matchup win probability, weekly power rankings and playoff odds (v3 sim)
+- [x] Live matchup: ESPN live points per player, in-game remainders, both teams' starts by day, daily win-chance snapshots (ADR-016)
+- [ ] Standings, weekly power rankings (playoff odds already on Outlook)
 - [ ] Opponent scouting; playoff-schedule planner

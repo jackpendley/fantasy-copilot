@@ -10,6 +10,7 @@ import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calenda
 import { loadLeague } from "./nba/data";
 import { buildDayBoard } from "./nba/day";
 import { statusEventsFrom } from "./nba/news";
+import { recordMatchupSnapshot } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
@@ -98,9 +99,20 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
 /** Once a day, before the games: re-run the season outlook with yesterday's results. */
 export async function nightlyJob(): Promise<Record<string, unknown>> {
   try {
+    // Before today's games: this week's win chance, for the matchup page's chart. A failure
+    // here is logged but doesn't stop the season outlook.
+    const matchup = await recordMatchupSnapshot().catch(async (e: Error) => {
+      await log("matchup-snapshot", "error", e.message);
+      return null;
+    });
     const { scoringPeriod, teams } = await runOutlook();
     const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
-    const result = { scoringPeriod, title: me?.champ, playoffs: me?.playoffs };
+    const result = {
+      scoringPeriod,
+      title: me?.champ,
+      playoffs: me?.playoffs,
+      weekWin: matchup?.p_win,
+    };
     await log("nightly", "ok", JSON.stringify(result));
     return result;
   } catch (e) {

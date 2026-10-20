@@ -8,6 +8,7 @@ import {
   fetchProSchedule,
   freeAgentFilter,
   parseFreeAgents,
+  parseLiveRosters,
   parseMatchups,
   parseProSchedule,
   parseSettings,
@@ -99,4 +100,15 @@ export async function loadFreeAgents(scoringPeriodId: number, limit = 250) {
     scoringPeriodId,
   });
   return parseFreeAgents(raw, cfg.season);
+}
+
+/** Today's fantasy points per player for every team in this matchup period (live during games). */
+export async function loadLiveRosters(scoringPeriodId: number, matchupPeriod: number) {
+  if (process.env.ESPN_LEAGUE_FILE) return new Map<number, never[]>();
+  const cfg = espnConfig();
+  const raw = await fetchLeague(cfg, ["mMatchupScore", "mBoxscore"], {
+    filter: { schedule: { filterMatchupPeriodIds: { value: [matchupPeriod] } } },
+    scoringPeriodId,
+  });
+  return parseLiveRosters(raw, matchupPeriod);
 }

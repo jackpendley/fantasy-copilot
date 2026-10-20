@@ -15,11 +15,19 @@
   - free-agent table;
   - claim/add with a named-drop confirm.
   - **The add/drop and claim write path is untested live.** Jack's first claim is the test, and it's audited.
-- **Players & trends (branch `players-trends`):**
+- **Players & trends (PR #10):**
   - `/nba/players`: search, hot & cold, minutes opening up, free agents being added, your roster.
   - `/nba/players/[id]`: FP/G vs projection, last 5, minutes, an FP-per-game chart with a 5-game average, and the game log in league scoring.
   - No usage rate yet (ADR-015).
 - **Vercel:** `VAPID_PRIVATE_KEY` is saved as a Secret. Its value was visible in a session, so rotate the VAPID pair before turning push on.
+
+- **Live matchup (branch `live-matchup`), the Matchup tab (`/nba/week`):**
+  - live totals from ESPN, plus in-game remainders in the projection;
+  - "Today": both lineups with live fantasy points and what's still to come;
+  - both teams' starts by day;
+  - a win-chance chart from nightly snapshots (`matchup_snapshots`, migration 0003).
+  - Auto-refreshes every minute during games.
+  - **First real test is the opener (Oct 20):** check that live points match ESPN's app.
 
 ## Deferred (Jack's call)
 
@@ -27,5 +35,4 @@
 
 ## Next tasks (Jack's order)
 
-1. **Live matchup:** live scores, games left per day, odds updating through the week.
-2. **League and trades:** standings, power rankings, rosters, trade analyzer and target finder.
+1. **League and trades:** standings, power rankings, rosters, trade analyzer and target finder.

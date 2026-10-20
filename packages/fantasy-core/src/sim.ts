@@ -77,21 +77,50 @@ export interface SimTeamResult {
   champ: number;
 }
 
+/** What a random draw is for: part of its key. */
+const DRAW = {
+  mult: 1,
+  miss: 2,
+  spellKind: 3,
+  spellLen: 4,
+  injury: 5,
+  adds: 6,
+  form: 7,
+  order: 8,
+  active: 9,
+  game: 10,
+} as const;
+
+/** A uniform number in [0, 1) determined only by `seed` and `key` (murmur3-style mixing). */
+export function keyedUniform(seed: number, key: readonly number[]): number {
+  let h = seed >>> 0;
+  for (const k of key) {
+    h = Math.imul(h ^ (k >>> 0), 0x9e3779b1);
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x85ebca6b);
+    h ^= h >>> 13;
+    h = Math.imul(h, 0xc2b2ae35);
+    h ^= h >>> 16;
+  }
+  return ((h >>> 0) + 0.5) / 2 ** 32;
+}
+
 export function simulateSeason(input: SimInput): SimTeamResult[] {
   const NOISE = input.noise ?? 0.5;
   const FORM = input.form ?? 0.28;
   const OPEN = expandSlots(input.slotCounts).filter(isStartingSlot);
-  let seed = (input.seed ?? 20261018) >>> 0;
-  const rnd = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 2 ** 32;
-  };
-  const gauss = () => Math.sqrt(-2 * Math.log(rnd() || 1e-9)) * Math.cos(2 * Math.PI * rnd());
-  const poisson = (lam: number) => {
+  // Common random numbers: every draw is a hash of what it is for (season, player or team, day
+  // or week, purpose), not the next number in one stream. A roster change then only changes
+  // the draws it touches, so two runs differ because the inputs differ, not by reshuffled luck.
+  const seed = (input.seed ?? 20261018) >>> 0;
+  const rnd = (...key: number[]) => keyedUniform(seed, key);
+  const gauss = (...key: number[]) =>
+    Math.sqrt(-2 * Math.log(rnd(...key, 1) || 1e-9)) * Math.cos(2 * Math.PI * rnd(...key, 2));
+  const poisson = (lam: number, ...key: number[]) => {
     let k = 0;
     let p = Math.exp(-lam);
     let s = p;
-    const u = rnd();
+    const u = rnd(...key);
     while (u > s && k < 10) {
       k++;
       p *= lam / k;
@@ -99,7 +128,12 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
     }
     return k;
   };
-  const geom = (mean: number) => 1 + Math.floor(Math.log(1 - rnd()) / Math.log(1 - 1 / mean));
+  const geom = (mean: number, ...key: number[]) =>
+    1 + Math.floor(Math.log(1 - rnd(...key)) / Math.log(1 - 1 / mean));
+  const spellLength = (...key: number[]) =>
+    rnd(...key, DRAW.spellKind) < 0.75
+      ? geom(2, ...key, DRAW.spellLen)
+      : geom(15, ...key, DRAW.spellLen);
 
   // Greedy by value is optimal on this slot structure (transversal matroid).
   const bestLineup = (players: SimPlayer[]): SimPlayer[] =>
@@ -141,13 +175,13 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
         const miss = Math.min(0.85, Math.max(0.01, 1 - p.gp / 82));
         const spell = 0.75 * 2 + 0.25 * 15;
         h = {
-          mult: Math.max(0.5, 1 + p.sd * gauss()),
+          mult: Math.max(0.5, 1 + p.sd * gauss(s, p.id, 0, DRAW.mult)),
           form: 0,
           q: miss / (spell * (1 - miss)),
           out: 0,
           loadMgd: p.gp < 72,
         };
-        if (rnd() < miss) h.out = rnd() < 0.75 ? geom(2) : geom(15);
+        if (rnd(s, p.id, 0, DRAW.miss) < miss) h.out = spellLength(s, p.id, 0);
         health.set(p.id, h);
       }
       return h;
@@ -159,8 +193,8 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
         return false;
       }
       const bump = h.loadMgd ? (b2b(p.proTeamId, d) ? 2 / 1.17 : 1 / 1.17) : 1;
-      if (rnd() < h.q * bump) {
-        h.out = (rnd() < 0.75 ? geom(2) : geom(15)) - 1;
+      if (rnd(s, p.id, d, DRAW.injury) < h.q * bump) {
+        h.out = spellLength(s, p.id, d) - 1;
         return false;
       }
       return true;
@@ -183,9 +217,13 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
       if (p !== curP) {
         curP = p;
         st.forEach((x, i) => {
-          x.budget = Math.min(input.addCapPerWeek, poisson(teams[i]!.addsPerWeek));
+          x.budget = Math.min(
+            input.addCapPerWeek,
+            poisson(teams[i]!.addsPerWeek, s, teams[i]!.id, p, DRAW.adds),
+          );
         });
-        for (const h of health.values()) h.form = 0.8 * h.form + 0.6 * FORM * gauss();
+        for (const [id, h] of health)
+          h.form = 0.8 * h.form + 0.6 * FORM * gauss(s, id, p, DRAW.form);
       }
       const healthy = new Map<number, boolean>();
       const isHealthy = (pl: SimPlayer) => {
@@ -201,11 +239,13 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
         return g;
       };
 
-      const order = [...Array(n).keys()].sort(() => rnd() - 0.5);
+      const order = [...Array(n).keys()].sort(
+        (a, b) => rnd(s, teams[a]!.id, d, DRAW.order) - rnd(s, teams[b]!.id, d, DRAW.order),
+      );
       for (const ti of order) {
         const t = teams[ti]!;
         const x = st[ti]!;
-        const checks = rnd() < t.act;
+        const checks = rnd(s, t.id, d, DRAW.active) < t.act;
         if (checks) {
           if (x.ir && H(x.ir.player).out === 0) {
             const fill = x.ir.fill;
@@ -262,7 +302,13 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
           const h = H(r);
           weekPts[ti]![p] =
             weekPts[ti]![p]! +
-            Math.max(-5, r.fppg * h.mult * Math.max(0.3, 1 + h.form) * (1 + NOISE * gauss()));
+            Math.max(
+              -5,
+              r.fppg *
+                h.mult *
+                Math.max(0.3, 1 + h.form) *
+                (1 + NOISE * gauss(s, r.id, d, DRAW.game)),
+            );
         }
       }
     }

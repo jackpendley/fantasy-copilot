@@ -46,7 +46,7 @@ async function previousSeasonTeams(): Promise<FantasyTeam[] | null> {
 }
 
 export async function runOutlook(
-  seasons = 800,
+  seasons = 2000,
 ): Promise<{ scoringPeriod: number; teams: OutlookTeam[] }> {
   const date = etDate();
   const fromDay = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);

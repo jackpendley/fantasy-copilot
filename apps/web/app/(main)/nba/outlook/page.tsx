@@ -5,6 +5,7 @@ import { ErrorNotice } from "@/components/setup-notice";
 import { dbConfigured } from "@/lib/db";
 import { fmtTip } from "@/lib/format";
 import { dateForScoringPeriod, shortDay } from "@/lib/nba/calendar";
+import { leagueMovesBetween, type TeamMove } from "@/lib/nba/changes";
 import { latestOutlooks, outlookHistory, type OutlookTeam } from "@/lib/nba/outlook-run";
 import { cn } from "@/lib/utils";
 
@@ -18,6 +19,101 @@ function delta(now: number, before: number | undefined) {
   return { text: `${d > 0 ? "+" : ""}${d}`, up: d > 0 };
 }
 
+const when = (d: Date) =>
+  `${d.toISOString().slice(5, 10).replace("-", "/")} ${fmtTip(d.toISOString())}`;
+const pts = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n).toLocaleString("en-US")}`;
+const names = (ps: { name: string }[]) => ps.map((p) => p.name).join(", ");
+
+function MoveLine({ m }: { m: TeamMove }) {
+  const verb =
+    m.type === "TRADE" ? (
+      <>
+        traded {names(m.drops)} for {names(m.adds)}
+      </>
+    ) : (
+      <>
+        {m.adds.length > 0 && <>added {names(m.adds)}</>}
+        {m.adds.length > 0 && m.drops.length > 0 && ", "}
+        {m.drops.length > 0 && <>dropped {names(m.drops)}</>}
+      </>
+    );
+  return (
+    <li className="text-xs text-muted-foreground">
+      {verb}{" "}
+      <span className={cn("tabular-nums", m.net > 0 ? "text-success" : m.net < 0 && "text-danger")}>
+        ({pts(m.net)} rest-of-season pts)
+      </span>
+    </li>
+  );
+}
+
+/** Teams whose odds moved, next to the roster moves behind them. */
+function WhatChanged({
+  latest,
+  previous,
+  moves,
+  myId,
+}: {
+  latest: OutlookTeam[];
+  previous: OutlookTeam[];
+  moves: TeamMove[] | null;
+  myId: number;
+}) {
+  const before = new Map(previous.map((t) => [t.teamId, t]));
+  const rows = latest
+    .map((t) => ({
+      t,
+      d: t.champ - (before.get(t.teamId)?.champ ?? t.champ),
+      dp: t.playoffs - (before.get(t.teamId)?.playoffs ?? t.playoffs),
+      moves: (moves ?? []).filter((m) => m.teamId === t.teamId),
+    }))
+    .filter((r) => r.moves.length > 0 || Math.abs(r.d) >= 0.01)
+    .sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  if (!rows.length) {
+    return (
+      <p className="rounded-xl border bg-card px-3 py-3 text-sm text-muted-foreground">
+        No team&apos;s title odds moved a full point, and no rosters changed.
+      </p>
+    );
+  }
+  return (
+    <div className="divide-y overflow-hidden rounded-xl border bg-card">
+      {rows.map(({ t, d, dp, moves: ms }) => (
+        <div key={t.teamId} className="px-3 py-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <span
+              className={cn("truncate text-sm font-medium", t.teamId === myId && "text-primary")}
+            >
+              {t.name}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              title {pct(before.get(t.teamId)?.champ ?? t.champ)} → {pct(t.champ)}{" "}
+              <span
+                className={cn("font-semibold", d > 0 ? "text-success" : d < 0 && "text-danger")}
+              >
+                ({d >= 0 ? "+" : ""}
+                {Math.round(d * 100)})
+              </span>
+              <span className="hidden sm:inline">
+                {" "}
+                · playoffs {dp >= 0 ? "+" : ""}
+                {Math.round(dp * 100)}
+              </span>
+            </span>
+          </div>
+          {ms.length > 0 && (
+            <ul className="mt-1 space-y-0.5">
+              {ms.map((m) => (
+                <MoveLine key={`${m.at}-${m.adds.join()}-${m.drops.join()}`} m={m} />
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default async function OutlookPage() {
   if (!dbConfigured()) {
     return <ErrorNotice title="Outlook needs the database" message="Set DATABASE_URL." />;
@@ -27,6 +123,16 @@ export default async function OutlookPage() {
   const [latest, previous] = runs;
   const me = latest?.results.find((t) => t.teamId === myId);
   const before = previous?.results.find((t) => t.teamId === myId);
+  // The roster moves between the two runs. Never blocks the page.
+  const moves =
+    latest && previous
+      ? await leagueMovesBetween(
+          previous.run_at,
+          latest.run_at,
+          previous.scoring_period,
+          latest.scoring_period,
+        ).catch(() => null)
+      : null;
 
   return (
     <>
@@ -62,6 +168,25 @@ export default async function OutlookPage() {
             sub={`${me.wins}-${me.losses} so far`}
           />
         </div>
+      )}
+
+      {latest && previous && (
+        <section className="space-y-1.5">
+          <SectionTitle aside={`since ${when(previous.run_at)}`}>What changed</SectionTitle>
+          <WhatChanged
+            latest={latest.results}
+            previous={previous.results}
+            moves={moves}
+            myId={myId}
+          />
+          <p className="px-1 text-xs text-muted-foreground">
+            Shows teams whose title odds moved a point or more, or who changed their roster. Each
+            run plays out {latest.seasons.toLocaleString("en-US")} seasons with the same random
+            draws for the same players, so moves mostly reflect real changes (rosters, results,
+            projections, injuries). Runs before Oct 21 used 800 seasons and could swing ±3-4 points
+            from chance alone.
+          </p>
+        </section>
       )}
 
       {history.length > 1 && (

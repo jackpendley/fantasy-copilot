@@ -188,3 +188,15 @@
   - A quick estimate (each player's marginal lineup value), then the exact evaluation of the best 40 per size and partner.
   - Filters: drop deals where anyone cuts a player they just received; merge deals that differ only by throw-ins (<$3); at most 2 ideas per size built on the same outgoing star; 8 per size.
 - **Speed:** lineups use the exact greedy (transversal matroid) from the simulator (`greedyStarters`, tested equal to the Hungarian optimizer). The whole search takes ~1.5 s, so it runs live, streamed into the page. This replaces the planned nightly table and second cron.
+
+## ADR-020: steadier outlook: common random numbers, 2,000 seasons, "What changed" (2026-10-20)
+
+- **Why:** Jack's title odds fell from 20% to 15% overnight (Oct 19→20) before any game. Diagnosis:
+  - ESPN projections and statuses were unchanged.
+  - Two rivals improved through waivers: 3reee added Toumani Camara, Lakers in 5 added Ingram and Fears.
+  - The rest was simulation noise: 800 seasons gives about ±1.5 points per run. Worse, any roster change shifted the single random stream for everyone.
+- **Common random numbers:** each draw is a hash of (seed, season, player or team, day or week, purpose) via `keyedUniform`, not the next number in a stream.
+  - Test: adding a player who never plays leaves every team's odds exactly unchanged.
+  - On live data, swapping one bench player moved other teams by at most 0.7 points.
+- **2,000 seasons** (about ±0.9 points): ~29 s locally for the simulation, ~32 s for a full run. It fits the 300 s nightly budget.
+- **"What changed" on Outlook:** teams whose title odds moved ≥1 point, next to the roster moves between the two runs (`mTransactions2`: waivers, free agents, trades), each valued in rest-of-season points.

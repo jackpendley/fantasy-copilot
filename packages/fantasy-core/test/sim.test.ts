@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { simulateSeason, type SimInput, type SimPlayer, type SimTeam } from "../src/sim";
+import {
+  keyedUniform,
+  simulateSeason,
+  type SimInput,
+  type SimPlayer,
+  type SimTeam,
+} from "../src/sim";
 import type { Position } from "../src/slots";
 
 // Synthetic 8-team league (not real data): 12-man rosters, every pro team plays every other
@@ -109,5 +115,39 @@ describe("simulateSeason", () => {
 
   it("is reproducible with a seed", () => {
     expect(simulateSeason(league(teams))).toEqual(simulateSeason(league(teams)));
+  });
+});
+
+describe("common random numbers", () => {
+  it("keyed draws are uniform and differ by key", () => {
+    const bins = new Array(10).fill(0);
+    let sum = 0;
+    for (let i = 0; i < 20000; i++) {
+      const u = keyedUniform(7, [i, 3]);
+      sum += u;
+      bins[Math.floor(u * 10)]++;
+    }
+    expect(sum / 20000).toBeCloseTo(0.5, 2);
+    for (const b of bins) expect(Math.abs(b - 2000)).toBeLessThan(200);
+    expect(keyedUniform(7, [1, 2])).not.toBe(keyedUniform(7, [2, 1]));
+    expect(keyedUniform(7, [1, 2])).toBe(keyedUniform(7, [1, 2]));
+  });
+
+  it("adding a player who never plays leaves every team's odds exactly unchanged", () => {
+    // With one sequential random stream, his extra draws shifted everyone else's luck.
+    const teams = [8, 7.5, 7, 7, 6.5, 6, 6, 5.5].map((f, i) => team(i + 1, 20 + f));
+    const base = simulateSeason(league(teams));
+    const changed = teams.map((t) =>
+      t.id === 8
+        ? {
+            ...t,
+            roster: [
+              ...t.roster,
+              { id: 9999, eligible: ["C"] as Position[], proTeamId: 99, fppg: 1, gp: 72, sd: 0.1 },
+            ],
+          }
+        : t,
+    );
+    expect(simulateSeason(league(changed))).toEqual(base);
   });
 });

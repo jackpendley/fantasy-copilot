@@ -8,13 +8,17 @@
   - Outlook: nightly playoff, #1-seed and title odds (Phase 3);
   - Settings;
   - game-day alerts, `status_events`, PWA push plumbing (Phase 2b).
-- **UI overhaul (branch `ui-overhaul`):**
-  - fixed the font bug (pages were rendering in Times);
-  - dark default with a light/system toggle;
-  - court-orange brand; status and chart tokens (chart palette validated in both modes);
-  - app shell: desktop top bar, phone bottom tab bar, safe areas;
-  - ESPN headshots and team logos; StatTiles and ProbBars;
-  - redesigned Today, Week, Outlook, Settings and Login.
+- **UI overhaul (PR #8):** dark/light/system theme, court-orange brand, app shell with a phone tab bar, headshots and logos, redesigned pages.
+- **Waivers & streaming (PR #9), `/nba/waivers`:**
+  - best moves this week, ranked by ΔP(win);
+  - best long-term adds;
+  - free-agent table;
+  - claim/add with a named-drop confirm.
+  - **The add/drop and claim write path is untested live.** Jack's first claim is the test, and it's audited.
+- **Players & trends (branch `players-trends`):**
+  - `/nba/players`: search, hot & cold, minutes opening up, free agents being added, your roster.
+  - `/nba/players/[id]`: FP/G vs projection, last 5, minutes, an FP-per-game chart with a 5-game average, and the game log in league scoring.
+  - No usage rate yet (ADR-015).
 - **Vercel:** `VAPID_PRIVATE_KEY` is saved as a Secret. Its value was visible in a session, so rotate the VAPID pair before turning push on.
 
 ## Deferred (Jack's call)
@@ -23,7 +27,5 @@
 
 ## Next tasks (Jack's order)
 
-1. **Waivers and streaming** (`/nba/waivers`): free-agent pool, net added starts, ΔP(win this week), one-click add/drop with an approved write test.
-2. **Players and trends:** player pages, game logs, rolling fantasy points, minutes and usage, risers and fallers.
-3. **Live matchup:** live scores, games left per day, odds updating through the week.
-4. **League and trades:** standings, power rankings, rosters, trade analyzer and target finder.
+1. **Live matchup:** live scores, games left per day, odds updating through the week.
+2. **League and trades:** standings, power rankings, rosters, trade analyzer and target finder.

@@ -4,6 +4,7 @@ import {
   buildMatcher,
   normalizeName,
   parseDailyLineups,
+  parseGameLog,
   parseInjuries,
   parseScoreboard,
   toEspnTeam,
@@ -71,5 +72,40 @@ describe("names", () => {
     expect(match("Jalen Williams", "DEN")).toBeNull();
     expect(match("Kon Knueppel", "MIA")).toBe(3);
     expect(toEspnTeam("GSW")).toBe("GS");
+  });
+});
+
+describe("parseGameLog", () => {
+  const log = parseGameLog(fixture("gamelog.json"));
+  it("parses regular-season and preseason games, oldest first", () => {
+    expect(log.length).toBeGreaterThan(10);
+    for (let i = 1; i < log.length; i++)
+      expect(Date.parse(log[i]!.date)).toBeGreaterThanOrEqual(Date.parse(log[i - 1]!.date));
+    expect(new Set(log.map((g) => g.part))).toEqual(new Set(["regular", "pre"]));
+  });
+  it("splits made-attempted pairs into league stat names", () => {
+    const g = log.find((x) => x.part === "regular")!;
+    expect(Object.keys(g.line).sort()).toEqual(
+      [
+        "3PA",
+        "3PM",
+        "AST",
+        "BLK",
+        "FGA",
+        "FGM",
+        "FTA",
+        "FTM",
+        "MIN",
+        "PF",
+        "PTS",
+        "REB",
+        "STL",
+        "TO",
+      ].sort(),
+    );
+    expect(g.line.FGA).toBeGreaterThanOrEqual(g.line.FGM!);
+    // Points add up from the makes.
+    expect(g.line.PTS).toBe(2 * g.line.FGM! + g.line["3PM"]! + g.line.FTM!);
+    expect(g.opponent).toMatch(/^[A-Z]{2,4}$/);
   });
 });

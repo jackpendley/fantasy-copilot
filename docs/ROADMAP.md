@@ -51,7 +51,8 @@ NFL comes once the NBA app is fully built, then MLB.
 
 - [ ] Backfill 2023-24 to 2025-26: ESPN summaries (box, shots with coordinates, lines), lineups, injury PDFs
 - [ ] Nightly ingestion; fantasy-points parity vs ESPN `appliedTotal`
-- [ ] Player pages: rolling fantasy points, minutes, usage, TS%, per-36
+- [x] Player pages: league fantasy points by game, 5-game rolling average, minutes, game log (usage/TS%/per-36 wait for the warehouse; ADR-015)
+- [x] Trends: hot & cold vs projection, ownership risers, minutes opening up behind injured starters
 
 ## Phase 5: ML models (weeks 3–6)
 

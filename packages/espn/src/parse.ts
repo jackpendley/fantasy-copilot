@@ -75,6 +75,35 @@ export interface RosterPlayer {
   last30: StatWindow | null;
   /** This season's single games ESPN sent with him ("05" + gameId entries), oldest first. */
   games?: GameEntry[];
+  /** How the wider ESPN market values him: what other managers see and draft by. */
+  market?: MarketSignals;
+  /** ESPN won't let him be traded right now. */
+  tradeLocked?: boolean;
+}
+
+export interface MarketSignals {
+  /** ESPN average draft position across all leagues. */
+  adp: number | null;
+  /** Average auction price across ESPN auction drafts ($200 budgets). */
+  auctionAvg: number | null;
+  /** ESPN's own preseason rank and dollar value (standard points). */
+  espnRank: number | null;
+  espnAuction: number | null;
+  /** ESPN's in-season overall rank (0 / null until it has games to rank). */
+  seasonRank: number | null;
+}
+
+const positive = (v: unknown) => (typeof v === "number" && v > 0 ? v : null);
+
+function marketSignals(player: Json, poolEntry: Json): MarketSignals {
+  const std = player?.draftRanksByRankType?.STANDARD;
+  return {
+    adp: positive(player?.ownership?.averageDraftPosition),
+    auctionAvg: positive(player?.ownership?.auctionValueAverage),
+    espnRank: positive(std?.rank),
+    espnAuction: positive(std?.auctionValue),
+    seasonRank: positive(poolEntry?.ratings?.["0"]?.totalRanking),
+  };
 }
 
 export interface GameEntry {
@@ -127,6 +156,8 @@ export function parsePlayer(
   season: number,
   slotId?: number | null,
   entryInjury?: string | null,
+  /** The pool entry around the player (ratings, trade lock), when ESPN sends one. */
+  poolEntry?: Json,
 ): RosterPlayer {
   const stats: Json[] = player?.stats ?? [];
   return {
@@ -147,6 +178,8 @@ export function parsePlayer(
     last15: window(stats, statKey(0, 2, season)),
     last30: window(stats, statKey(0, 3, season)),
     games: gameEntries(stats),
+    market: marketSignals(player, poolEntry),
+    tradeLocked: Boolean(poolEntry?.tradeLocked),
   };
 }
 
@@ -191,7 +224,13 @@ export function parseTeams(data: Json): FantasyTeam[] {
         }
       : null,
     roster: (t.roster?.entries ?? []).map((e: Json) =>
-      parsePlayer(e.playerPoolEntry?.player ?? {}, season, e.lineupSlotId, e.injuryStatus),
+      parsePlayer(
+        e.playerPoolEntry?.player ?? {},
+        season,
+        e.lineupSlotId,
+        e.injuryStatus,
+        e.playerPoolEntry,
+      ),
     ),
   }));
 }
@@ -284,7 +323,7 @@ export function parseFreeAgents(data: Json, season: number): FreeAgent[] {
   return (data?.players ?? [])
     .filter((e: Json) => e.player && (e.status === "FREEAGENT" || e.status === "WAIVERS"))
     .map((e: Json) => ({
-      player: parsePlayer(e.player, season),
+      player: parsePlayer(e.player, season, null, null, e),
       status: e.status,
       waiverUntil: e.status === "WAIVERS" ? (e.waiverProcessDate ?? null) : null,
     }));
@@ -323,4 +362,13 @@ export function parseLiveRosters(data: Json, matchupPeriod: number): Map<number,
     }
   }
   return out;
+}
+
+/** Overall pick number for each drafted player, from the `mDraftDetail` view. */
+export function parseDraftPicks(data: Json): Map<number, number> {
+  const picks = new Map<number, number>();
+  for (const p of data?.draftDetail?.picks ?? []) {
+    if (p.playerId && p.overallPickNumber && !p.keeper) picks.set(p.playerId, p.overallPickNumber);
+  }
+  return picks;
 }

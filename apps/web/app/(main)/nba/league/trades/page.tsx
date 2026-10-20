@@ -4,43 +4,75 @@ import { ChevronLeft } from "lucide-react";
 import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
 import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
-import { StatusPill } from "@/components/fc/status-pill";
+import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { SimulateTrade } from "@/components/simulate-trade";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
 import { loadLeagueView } from "@/lib/nba/league-view";
+import { marketValue, type MarketContext, type Realism } from "@/lib/nba/market";
 import { perGameProjection } from "@/lib/nba/projection";
 import {
-  PLAYOFF_WEIGHT,
   evaluateTrade,
   findTradeTargets,
+  tradeSize,
+  type RosterMoves,
   type TradeEval,
   type ValueContext,
 } from "@/lib/nba/trade";
 import { cn } from "@/lib/utils";
 
+const MAX_PER_SIDE = 3;
 const ids = (v: string | string[] | undefined) =>
-  (Array.isArray(v) ? v : v ? [v] : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  (Array.isArray(v) ? v : v ? [v] : [])
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0)
+    .slice(0, MAX_PER_SIDE);
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n)}`;
 const tone = (n: number) =>
   n > 1 ? "text-success" : n < -1 ? "text-danger" : "text-muted-foreground";
 const tradeHref = (team: number, give: number[], get: number[]) =>
   `/nba/league/trades?team=${team}${give.map((g) => `&give=${g}`).join("")}${get.map((g) => `&get=${g}`).join("")}`;
+const REALISM_TONE: Record<Realism, "success" | "info" | "warning"> = {
+  likely: "success",
+  fair: "info",
+  "long shot": "warning",
+};
+const SIZE_ORDER = [
+  "1-for-1",
+  "2-for-1",
+  "1-for-2",
+  "2-for-2",
+  "3-for-2",
+  "2-for-3",
+  "3-for-3",
+  "3-for-1",
+  "1-for-3",
+];
 
 function Names({ players }: { players: RosterPlayer[] }) {
   return <>{players.map((p) => p.name).join(" + ")}</>;
+}
+
+function RealismPill({ realism }: { realism: Realism }) {
+  return (
+    <Pill tone={REALISM_TONE[realism]}>
+      {realism === "long shot" ? "Long shot" : realism === "likely" ? "Likely" : "Fair"}
+    </Pill>
+  );
 }
 
 function PickList({
   name,
   players,
   picked,
+  market,
 }: {
   name: "give" | "get";
   players: RosterPlayer[];
   picked: number[];
+  market: MarketContext;
 }) {
   const sorted = [...players].sort((a, b) => perGameProjection(b).fppg - perGameProjection(a).fppg);
   return (
@@ -48,13 +80,17 @@ function PickList({
       {sorted.map((p) => (
         <label
           key={p.id}
-          className="flex cursor-pointer items-center gap-2.5 px-3 py-2 has-checked:bg-primary/10"
+          className={cn(
+            "flex cursor-pointer items-center gap-2.5 px-3 py-2 has-checked:bg-primary/10",
+            p.tradeLocked && "cursor-not-allowed opacity-50",
+          )}
         >
           <input
             type="checkbox"
             name={name}
             value={p.id}
             defaultChecked={picked.includes(p.id)}
+            disabled={p.tradeLocked}
             className="size-4 accent-[var(--primary)]"
           />
           <PlayerAvatar id={p.id} name={p.name} size={28} />
@@ -63,7 +99,9 @@ function PickList({
               <span className="truncate text-sm font-medium">{p.name}</span>
               <StatusPill status={p.injuryStatus ?? "ACTIVE"} />
             </div>
-            <div className="text-[11px] text-muted-foreground">{p.positions.join("/")}</div>
+            <div className="text-[11px] text-muted-foreground">
+              {p.positions.join("/")} · ${Math.round(marketValue(p, market))} market
+            </div>
           </div>
           <span className="shrink-0 text-sm font-semibold tabular-nums">
             {fmtPts(perGameProjection(p).fppg)}
@@ -74,25 +112,24 @@ function PickList({
   );
 }
 
-function Verdict({ e }: { e: TradeEval }) {
-  const me = e.mine.regular + PLAYOFF_WEIGHT * e.mine.playoffs;
-  const them = e.theirs.regular + e.theirs.playoffs;
+function Moves({ who, m }: { who: string; m: RosterMoves }) {
+  if (!m.dropped.length && !m.added.length) return null;
   return (
-    <p className="text-sm">
-      {me > 1 ? (
-        <span className="font-medium text-success">Helps your lineup.</span>
-      ) : (
-        <span className="font-medium text-danger">Doesn&apos;t help your lineup.</span>
+    <li>
+      {who}{" "}
+      {m.dropped.length > 0 && (
+        <>
+          drop <Names players={m.dropped} />
+        </>
+      )}
+      {m.dropped.length > 0 && m.added.length > 0 && " and "}
+      {m.added.length > 0 && (
+        <>
+          add <Names players={m.added} /> from free agency
+        </>
       )}{" "}
-      {e.rawGap > 0
-        ? `You'd get ${Math.round(e.rawGap)} more raw season points than you send, so they may push back.`
-        : `They'd get ${Math.round(-e.rawGap)} more raw season points than they send: easier to sell.`}{" "}
-      {them < -50
-        ? "Their lineup gets worse."
-        : them > 1
-          ? "Their lineup gets better too."
-          : "Their lineup stays about the same."}
-    </p>
+      to stay at a full roster.
+    </li>
   );
 }
 
@@ -101,14 +138,18 @@ function Evaluation({ e, partner }: { e: TradeEval; partner: FantasyTeam }) {
     { who: "You", d: e.mine },
     { who: partner.name, d: e.theirs },
   ];
+  const me = e.mine.regular + e.mine.playoffs;
   return (
     <section className="space-y-1.5">
       <SectionTitle>Evaluation</SectionTitle>
       <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div className="text-sm">
-          <span className="text-danger">Send</span> <Names players={e.give} />{" "}
-          <span className="text-muted-foreground">·</span> <span className="text-success">Get</span>{" "}
-          <Names players={e.get} />
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span>
+            <span className="text-danger">Send</span> <Names players={e.give} />{" "}
+            <span className="text-muted-foreground">·</span>{" "}
+            <span className="text-success">Get</span> <Names players={e.get} />
+          </span>
+          {e.acceptance && <RealismPill realism={e.acceptance.realism} />}
         </div>
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm tabular-nums">
@@ -134,7 +175,18 @@ function Evaluation({ e, partner }: { e: TradeEval; partner: FantasyTeam }) {
             </tbody>
           </table>
         </div>
-        <Verdict e={e} />
+        <ul className="space-y-1 text-sm">
+          <li>
+            {me > 1 ? (
+              <span className="font-medium text-success">Helps your lineup.</span>
+            ) : (
+              <span className="font-medium text-danger">Doesn&apos;t help your lineup.</span>
+            )}
+          </li>
+          {e.acceptance && <li className="text-muted-foreground">{e.acceptance.reason}</li>}
+          <Moves who="You'd" m={e.moves.mine} />
+          <Moves who="They'd" m={e.moves.theirs} />
+        </ul>
         <SimulateTrade
           partnerId={partner.id}
           partnerName={partner.name}
@@ -146,66 +198,115 @@ function Evaluation({ e, partner }: { e: TradeEval; partner: FantasyTeam }) {
   );
 }
 
-/** Streamed in after the rest of the page: searching every 1-for-1 deal takes a few seconds. */
+/** Streamed in after the rest of the page: the search takes a second or two. */
 async function Targets({
   me,
   others,
   ctx,
+  market,
+  freeAgents,
+  size,
 }: {
   me: FantasyTeam;
   others: FantasyTeam[];
   ctx: ValueContext;
+  market: MarketContext;
+  freeAgents: RosterPlayer[];
+  size: string | null;
 }) {
   await Promise.resolve();
   const ideas = findTradeTargets(
     { teamId: me.id, roster: me.roster },
     others.map((t) => ({ teamId: t.id, roster: t.roster })),
     ctx,
+    market,
+    freeAgents,
   );
   const name = new Map(others.map((t) => [t.id, t.name]));
-  if (!ideas.length)
-    return <Callout tone="info">No 1-for-1 deal clears the bar right now.</Callout>;
+  const sizes = SIZE_ORDER.filter((s) => ideas.some((i) => tradeSize(i) === s));
+  const shown = ideas.filter((i) => !size || tradeSize(i) === size).slice(0, 15);
   return (
-    <div className="divide-y overflow-hidden rounded-xl border bg-card">
-      {ideas.map((i) => (
-        <Link
-          key={`${i.partnerId}-${i.give[0]!.id}-${i.get[0]!.id}`}
-          href={tradeHref(i.partnerId, [i.give[0]!.id], [i.get[0]!.id])}
-          className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50"
-        >
-          <div className="flex shrink-0 -space-x-2">
-            <PlayerAvatar id={i.give[0]!.id} name={i.give[0]!.name} size={32} />
-            <PlayerAvatar id={i.get[0]!.id} name={i.get[0]!.name} size={32} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-sm">
-              <span className="text-muted-foreground">Send</span> {i.give[0]!.name}{" "}
-              <span className="text-muted-foreground">for</span>{" "}
-              <span className="font-medium">{i.get[0]!.name}</span>
-            </div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              with {name.get(i.partnerId)} · their lineup{" "}
-              {signed(i.theirs.regular + i.theirs.playoffs)}
-            </div>
-          </div>
-          <div className="shrink-0 text-right tabular-nums">
-            <div className={cn("font-semibold", tone(i.mine.regular))}>
-              {signed(i.mine.regular)}
-            </div>
-            <div className="text-[11px] text-muted-foreground">
-              {signed(i.mine.playoffs)} playoffs
-            </div>
-          </div>
-        </Link>
-      ))}
-    </div>
+    <>
+      <div className="flex flex-wrap gap-1.5">
+        {["All", ...sizes].map((s) => {
+          const active = (s === "All" && !size) || s === size;
+          return (
+            <Link
+              key={s}
+              href={s === "All" ? "/nba/league/trades" : `/nba/league/trades?size=${s}`}
+              className={cn(
+                "rounded-lg border px-2.5 py-1 text-xs font-medium",
+                active
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "bg-card text-muted-foreground",
+              )}
+            >
+              {s}
+            </Link>
+          );
+        })}
+      </div>
+      {shown.length ? (
+        <div className="divide-y overflow-hidden rounded-xl border bg-card">
+          {shown.map((i) => (
+            <Link
+              key={`${i.partnerId}-${i.give.map((p) => p.id).join(".")}-${i.get.map((p) => p.id).join(".")}`}
+              href={tradeHref(
+                i.partnerId,
+                i.give.map((p) => p.id),
+                i.get.map((p) => p.id),
+              )}
+              className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50"
+            >
+              <div className="hidden shrink-0 -space-x-2 sm:flex">
+                {[...i.give, ...i.get].slice(0, 4).map((p) => (
+                  <PlayerAvatar key={p.id} id={p.id} name={p.name} size={28} />
+                ))}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm">
+                  <span className="text-muted-foreground">Send</span> <Names players={i.give} />{" "}
+                  <span className="text-muted-foreground">for</span>{" "}
+                  <span className="font-medium">
+                    <Names players={i.get} />
+                  </span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  {i.acceptance && <RealismPill realism={i.acceptance.realism} />}
+                  <span>{tradeSize(i)}</span>
+                  <span className="truncate">
+                    · {name.get(i.partnerId)} · their lineup{" "}
+                    {signed(i.theirs.regular + i.theirs.playoffs)}
+                  </span>
+                </div>
+              </div>
+              <div className="shrink-0 text-right tabular-nums">
+                <div className={cn("font-semibold", tone(i.mine.regular))}>
+                  {signed(i.mine.regular)}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {signed(i.mine.playoffs)} playoffs
+                </div>
+              </div>
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <Callout tone="info">No deal clears the bar right now.</Callout>
+      )}
+    </>
   );
 }
 
 export default async function TradesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ team?: string; give?: string | string[]; get?: string | string[] }>;
+  searchParams: Promise<{
+    team?: string;
+    give?: string | string[];
+    get?: string | string[];
+    size?: string;
+  }>;
 }) {
   const sp = await searchParams;
   let v;
@@ -228,8 +329,10 @@ export default async function TradesPage({
           give,
           get,
           v.ctx,
+          { freeAgents: v.freeAgents, market: v.market },
         )
       : null;
+  const size = sp.size && SIZE_ORDER.includes(sp.size) ? sp.size : null;
 
   return (
     <>
@@ -241,7 +344,7 @@ export default async function TradesPage({
       </Link>
       <PageHeader
         title="Trades"
-        subtitle="Judged by projected starting-lineup points for the rest of the season"
+        subtitle="Your gain in starting-lineup points; their side judged by market value"
       />
 
       <section className="space-y-1.5">
@@ -267,14 +370,26 @@ export default async function TradesPage({
       {partner && (
         <form action="/nba/league/trades" className="space-y-3">
           <input type="hidden" name="team" value={partner.id} />
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="space-y-1">
-              <div className="px-1 text-xs font-medium">You send</div>
-              <PickList name="give" players={me.roster} picked={give.map((p) => p.id)} />
+              <div className="px-1 text-xs font-medium">You send (up to 3)</div>
+              <PickList
+                name="give"
+                players={me.roster}
+                picked={give.map((p) => p.id)}
+                market={v.market}
+              />
             </div>
             <div className="space-y-1">
-              <div className="truncate px-1 text-xs font-medium">You get from {partner.name}</div>
-              <PickList name="get" players={partner.roster} picked={get.map((p) => p.id)} />
+              <div className="truncate px-1 text-xs font-medium">
+                You get from {partner.name} (up to 3)
+              </div>
+              <PickList
+                name="get"
+                players={partner.roster}
+                picked={get.map((p) => p.id)}
+                market={v.market}
+              />
             </div>
           </div>
           <Button type="submit" className="w-full sm:w-auto">
@@ -289,20 +404,30 @@ export default async function TradesPage({
       {e && partner && <Evaluation e={e} partner={partner} />}
 
       <section className="space-y-1.5">
-        <SectionTitle aside="1-for-1, ranked by your gain">Trade targets</SectionTitle>
+        <SectionTitle aside="Up to 3-for-3, ranked by your gain">Trade targets</SectionTitle>
         <Suspense
           fallback={
             <div className="rounded-xl border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
-              Searching every 1-for-1 deal in the league…
+              Searching deals across the league…
             </div>
           }
         >
-          <Targets me={me} others={others} ctx={v.ctx} />
+          <Targets
+            me={me}
+            others={others}
+            ctx={v.ctx}
+            market={v.market}
+            freeAgents={v.freeAgents}
+            size={size}
+          />
         </Suspense>
         <p className="px-1 text-xs text-muted-foreground">
-          A target must raise your starting points (playoff weeks count double), send them at least
-          ~95% of the raw season points they give up, and not cost their lineup more than ~50
-          points. Raw value is what most managers look at; lineup fit is where you gain.
+          A target must raise your starting points (playoff weeks count double) and pass the other
+          manager&apos;s market check: they get back at least ~95% of the market value they send
+          (ESPN auction prices and ranks, blended with where your league drafted each player), plus
+          10% when they give up the best player for more bodies. You never send more than ~25% extra
+          market value. Likely = they also gain market value and lineup points. Uneven trades
+          include the drops or free-agent adds each side needs.
         </p>
       </section>
     </>

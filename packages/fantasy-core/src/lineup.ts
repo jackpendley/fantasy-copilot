@@ -84,3 +84,37 @@ export function optimizeLineup(
 export function currentPoints(players: readonly LineupPlayer[]): number {
   return players.reduce((a, p) => a + (isStartingSlot(p.currentSlot) ? p.value : 0), 0);
 }
+
+/**
+ * The best starting lineup's players, picked greedily by value. Greedy is exact here: players
+ * and slot capacities form a transversal matroid, so adding the most valuable player that
+ * still fits (via an augmenting path) never has to be undone. Much faster than `optimizeLineup`,
+ * which also minimizes moves; use this when only the points matter.
+ */
+export function greedyStarters<T>(
+  players: readonly T[],
+  value: (p: T) => number,
+  eligible: (p: T) => readonly Position[],
+  openSlots: readonly string[],
+): T[] {
+  const owner = new Array<number>(openSlots.length).fill(-1);
+  const sorted = [...players].sort((a, b) => value(b) - value(a));
+  const seated: T[] = [];
+  const tryPlace = (pi: number, seen: boolean[]): boolean => {
+    for (let s = 0; s < openSlots.length; s++) {
+      if (seen[s] || !slotAccepts(openSlots[s]!, eligible(sorted[pi]!))) continue;
+      seen[s] = true;
+      if (owner[s] === -1 || tryPlace(owner[s]!, seen)) {
+        owner[s] = pi;
+        return true;
+      }
+    }
+    return false;
+  };
+  for (let i = 0; i < sorted.length && seated.length < openSlots.length; i++) {
+    const snap = [...owner];
+    if (tryPlace(i, new Array<boolean>(openSlots.length).fill(false))) seated.push(sorted[i]!);
+    else owner.splice(0, owner.length, ...snap);
+  }
+  return seated;
+}

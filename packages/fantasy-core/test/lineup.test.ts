@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { optimizeLineup, currentPoints, type LineupPlayer } from "../src/lineup";
+import { optimizeLineup, currentPoints, greedyStarters, type LineupPlayer } from "../src/lineup";
 import {
   expandSlots,
   isStartingSlot,
@@ -137,5 +137,37 @@ describe("optimizeLineup", () => {
     const res = optimizeLineup(roster, LEAGUE);
     expect(res.slotOf.get(1)).not.toBe("IR");
     expect(res.moves.find((m) => m.playerId === 1)?.from).toBe("IR");
+  });
+});
+
+describe("greedyStarters", () => {
+  it("matches the exact optimizer's points on random rosters", () => {
+    const slots = { PG: 1, SG: 1, SF: 1, PF: 1, C: 1, G: 1, F: 1, UTIL: 3, BE: 3, IR: 1 };
+    const open = expandSlots(slots).filter(isStartingSlot);
+    const POS = ["PG", "SG", "SF", "PF", "C"] as const;
+    let seed = 7;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31;
+    for (let t = 0; t < 200; t++) {
+      // Synthetic roster: 8-13 players, 1-2 positions each, some with no game (value 0).
+      const n = 8 + Math.floor(rnd() * 6);
+      const players = Array.from({ length: n }, (_, i) => {
+        const a = POS[Math.floor(rnd() * 5)]!;
+        const b = POS[Math.floor(rnd() * 5)]!;
+        return {
+          id: i,
+          eligible: a === b ? [a] : [a, b],
+          value: rnd() < 0.3 ? 0 : Math.round(rnd() * 400) / 10,
+          currentSlot: "BE",
+        };
+      });
+      const exact = optimizeLineup(players, slots).points;
+      const greedy = greedyStarters(
+        players,
+        (p) => p.value,
+        (p) => p.eligible,
+        open,
+      ).reduce((a, p) => a + p.value, 0);
+      expect(greedy).toBeCloseTo(exact, 6);
+    }
   });
 });

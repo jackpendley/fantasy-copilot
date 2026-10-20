@@ -10,7 +10,8 @@
 //  - points per game = fppg x season multiplier (projection error) x weekly form x game noise.
 // Completed weeks keep their actual results; the current week starts from banked points.
 
-import { isStartingSlot, slotAccepts, expandSlots, type Position } from "./slots";
+import { isStartingSlot, expandSlots, type Position } from "./slots";
+import { greedyStarters } from "./lineup";
 
 export interface SimPlayer {
   id: number;
@@ -101,28 +102,13 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
   const geom = (mean: number) => 1 + Math.floor(Math.log(1 - rnd()) / Math.log(1 - 1 / mean));
 
   // Greedy by value is optimal on this slot structure (transversal matroid).
-  function bestLineup(players: SimPlayer[]): SimPlayer[] {
-    const owner = new Array<number>(OPEN.length).fill(-1);
-    const sorted = [...players].sort((a, b) => b.fppg - a.fppg);
-    const seated: SimPlayer[] = [];
-    const tryPlace = (pi: number, seen: boolean[]): boolean => {
-      for (let s = 0; s < OPEN.length; s++) {
-        if (seen[s] || !slotAccepts(OPEN[s]!, sorted[pi]!.eligible)) continue;
-        seen[s] = true;
-        if (owner[s] === -1 || tryPlace(owner[s]!, seen)) {
-          owner[s] = pi;
-          return true;
-        }
-      }
-      return false;
-    };
-    for (let i = 0; i < sorted.length && seated.length < OPEN.length; i++) {
-      const snap = [...owner];
-      if (tryPlace(i, new Array<boolean>(OPEN.length).fill(false))) seated.push(sorted[i]!);
-      else owner.splice(0, owner.length, ...snap);
-    }
-    return seated;
-  }
+  const bestLineup = (players: SimPlayer[]): SimPlayer[] =>
+    greedyStarters(
+      players,
+      (p) => p.fppg,
+      (p) => p.eligible,
+      OPEN,
+    );
 
   const teams = input.teams;
   const n = teams.length;

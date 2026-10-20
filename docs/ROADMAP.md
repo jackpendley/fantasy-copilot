@@ -64,7 +64,8 @@ NFL comes once the NBA app is fully built, then MLB.
 
 - [x] Analyzer: Δ starting-lineup points (regular season and playoff weeks) for both sides, raw-value gap, ΔP(playoffs/title) by seeded simulation (ADR-017)
 - [x] Target finder: mutually plausible 1-for-1 deals across the league
-- [ ] 2-for-1 targets; manager profiles (who trades, what they value)
+- [x] Multi-player targets up to 3-for-3 with market-value acceptance and roster balancing (ADR-019)
+- [ ] Manager profiles (who trades, what they value)
 
 ## Phase 7: league intelligence (week 6+)
 

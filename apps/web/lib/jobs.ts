@@ -7,8 +7,9 @@ import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
 import { gamedayAlerts } from "./nba/alerts";
 import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calendar";
-import { loadLeague } from "./nba/data";
+import { loadFreeAgents, loadLeague } from "./nba/data";
 import { buildDayBoard } from "./nba/day";
+import { collectMarketData, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom } from "./nba/news";
 import { recordMatchupSnapshot } from "./nba/matchup-snapshots";
@@ -20,6 +21,8 @@ async function log(job: string, status: "ok" | "error", detail: string) {
 
 /** Window around today's games when the 5-minute checks do real work. */
 const BEFORE_FIRST_TIP_MS = 90 * 60_000;
+/** Games tipping within this window get their props captured as the closing line. */
+const CLOSE_WINDOW_MS = 90 * 60_000;
 const AFTER_LAST_TIP_MS = 15 * 60_000;
 
 /**
@@ -85,6 +88,15 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     newEvents = inserted.length;
   }
 
+  // Closing lines: re-captured every 5 minutes until tip for games starting soon.
+  const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
+  const market = closing.length
+    ? await collectMarketData(closing, date.replace(/-/g, ""), "close", now).catch(async (e) => {
+        await log("market-data", "error", (e as Error).message);
+        return null;
+      })
+    : null;
+
   const board = buildDayBoard({
     roster: data.me.roster,
     slotCounts: data.settings.slotCounts,
@@ -99,7 +111,15 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   for (const a of alerts) {
     if (await sendAlertOnce(a.key, { title: a.title, body: a.body, url: a.url })) sent++;
   }
-  const result = { date, ...watch, events: events.length, newEvents, alerts: alerts.length, sent };
+  const result = {
+    date,
+    ...watch,
+    closingProps: market?.props ?? 0,
+    events: events.length,
+    newEvents,
+    alerts: alerts.length,
+    sent,
+  };
   await log("gameday", "ok", JSON.stringify(result));
   return result;
 }
@@ -114,17 +134,49 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       return null;
     });
     const { scoringPeriod, teams } = await runOutlook();
+    // Morning lines and the day's DARKO projections, for the model. Never fails the job.
+    const market = await collectToday("morning", true).catch(async (e: Error) => {
+      await log("market-data", "error", e.message);
+      return null;
+    });
     const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
     const result = {
       scoringPeriod,
       title: me?.champ,
       playoffs: me?.playoffs,
       weekWin: matchup?.p_win,
+      ...market,
     };
     await log("nightly", "ok", JSON.stringify(result));
     return result;
   } catch (e) {
     await log("nightly", "error", (e as Error).message);
+    throw e;
+  }
+}
+
+/** Capture today's props and game lines (and, with `darko`, a DARKO snapshot). */
+async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<string, unknown>> {
+  const date = etDate();
+  const sp = scoringPeriodForDate(date);
+  if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
+  const data = await loadLeague(sp, date);
+  const games = data.games.filter((g) => g.scoringPeriodId === sp);
+  const lines = await collectMarketData(games, date.replace(/-/g, ""), snapshot);
+  const players = data.ahead.teams.flatMap((t) => t.roster);
+  const free = await loadFreeAgents(sp).catch(() => []);
+  const snap = darko ? await snapshotDarko([...players, ...free.map((f) => f.player)]) : {};
+  return { [`${snapshot}Props`]: lines.props, gamesWithLines: lines.games, ...snap };
+}
+
+/** Early evening, before most tips: the pregame snapshot of props and game lines. */
+export async function pregameJob(): Promise<Record<string, unknown>> {
+  try {
+    const result = await collectToday("pregame");
+    await log("pregame", "ok", JSON.stringify(result));
+    return result;
+  } catch (e) {
+    await log("pregame", "error", (e as Error).message);
     throw e;
   }
 }

@@ -232,3 +232,22 @@
   - this week banks every team's live points plus the expected rest of today (the same `remainingToday` logic as the matchup).
 - **CPU:** the simulator runs in ~25 ms slices (`simulateSeasonAsync`, same results as `simulateSeason`). Locally, pages took ~1.2 s during a run instead of 34 s.
 - **Time:** a run takes ~35 s locally and ~80 s on Vercel, so every route that starts one in the background gets `maxDuration = 300`.
+
+## ADR-023: collect Vegas lines and DARKO for the model (2026-10-21)
+
+- **Why:** Jack wants market data (sportsbooks) and DARKO to train and improve the projections. ESPN's public odds feed drops player props once a season ends, so props can't be backtested historically. They must be collected from now on.
+- **Sources** (free, no cookies):
+  - **Player props:** ESPN core API `…/events/{id}/competitions/{id}/odds/100/propBets` (DraftKings): points, rebounds, assists, threes, steals, blocks.
+    - Each prop is two unlabeled prices. The first is the over: its price matched the one-sided "X+" milestone at the same threshold in 107 of 112 props on opening night.
+  - **Game lines:** spread and total from the scoreboard (`fetchScoreboard`). ESPN keeps these for past seasons, so the game-environment model can be backtested.
+  - **DARKO:** `darko.app/projections/__data.json` (SvelteKit devalue): per-100 rates, minutes, pace, `asOf`.
+    - No stated terms; one request a day.
+    - Not yet updated for 2026-27 (as of Jul 26).
+- **Storage** (migration 0005): `prop_lines`, `game_lines` and `projection_snapshots`, every row stamped with `captured_at` and tip.
+  - Lines are only captured before tip (point in time).
+  - Snapshots: `morning` (nightly, 11:00Z), `pregame` (new Vercel cron, 22:00Z) and `close` (re-captured every 5 minutes inside 90 minutes of tip by the gameday job, once a 5-minute scheduler exists).
+- **Vegas projection** (`lib/nba/vegas.ts`):
+  - Remove the bookmaker margin from each over/under, then solve for the mean: normal with variance 2.5×/1.3×/1.35× the mean for PTS/REB/AST, Poisson for 3PM/STL/BLK.
+  - This league scores makes, misses and free throws rather than points, so the points line scales the model's shooting volume.
+  - The model's per-game box score is ESPN's projected line scaled to our FP/G. Stats without a prop (turnovers) keep the model's number. A points line is required.
+- **Use for now:** shown next to our projection (Today rows, player pages) and stored. Lineups, waivers and odds keep using our projection until a pre-registered walk-forward test shows the blend beats it (plan item 5, after 7 game days).

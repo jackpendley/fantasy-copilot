@@ -15,7 +15,9 @@ import {
 } from "@/lib/nba/calendar";
 import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
 import { liveRows, type LiveRow } from "@/lib/nba/live";
+import { propsForGames } from "@/lib/nba/market-data";
 import { pendingMoves } from "@/lib/nba/roster";
+import { vegasProjection } from "@/lib/nba/vegas";
 import { buildDayBoard, type DayRow } from "@/lib/nba/day";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip, slotRank } from "@/lib/format";
@@ -27,11 +29,13 @@ function Group({
   rows,
   aside,
   live,
+  vegas,
 }: {
   title: string;
   rows: DayRow[];
   aside?: string;
   live: Map<number, LiveRow>;
+  vegas: Map<number, number>;
 }) {
   if (!rows.length) return null;
   return (
@@ -39,7 +43,12 @@ function Group({
       <SectionTitle aside={aside}>{title}</SectionTitle>
       <div className="divide-y overflow-hidden rounded-xl border bg-card">
         {rows.map((r) => (
-          <PlayerRow key={r.player.id} row={r} live={live.get(r.player.id)} />
+          <PlayerRow
+            key={r.player.id}
+            row={r}
+            live={live.get(r.player.id)}
+            vegas={vegas.get(r.player.id)}
+          />
         ))}
       </div>
     </section>
@@ -77,6 +86,18 @@ export default async function TodayPage({
     injuries: data.injuries,
     lineups: data.lineups,
   });
+  // Sportsbook props for these games (cached 15 min; missing until books post them).
+  const props = await propsForGames(games.map((g) => g.gameId)).catch(() => new Map());
+  const vegas = new Map<number, number>();
+  for (const r of board.rows) {
+    const v = vegasProjection(
+      props.get(r.player.id) ?? [],
+      r.player.projection?.stats,
+      r.projection.fppg,
+      data.settings.scoring,
+    );
+    if (v) vegas.set(r.player.id, v.fppg);
+  }
   const live = new Map(
     liveRows(board.rows, liveRosters?.get(data.me.id), data.scoreboard).map((r) => [
       r.row.player.id,
@@ -229,15 +250,18 @@ export default async function TodayPage({
             rows={starters}
             aside={`${fmtPts(board.optimalPoints)} proj`}
             live={live}
+            vegas={vegas}
           />
-          <Group title="Bench" rows={bench} live={live} />
-          <Group title="IR" rows={ir} live={live} />
+          <Group title="Bench" rows={bench} live={live} vegas={vegas} />
+          <Group title="IR" rows={ir} live={live} vegas={vegas} />
           <p className="px-1 text-xs text-muted-foreground">
             Projections: ESPN&apos;s league-scored projection, blended toward this season&apos;s
             average (as of the morning: tonight&apos;s game doesn&apos;t move it). Live: points so
             far, then &ldquo;proj&rdquo; = points so far plus the unplayed share of his pregame
             projection; finals show the pregame projection. Arrows mark 5+ points and 20%+ off it.
-            Injury chances are rough priors until the availability model ships.
+            &ldquo;Vegas&rdquo; is the same game implied by DraftKings player props (for comparison
+            while it&apos;s being tested; lineups still use our projection). Injury chances are
+            rough priors until the availability model ships.
           </p>
         </div>
       </div>

@@ -21,6 +21,7 @@ import {
   type TradeEval,
   type ValueContext,
 } from "@/lib/nba/trade";
+import { matchupPeriodOf } from "@/lib/nba/calendar";
 import { cn } from "@/lib/utils";
 
 const MAX_PER_SIDE = 3;
@@ -113,27 +114,56 @@ function PickList({
 }
 
 function Moves({ who, m }: { who: string; m: RosterMoves }) {
-  if (!m.dropped.length && !m.added.length) return null;
+  if (!m.dropped.length && !m.added.length && !m.toIL.length) return null;
   return (
-    <li>
-      {who}{" "}
-      {m.dropped.length > 0 && (
-        <>
-          drop <Names players={m.dropped} />
-        </>
+    <>
+      {m.toIL.length > 0 && (
+        <li>
+          {who} put <Names players={m.toIL} /> straight on IL (ruled out), so he doesn&apos;t take a
+          roster spot until he&apos;s back.
+        </li>
       )}
-      {m.dropped.length > 0 && m.added.length > 0 && " and "}
-      {m.added.length > 0 && (
-        <>
-          add <Names players={m.added} /> from free agency
-        </>
-      )}{" "}
-      to stay at a full roster.
-    </li>
+      {(m.dropped.length > 0 || m.added.length > 0) && (
+        <li>
+          {who}{" "}
+          {m.dropped.length > 0 && (
+            <>
+              drop <Names players={m.dropped} /> (least missed in the lineup)
+            </>
+          )}
+          {m.dropped.length > 0 && m.added.length > 0 && " and "}
+          {m.added.length > 0 && (
+            <>
+              add <Names players={m.added} /> from free agency
+            </>
+          )}{" "}
+          to stay at a full roster.
+        </li>
+      )}
+    </>
   );
 }
 
-function Evaluation({ e, partner }: { e: TradeEval; partner: FantasyTeam }) {
+/** "+ Oso Ighodaro (FA) · cut Day'Ron Sharpe" for Jack's side of an idea in the list. */
+function MovesBrief({ m }: { m: RosterMoves }) {
+  const parts = [
+    ...m.added.map((p) => `+ ${p.name} (free agent)`),
+    ...m.dropped.map((p) => `cut ${p.name}`),
+    ...m.toIL.map((p) => `${p.name} to IL`),
+  ];
+  return parts.length ? <span>· you: {parts.join(", ")}</span> : null;
+}
+
+function Evaluation({
+  e,
+  partner,
+  addsLeft,
+}: {
+  e: TradeEval;
+  partner: FantasyTeam;
+  /** Jack's adds left this matchup week (null when unknown). */
+  addsLeft: number | null;
+}) {
   const rows = [
     { who: "You", d: e.mine },
     { who: partner.name, d: e.theirs },
@@ -185,6 +215,13 @@ function Evaluation({ e, partner }: { e: TradeEval; partner: FantasyTeam }) {
           </li>
           {e.acceptance && <li className="text-muted-foreground">{e.acceptance.reason}</li>}
           <Moves who="You'd" m={e.moves.mine} />
+          {addsLeft != null && e.moves.mine.added.length > addsLeft && (
+            <li className="text-warning">
+              You have {addsLeft} add{addsLeft === 1 ? "" : "s"} left this week, so the free-agent
+              pickup would wait until next week&apos;s adds reset (the numbers assume it happens
+              now).
+            </li>
+          )}
           <Moves who="They'd" m={e.moves.theirs} />
         </ul>
         <SimulateTrade
@@ -223,13 +260,14 @@ async function Targets({
     freeAgents,
   );
   const name = new Map(others.map((t) => [t.id, t.name]));
-  const sizes = SIZE_ORDER.filter((s) => ideas.some((i) => tradeSize(i) === s));
+  const count = (s: string) => ideas.filter((i) => tradeSize(i) === s).length;
   const shown = ideas.filter((i) => !size || tradeSize(i) === size).slice(0, 15);
   return (
     <>
       <div className="flex flex-wrap gap-1.5">
-        {["All", ...sizes].map((s) => {
+        {["All", ...SIZE_ORDER].map((s) => {
           const active = (s === "All" && !size) || s === size;
+          const n = s === "All" ? ideas.length : count(s);
           return (
             <Link
               key={s}
@@ -239,9 +277,10 @@ async function Targets({
                 active
                   ? "border-primary bg-primary/10 text-primary"
                   : "bg-card text-muted-foreground",
+                !n && !active && "opacity-50",
               )}
             >
-              {s}
+              {s} <span className="tabular-nums opacity-70">{n}</span>
             </Link>
           );
         })}
@@ -278,6 +317,7 @@ async function Targets({
                     · {name.get(i.partnerId)} · their lineup{" "}
                     {signed(i.theirs.regular + i.theirs.playoffs)}
                   </span>
+                  <MovesBrief m={i.moves.mine} />
                 </div>
               </div>
               <div className="shrink-0 text-right tabular-nums">
@@ -292,7 +332,11 @@ async function Targets({
           ))}
         </div>
       ) : (
-        <Callout tone="info">No deal clears the bar right now.</Callout>
+        <Callout tone="info">
+          {size
+            ? `No realistic ${size} helps you right now: every deal of this shape either lowers your lineup points or gives the other manager less market value than they send.`
+            : "No deal clears the bar right now."}
+        </Callout>
       )}
     </>
   );
@@ -333,6 +377,9 @@ export default async function TradesPage({
         )
       : null;
   const size = sp.size && SIZE_ORDER.includes(sp.size) ? sp.size : null;
+  const cap = v.data.settings.addsPerWeek;
+  const addsLeft =
+    cap != null ? Math.max(0, cap - (me.activity?.addsByPeriod[matchupPeriodOf(v.sp)] ?? 0)) : null;
 
   return (
     <>
@@ -401,7 +448,7 @@ export default async function TradesPage({
       {partner && (give.length > 0 || get.length > 0) && !e && (
         <Callout tone="info">Pick at least one player on each side.</Callout>
       )}
-      {e && partner && <Evaluation e={e} partner={partner} />}
+      {e && partner && <Evaluation e={e} partner={partner} addsLeft={addsLeft} />}
 
       <section className="space-y-1.5">
         <SectionTitle aside="Up to 3-for-3, ranked by your gain">Trade targets</SectionTitle>

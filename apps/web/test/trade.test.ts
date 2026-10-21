@@ -96,6 +96,76 @@ describe("applyTrade (uneven deals)", () => {
   });
 });
 
+describe("applyTrade edge cases", () => {
+  it("cuts by lineup value on the roster after the trade, not before", () => {
+    // Jack's only guard (PG10) is worth a lot before the deal and nothing once two better
+    // guards arrive; the third center is benched either way but has more raw points.
+    const e = evaluateTrade(
+      { teamId: 1, roster: mine },
+      { teamId: 2, roster: theirs },
+      [mine[0]!],
+      [theirs[1]!, theirs[2]!],
+      ctx,
+    );
+    expect(e.moves.mine.dropped.map((x) => x.id)).toEqual([4]);
+    expect(e.fits).toBe(true);
+  });
+
+  it("puts a ruled-out arrival on an open IL slot instead of cutting someone", () => {
+    const ctxIR = valueContext(games, { ...SLOTS, IR: 1 }, 1, 10, 1);
+    const hurt = { ...theirs[1]!, injuryStatus: "OUT" };
+    const r = applyTrade(mine, [mine[0]!], [hurt, theirs[2]!], ctxIR);
+    expect(r.moves.toIL.map((x) => x.id)).toEqual([hurt.id]);
+    expect(r.moves.dropped).toEqual([]);
+    expect(r.roster.find((x) => x.id === hurt.id)?.slot).toBe("IR");
+    // IL already full: back to a cut.
+    const full = applyTrade(
+      [...mine, { ...p(9, "C", 5), slot: "IR" }],
+      [mine[0]!],
+      [hurt, theirs[2]!],
+      ctxIR,
+    );
+    expect(full.moves.toIL).toEqual([]);
+    expect(full.moves.dropped).toHaveLength(1);
+  });
+
+  it("never cuts a player just received, and flags a deal that can't fit", () => {
+    const tiny = valueContext(games, { C: 1 }, 1, 10, 1); // one roster spot
+    const e = evaluateTrade(
+      { teamId: 1, roster: [mine[0]!] },
+      { teamId: 2, roster: theirs },
+      [mine[0]!],
+      [theirs[0]!, theirs[1]!],
+      tiny,
+    );
+    expect(e.moves.mine.dropped).toEqual([]);
+    expect(e.fits).toBe(false);
+  });
+
+  it("keeps the active roster at the limit after any trade shape (randomized)", () => {
+    let seed = 7;
+    const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const pool = Array.from({ length: 40 }, (_, i) =>
+      p(100 + i, ["PG", "C"][i % 2]!, 5 + rand() * 30),
+    );
+    for (let t = 0; t < 200; t++) {
+      const shuffled = [...pool].sort(() => rand() - 0.5);
+      const a = shuffled.slice(0, 4);
+      const b = shuffled.slice(4, 8);
+      const free = shuffled.slice(8, 14);
+      const give = a.slice(0, 1 + Math.floor(rand() * 3));
+      const get = b.slice(0, 1 + Math.floor(rand() * 3));
+      const e = evaluateTrade({ teamId: 1, roster: a }, { teamId: 2, roster: b }, give, get, ctx, {
+        freeAgents: free,
+      });
+      const after = applyTrade(a, give, get, ctx, free, new Set(), "exact");
+      expect(after.roster.filter((x) => x.slot !== "IR")).toHaveLength(4);
+      expect(after.moves.dropped.some((d) => get.some((g) => g.id === d.id))).toBe(false);
+      expect(e.fits).toBe(true);
+    }
+  });
+});
+
 describe("market value and acceptance", () => {
   it("blends ESPN auction prices with this league's draft slot", () => {
     const pool = [p(30, "C", 40, 60), p(31, "C", 30, 30), p(32, "C", 20, 10)];
@@ -127,6 +197,26 @@ describe("market value and acceptance", () => {
 });
 
 describe("findTradeTargets", () => {
+  it("finds a 2-for-1 that only works with the free agent who fills the open spot", () => {
+    // Two $23 centers for a $40 star; Jack then adds an 18-point free-agent guard.
+    // (Ids double as pro teams 11-19, which play every day of the synthetic schedule.)
+    const jack = [p(11, "C", 20, 23), p(12, "C", 20, 23), p(13, "PG", 10, 1), p(14, "PG", 9, 1)];
+    const rival = [p(15, "C", 40, 40), p(16, "PG", 5, 1), p(17, "PG", 4, 1), p(18, "C", 3, 1)];
+    const free = [p(19, "PG", 18, 1)];
+    const ideas = findTradeTargets(
+      { teamId: 1, roster: jack },
+      [{ teamId: 2, roster: rival }],
+      ctx,
+      marketContext([...jack, ...rival, ...free], new Map()),
+      free,
+    );
+    const twoForOne = ideas.find((i) => i.give.length === 2 && i.get.length === 1);
+    expect(twoForOne).toBeDefined();
+    expect(twoForOne!.get.map((x) => x.id)).toEqual([15]);
+    expect(twoForOne!.moves.mine.added.map((x) => x.id)).toEqual([19]);
+    expect(twoForOne!.acceptance?.realism).toBe("fair");
+  });
+
   it("suggests the positional swap and never a lopsided market deal", () => {
     const ideas = findTradeTargets(
       { teamId: 1, roster: mine },

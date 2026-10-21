@@ -67,6 +67,8 @@
   - scoreboard with current points big and projected finals;
   - one-line box scores (tap for the full line) and solid ▲/▼ on Today and Matchup.
 
+- **Trades every size (branch `trades-every-size`):** 2-for-1, 3-for-2 and the other shapes now surface, with exact cuts, IL for injured arrivals, and free-agent fills (ADR-024).
+
 ## Plan in progress (approved 2026-10-20, second plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
@@ -85,5 +87,5 @@
 ## Next tasks
 
 1. After the `market-data` merge: check that the 22:00Z pregame cron and the nightly job store props, and that rows show "Vegas".
-2. Plan items 4-5 above (trades every size; train on market data).
+2. Plan item 5: train on market data (game-environment backtest now; props after 7 game days of collection).
 3. Open: Jack's first in-app add/claim (the write path is still untested live); the 5-minute scheduler.

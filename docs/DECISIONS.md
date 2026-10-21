@@ -251,3 +251,17 @@
   - This league scores makes, misses and free throws rather than points, so the points line scales the model's shooting volume.
   - The model's per-game box score is ESPN's projected line scaled to our FP/G. Stats without a prop (turnovers) keep the model's number. A points line is required.
 - **Use for now:** shown next to our projection (Today rows, player pages) and stored. Lineups, waivers and odds keep using our projection until a pre-registered walk-forward test shows the blend beats it (plan item 5, after 7 game days).
+
+## ADR-024: trades of every size, with the roster moves they force (2026-10-21)
+
+- **Why:** the trades page never showed a 2-for-1, 3-for-1 or 3-for-2. Jack asked for every shape, with the cut (1-for-2) or the free-agent pickup (2-for-1) accounted for.
+  - The search ranked candidates by a quick estimate that ignored the free agent Jack would add on a 2-for-1 and the player he'd cut on a 1-for-2. So it discarded every deal sending more than it received before the exact evaluation.
+  - Evaluated exactly, 105 realistic, improving 2-for-1s existed on opening night. The earlier explanation ("2-for-1s don't help your thin bench") was wrong.
+- **Quick estimate:** adds what the best k free agents bring to Jack's lineup for each open spot. Subtracts the cheapest k cuts (by lineup value) when he receives more.
+- **Cuts** (`applyTrade`):
+  - the player the lineup misses least, measured on the roster after the trade, with fewer raw points breaking ties. The search uses each player's value before the trade for speed, then re-evaluates its finalists exactly;
+  - never a player just received, never one on IR. A deal that would need that is dropped (`fits`).
+- **IL:** an incoming player who's ruled out takes a free IL slot instead of an active spot. His value still counts, since he comes back.
+- **Free-agent fills:** the best available, shared between the two sides. The analyzer warns when Jack has no adds left this week; the numbers assume the pickup happens now.
+- **Page:** a chip for every size with its count, a "no realistic X-for-Y" note for empty ones, and each idea's moves in the list.
+- **Speed:** ~1.6 s locally for the full search.

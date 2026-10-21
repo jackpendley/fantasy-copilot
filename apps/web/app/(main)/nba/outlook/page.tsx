@@ -19,8 +19,9 @@ import {
 import { latestOutlooks, outlookHistory, type OutlookTeam } from "@/lib/nba/outlook-run";
 import { cn } from "@/lib/utils";
 
-// A visit can start a re-run in the background (after the response), which takes ~30 s.
-export const maxDuration = 120;
+// A visit can start a re-run in the background (after the response): ~80 s on Vercel, more
+// when the instance is busy, so it gets the same budget as the nightly job.
+export const maxDuration = 300;
 
 const pct = (v: number) => (v < 0.005 && v > 0 ? "<1%" : `${Math.round(v * 100)}%`);
 
@@ -179,9 +180,9 @@ export default async function OutlookPage() {
           <RefreshCw className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
           <span>
             Updating for the latest roster move. This page refreshes itself when it&apos;s done
-            (about 30 seconds).
+            (about a minute and a half).
           </span>
-          <LiveRefresh active seconds={10} />
+          <LiveRefresh active seconds={20} />
         </div>
       )}
 

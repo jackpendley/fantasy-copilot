@@ -74,10 +74,13 @@ function Points({ live }: { live: LiveRow }) {
 export function PlayerRow({
   row,
   live,
+  vegas,
   showMoves = true,
 }: {
   row: DayRow;
   live?: LiveRow;
+  /** Tonight's projection implied by sportsbook props, when posted. */
+  vegas?: number;
   showMoves?: boolean;
 }) {
   const moved = showMoves && row.recommendedSlot !== row.currentSlot;
@@ -159,6 +162,14 @@ export function PlayerRow({
             {row.playProb < 1 && row.playProb > 0 && (
               <div className="text-[10px] text-muted-foreground tabular-nums">
                 {Math.round(row.playProb * 100)}%×{fmtPts(row.projection.fppg)}
+              </div>
+            )}
+            {vegas != null && (
+              <div
+                className="text-[10px] text-muted-foreground tabular-nums"
+                title="Projection implied by DraftKings player props"
+              >
+                Vegas {fmtPts(vegas)}
               </div>
             )}
           </>

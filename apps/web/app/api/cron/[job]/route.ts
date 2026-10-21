@@ -1,8 +1,8 @@
-// Scheduled jobs. Called by cron-job.org (gameday, every 5 minutes) and Vercel cron
-// (nightly), both with `Authorization: Bearer CRON_SECRET`.
+// Scheduled jobs, with `Authorization: Bearer CRON_SECRET`. Vercel cron calls nightly and
+// pregame once a day; gameday is meant for a 5-minute external scheduler.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { gamedayJob, nightlyJob } from "@/lib/jobs";
+import { gamedayJob, nightlyJob, pregameJob } from "@/lib/jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -10,6 +10,7 @@ export const maxDuration = 300;
 const JOBS: Record<string, () => Promise<Record<string, unknown>>> = {
   gameday: () => gamedayJob(),
   nightly: () => nightlyJob(),
+  pregame: () => pregameJob(),
 };
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ job: string }> }) {

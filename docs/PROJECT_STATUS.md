@@ -57,6 +57,11 @@
   - Outlook re-runs after app adds, on page visit, and from the roster watch (ADR-022).
   - `pnpm --filter @fantasy-copilot/web smoke` loads every page (read-only).
 
+- **Vegas + DARKO collection (branch `market-data`):**
+  - props, game lines and DARKO snapshots are stored for the model (ADR-023);
+  - a "Vegas" projection shows on Today and player pages;
+  - new daily `pregame` cron.
+
 ## Plan in progress (approved 2026-10-20, second plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
@@ -74,6 +79,6 @@
 
 ## Next tasks
 
-1. Merge this branch, then confirm in production that the Outlook re-runs for Jack's Oct 20 move and shows its trigger.
-2. Plan items 2-5 above, in order. Vegas collection goes first because ESPN doesn't keep past props.
+1. After the `market-data` merge: check that the 22:00Z pregame cron and the nightly job store props, and that rows show "Vegas".
+2. Plan items 3-5 above, in order.
 3. Open: Jack's first in-app add/claim (the write path is still untested live); the 5-minute scheduler.

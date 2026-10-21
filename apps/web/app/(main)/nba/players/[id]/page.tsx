@@ -9,9 +9,14 @@ import { FpChart } from "@/components/fp-chart";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
+import { espnConfig } from "@/lib/env";
+import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "@/lib/nba/calendar";
+import { nbaSchedule } from "@/lib/nba/data";
+import { propsForGames } from "@/lib/nba/market-data";
 import { scoreGames, summarize } from "@/lib/nba/player";
 import { loadPlayer } from "@/lib/nba/pool";
 import { perGameProjection } from "@/lib/nba/projection";
+import { vegasProjection } from "@/lib/nba/vegas";
 import { cn } from "@/lib/utils";
 
 const seasonLabel = (s: number) => `${s - 1}-${String(s).slice(2)}`;
@@ -42,6 +47,23 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
   const proj = perGameProjection(pl).fppg;
   const recent = [...rows].reverse().slice(0, 15);
   const fromLastSeason = p.logSeason !== p.season;
+
+  // Tonight's game, as the sportsbooks see it (when props are posted).
+  const sp = Math.min(Math.max(scoringPeriodForDate(etDate()), 1), LAST_SCORING_PERIOD);
+  const tonight = (await nbaSchedule(espnConfig().season).catch(() => [])).find(
+    (g) =>
+      g.scoringPeriodId === sp &&
+      (g.homeProTeamId === pl.proTeamId || g.awayProTeamId === pl.proTeamId),
+  );
+  const lines = tonight
+    ? ((await propsForGames([tonight.gameId]).catch(() => new Map())).get(pl.id) ?? [])
+    : [];
+  const vegas = vegasProjection(
+    lines,
+    pl.projection?.stats,
+    perGameProjection(pl, sp).fppg,
+    p.scoring,
+  );
 
   return (
     <>
@@ -76,6 +98,18 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
       {injury && (
         <Callout tone="warning">
           <span className="font-medium">{injury.status}:</span> {injury.long || injury.short}
+        </Callout>
+      )}
+      {vegas && (
+        <Callout tone="info">
+          <span className="font-medium">Tonight, Vegas projects {fmtPts(vegas.fppg)} FP</span>{" "}
+          (ours: {fmtPts(perGameProjection(pl, sp).fppg)}).{" "}
+          <span className="text-muted-foreground">
+            DraftKings lines:{" "}
+            {lines
+              .map((l: { market: string; line: number }) => `${l.line} ${l.market}`)
+              .join(" · ")}
+          </span>
         </Callout>
       )}
       {fa && (

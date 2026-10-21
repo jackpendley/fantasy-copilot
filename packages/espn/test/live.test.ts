@@ -145,4 +145,22 @@ describe("parseTransactions", () => {
       { type: "WAIVER", teamId: 4, at: 300, adds: [10], drops: [11] },
     ]);
   });
+
+  it("counts an add made after the roster lock from when it was made (no processDate yet)", () => {
+    const pending = {
+      transactions: [
+        {
+          status: "EXECUTED",
+          type: "FREEAGENT",
+          teamId: 13,
+          proposedDate: 500,
+          items: [{ type: "ADD", playerId: 30, toTeamId: 13 }],
+        },
+        { status: "PENDING", type: "WAIVER", teamId: 2, proposedDate: 400, items: [] },
+      ],
+    };
+    expect(parseTransactions(pending)).toEqual([
+      { type: "FREEAGENT", teamId: 13, at: 500, adds: [30], drops: [] },
+    ]);
+  });
 });

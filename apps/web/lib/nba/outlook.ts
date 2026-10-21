@@ -68,6 +68,11 @@ export interface OutlookArgs {
   regularWeeks: number;
   /** First scoring period still to be played (today, when run before the day's games). */
   fromDay: number;
+  /**
+   * A run during the day starts from tomorrow: today's week banks each team's live points plus
+   * the expected rest of today, in place of ESPN's settled totals.
+   */
+  bankedNow?: { period: number; points: Map<number, number> };
   seasons: number;
   seed?: number;
 }
@@ -104,8 +109,9 @@ export function buildOutlookInput(a: OutlookArgs): {
   for (const m of a.matchups) {
     if (m.awayTeamId == null || m.period > a.regularWeeks) continue;
     if (m.period <= currentPeriod) {
-      bank(m.homeTeamId, m.period, m.homePoints);
-      bank(m.awayTeamId, m.period, m.awayPoints ?? 0);
+      const now = a.bankedNow?.period === m.period ? a.bankedNow.points : null;
+      bank(m.homeTeamId, m.period, now?.get(m.homeTeamId) ?? m.homePoints);
+      bank(m.awayTeamId, m.period, now?.get(m.awayTeamId) ?? m.awayPoints ?? 0);
     }
     const decided = m.period < currentPeriod && ["HOME", "AWAY", "TIE"].includes(m.winner);
     matchups.push({

@@ -84,6 +84,41 @@ describe("parseTeams", () => {
   it("names bench players' slot", () => {
     expect(mine.roster.filter((p) => p.slot === "BE")).toHaveLength(3);
   });
+  it("takes health from the player record, not the roster entry's slot status", () => {
+    // Synthetic: ESPN's entry says NORMAL / FUTURE_TO_IR; the player record has the injury.
+    const [t] = parseTeams({
+      seasonId: 2027,
+      teams: [
+        {
+          id: 1,
+          roster: {
+            entries: [
+              {
+                lineupSlotId: 12,
+                injuryStatus: "FUTURE_TO_IR",
+                playerPoolEntry: { player: { id: 1, fullName: "A", injuryStatus: "OUT" } },
+              },
+              {
+                lineupSlotId: 12,
+                injuryStatus: "NORMAL",
+                playerPoolEntry: { player: { id: 2, fullName: "B", injuryStatus: "DAY_TO_DAY" } },
+              },
+              {
+                lineupSlotId: 0,
+                injuryStatus: "NORMAL",
+                playerPoolEntry: { player: { id: 3, fullName: "C" } },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(t!.roster.map((p) => [p.injuryStatus, p.pendingIR])).toEqual([
+      ["OUT", true],
+      ["DAY_TO_DAY", false],
+      [null, false],
+    ]);
+  });
 });
 
 describe("parseFreeAgents", () => {

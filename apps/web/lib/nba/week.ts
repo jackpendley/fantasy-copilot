@@ -25,6 +25,8 @@ export interface WeekInputs {
   todayRemaining?: number;
   /** First scoring period a player can be used (a pending waiver claim, or a game already tipped). */
   availableFrom?: Map<number, number>;
+  /** Last scoring period a player can be used (dropped, but the drop takes effect tomorrow). */
+  availableUntil?: Map<number, number>;
 }
 
 /** Rest-of-week chance a listed player plays: today's status applies to the next two days; OUT holds all week. */
@@ -55,7 +57,9 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
       id: p.id,
       eligible: p.positions as Position[],
       value:
-        teams.has(p.proTeamId) && (input.availableFrom?.get(p.id) ?? 0) <= sp
+        teams.has(p.proTeamId) &&
+        (input.availableFrom?.get(p.id) ?? 0) <= sp &&
+        sp <= (input.availableUntil?.get(p.id) ?? Infinity)
           ? playChance(injuries.get(p.id) ?? p.injuryStatus ?? "ACTIVE", ahead) *
             (fppg.get(p.id) ?? 0)
           : 0,

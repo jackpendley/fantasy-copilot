@@ -12,7 +12,9 @@ import type { PoolPlayer } from "./trends";
 export async function loadPlayerPool(now = new Date()) {
   const date = etDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
-  const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
+  const [league, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
+  // Who owns whom, counting moves that take effect tomorrow.
+  const data = { ...league, teams: league.ahead.teams, me: league.ahead.me };
   const pool: PoolPlayer[] = [
     ...data.teams.flatMap((t) =>
       t.roster.map((player) => ({

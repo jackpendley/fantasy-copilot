@@ -1,5 +1,6 @@
 import { PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerRow } from "@/components/fc/player-row";
+import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
 import { WinChart } from "@/components/win-chart";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
@@ -99,7 +100,19 @@ export default async function WeekPage() {
     return <ErrorNotice title="Couldn't load the league" message={(e as Error).message} />;
   }
 
-  const { opp, myBanked, oppBanked, myToday, oppToday, mine, theirs, pWin } = matchupView(data, sp);
+  const {
+    opp,
+    myBanked,
+    oppBanked,
+    myToday,
+    oppToday,
+    mine,
+    theirs,
+    pWin,
+    myPending,
+    oppPending,
+    myWeekRoster,
+  } = matchupView(data, sp);
   const [live, history] = await Promise.all([
     loadLiveRosters(sp, mp).catch(() => null),
     dbConfigured() ? matchupHistory(mp).catch(() => []) : Promise.resolve([]),
@@ -132,7 +145,8 @@ export default async function WeekPage() {
   };
   const statusOf = new Map(data.injuries.map((i) => [i.playerId, i]));
   const starts = (id: number) => [...mine.startsByDay.values()].filter((s) => s.has(id)).length;
-  const rows = [...data.me.roster].sort((a, b) => starts(b.id) - starts(a.id));
+  // Everyone who plays for you this week, including moves that take effect tomorrow.
+  const rows = [...myWeekRoster].sort((a, b) => starts(b.id) - starts(a.id));
   const totalStarts = [...mine.startsByDay.values()].reduce((a, s) => a + s.size, 0);
 
   return (
@@ -182,6 +196,8 @@ export default async function WeekPage() {
           </p>
         </div>
       )}
+
+      <PendingMovesNote mine={myPending} theirs={oppPending} opponent={opp?.name} />
 
       <LiveRefresh active={gamesLive} />
 

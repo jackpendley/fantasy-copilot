@@ -12,14 +12,15 @@ export function RunOutlook() {
     setBusy(true);
     const res = await fetch("/api/outlook/run", { method: "POST" });
     const out = await res.json().catch(() => ({}));
-    if (res.ok) toast.success("Outlook updated");
+    if (res.ok && out.outcome === "busy") toast.info("Already updating. It'll refresh shortly.");
+    else if (res.ok) toast.success("Outlook updated");
     else toast.error(`Outlook failed: ${out.error ?? res.status}`);
     setBusy(false);
     router.refresh();
   }
   return (
     <Button size="sm" variant="outline" onClick={run} disabled={busy}>
-      {busy ? "Simulating…" : "Run now"}
+      {busy ? "Simulating…" : "Recalculate"}
     </Button>
   );
 }

@@ -193,10 +193,41 @@
 
 - **Why:** Jack's title odds fell from 20% to 15% overnight (Oct 19→20) before any game. Diagnosis:
   - ESPN projections and statuses were unchanged.
-  - Two rivals improved through waivers: 3reee added Toumani Camara, Lakers in 5 added Ingram and Fears.
+  - Two rivals improved through waivers: one filled an empty roster spot (+1,385 projected points), another added two players.
   - The rest was simulation noise: 800 seasons gives about ±1.5 points per run. Worse, any roster change shifted the single random stream for everyone.
 - **Common random numbers:** each draw is a hash of (seed, season, player or team, day or week, purpose) via `keyedUniform`, not the next number in a stream.
   - Test: adding a player who never plays leaves every team's odds exactly unchanged.
   - On live data, swapping one bench player moved other teams by at most 0.7 points.
 - **2,000 seasons** (about ±0.9 points): ~29 s locally for the simulation, ~32 s for a full run. It fits the 300 s nightly budget.
 - **"What changed" on Outlook:** teams whose title odds moved ≥1 point, next to the roster moves between the two runs (`mTransactions2`: waivers, free agents, trades), each valued in rest-of-season points.
+
+## ADR-021: two rosters per team: today's and tomorrow's (2026-10-20)
+
+- **Why:** on opening night Jack moved Lively (OUT) to IL and added Day'Ron Sharpe, and nothing in the app changed.
+  - This league's `rosterLocktimeType` is `FIRSTGAME_SCORINGPERIOD`: after the day's first tip, adds, drops and IL moves take effect the next day. Lineup slots still lock per game (`INDIVIDUAL_GAME`).
+  - ESPN therefore had Sharpe only on the Oct 21 roster, and every page read the Oct 20 roster.
+- **Change:** `loadLeague` also reads `mRoster` for tomorrow and returns it as `ahead` (one more ESPN request).
+  - **Today's roster:** the day board and live points.
+  - **Tomorrow's:** everything forward-looking: the rest of the week (Matchup, Waivers), League, Trades, Outlook, player pages.
+  - **The week projection** plays tomorrow's roster from tomorrow on. New players count from tomorrow (`availableFrom`). Players dropped after the lock still count today (`availableUntil`).
+- **Waivers:**
+  - Once the roster has locked, an add counts from tomorrow and anyone can be dropped (the drop takes effect tomorrow).
+  - If a ruled-out player could move to a free IL slot, that's offered instead of a drop. The app doesn't write the IL move: Jack does it in ESPN, then adds.
+- **Parsing fixes:**
+  - A player's health comes from the player record. The roster entry's "NORMAL"/"FUTURE_TO_IR" is about the slot, and was hiding OUT and day-to-day statuses for rostered players.
+  - `parseTransactions` keeps executed moves with no `processDate` yet (adds made after the lock), dated by `proposedDate`.
+- **Effect on opening night:** this week's win chance went from 61.5% to 72.8% once the move counted. Title odds went from 17% to ~28%.
+
+## ADR-022: the outlook re-runs on roster moves (2026-10-20)
+
+- **Why:** Jack wants the odds current after any move, not at 4 AM.
+- **Triggers:**
+  1. **After a free-agent add made in the app:** `after()` runs it once the response is sent. Claims are caught by the watch once they process.
+  2. **Roster watch in `/api/cron/gameday`:** reads ESPN's transaction log for today and tomorrow. Only when a move is under 15 minutes old does it read the last run time, so the database stays asleep otherwise. It needs an external 5-minute scheduler calling the cron route (not set up yet; Jack's call).
+  3. **Opening `/nba/outlook`:** if a move is newer than the last run, it starts a run in the background and the page refreshes itself until it's done.
+- **One run at a time:** `job_locks` row, expires after 5 minutes (migration 0004).
+- **Labels:** each run stores its trigger ("Team X added Player Y") and is stamped with the time its data was read.
+- **Mid-day runs:**
+  - start tomorrow, on tomorrow's rosters;
+  - this week banks every team's live points plus the expected rest of today (the same `remainingToday` logic as the matchup).
+- **CPU:** the simulator runs in ~25 ms slices (`simulateSeasonAsync`, same results as `simulateSeason`). Locally, pages took ~1.2 s during a run instead of 34 s.

@@ -113,3 +113,34 @@ export async function fetchGameSummary(
 ): Promise<Json> {
   return getJson(`${SITE}/summary?event=${gameId}`, fetchImpl);
 }
+
+export interface BoxScoreLine {
+  playerId: number;
+  teamId: number;
+  /** MIN, PTS, FGM, FGA, 3PM, 3PA, FTM, FTA, REB, AST, TO, STL, BLK (players who played). */
+  line: Record<string, number>;
+}
+
+/** Every player who played in a finished game, from the summary's box score. */
+export function parseBoxScore(summary: Json): BoxScoreLine[] {
+  const out: BoxScoreLine[] = [];
+  const made = (v: string) => String(v).split("-").map(Number) as [number, number];
+  for (const team of summary?.boxscore?.players ?? []) {
+    const block = team.statistics?.[0];
+    const names: string[] = block?.names ?? [];
+    for (const a of block?.athletes ?? []) {
+      if (a.didNotPlay || !a.stats?.length) continue;
+      const line: Record<string, number> = {};
+      names.forEach((n, i) => {
+        const v = a.stats[i] ?? "0";
+        if (n === "FG") [line.FGM, line.FGA] = made(v);
+        else if (n === "3PT") [line["3PM"], line["3PA"]] = made(v);
+        else if (n === "FT") [line.FTM, line.FTA] = made(v);
+        else if (["MIN", "PTS", "REB", "AST", "TO", "STL", "BLK"].includes(n))
+          line[n] = Number(v) || 0;
+      });
+      out.push({ playerId: Number(a.athlete?.id), teamId: Number(team.team?.id), line });
+    }
+  }
+  return out;
+}

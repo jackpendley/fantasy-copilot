@@ -9,7 +9,7 @@ import { gamedayAlerts } from "./nba/alerts";
 import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calendar";
 import { loadFreeAgents, loadLeague } from "./nba/data";
 import { buildDayBoard } from "./nba/day";
-import { collectMarketData, snapshotDarko, type Snapshot } from "./nba/market-data";
+import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom } from "./nba/news";
 import { recordMatchupSnapshot } from "./nba/matchup-snapshots";
@@ -91,7 +91,11 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   // Closing lines: re-captured every 5 minutes until tip for games starting soon.
   const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
   const market = closing.length
-    ? await collectMarketData(closing, date.replace(/-/g, ""), "close", now).catch(async (e) => {
+    ? await collectMarketData(closing, date.replace(/-/g, ""), "close", now, {
+        players: new Map(data.ahead.teams.flatMap((t) => t.roster).map((p) => [p.id, p])),
+        scoring: data.settings.scoring,
+        sp,
+      }).catch(async (e) => {
         await log("market-data", "error", (e as Error).message);
         return null;
       })
@@ -162,11 +166,23 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
   if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
   const data = await loadLeague(sp, date);
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
-  const lines = await collectMarketData(games, date.replace(/-/g, ""), snapshot);
-  const players = data.ahead.teams.flatMap((t) => t.roster);
   const free = await loadFreeAgents(sp).catch(() => []);
-  const snap = darko ? await snapshotDarko([...players, ...free.map((f) => f.player)]) : {};
-  return { [`${snapshot}Props`]: lines.props, gamesWithLines: lines.games, ...snap };
+  const players = [...data.ahead.teams.flatMap((t) => t.roster), ...free.map((f) => f.player)];
+  const lines = await collectMarketData(games, date.replace(/-/g, ""), snapshot, new Date(), {
+    players: new Map(players.map((p) => [p.id, p])),
+    scoring: data.settings.scoring,
+    sp,
+  });
+  const snap = darko ? await snapshotDarko(players) : {};
+  // Yesterday's box scores, to score those projections against.
+  const results =
+    snapshot === "morning" && sp > 1
+      ? await recordResults(
+          data.games.filter((g) => g.scoringPeriodId === sp - 1),
+          data.settings.scoring,
+        )
+      : {};
+  return { [`${snapshot}Props`]: lines.props, gamesWithLines: lines.games, ...snap, ...results };
 }
 
 /** Early evening, before most tips: the pregame snapshot of props and game lines. */

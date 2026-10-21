@@ -92,3 +92,37 @@ export function noVigOver(over: number, under: number): number {
   const pu = 1 / under;
   return po / (po + pu);
 }
+
+export interface GameOdds {
+  provider: string;
+  /** Points expected from both teams. */
+  total: number;
+  /** Home spread as posted: positive = home underdog. */
+  spread: number;
+}
+
+/** Closing game line (the first book ESPN lists with a total). Kept for past seasons. */
+export function parseGameOdds(data: Json): GameOdds | null {
+  const item = (data?.items ?? []).find(
+    (i: Json) => typeof i?.overUnder === "number" && typeof i?.spread === "number",
+  );
+  return item
+    ? { provider: item.provider?.name ?? "", total: item.overUnder, spread: item.spread }
+    : null;
+}
+
+export async function fetchGameOdds(
+  gameId: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<GameOdds | null> {
+  const url = `${CORE}/events/${gameId}/competitions/${gameId}/odds`;
+  const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`ESPN odds ${res.status} for game ${gameId}`);
+  return parseGameOdds(await res.json());
+}
+
+/** A team's expected points from a game line: half the total, minus its share of the spread. */
+export function impliedTeamTotal(odds: Pick<GameOdds, "total" | "spread">, home: boolean): number {
+  return home ? (odds.total - odds.spread) / 2 : (odds.total + odds.spread) / 2;
+}

@@ -265,3 +265,13 @@
 - **Free-agent fills:** the best available, shared between the two sides. The analyzer warns when Jack has no adds left this week; the numbers assume the pickup happens now.
 - **Page:** a chip for every size with its count, a "no realistic X-for-Y" note for empty ones, and each idea's moves in the list.
 - **Speed:** ~1.6 s locally for the full search.
+
+## ADR-025: game environment ships; props are tracked for a walk-forward test (2026-10-21)
+
+- **Game environment** (MODEL_CARD.md): projection × (team's implied points ÷ league average)^0.75. Pre-registered on 2025-26, held out on 2024-25: −0.028 FP/game [−0.047, −0.008].
+  - Applied wherever a line is posted: today's day board (lineups, live projections) and today's part of the week.
+  - League average fixed at 115.3 (2025-26) until this season's lines are collected.
+- **Props:** Jack wants Vegas to train the model, not just sit beside it.
+  - Each pregame snapshot stores our projection and the props-implied one per player. Next morning's box scores are stored to score them (migration 0006).
+  - The pre-registered test runs at `/api/model/props` once there are 7 game days and 800 games. A blend ships only if it beats our model on the later half of the days.
+- **Box scores:** ESPN summary per finished game (`parseBoxScore`), one request per game per day.

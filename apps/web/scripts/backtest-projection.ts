@@ -1,18 +1,26 @@
 // Walk-forward backtest of the per-game projection on the 2025-26 season (read-only; no ESPN
 // writes). For every game a player played, each predictor sees only what was known before
-// tip: his 2024-25 per-game average (the prior) and his earlier 2025-26 games. Scored with
-// this league's current scoring.
+// tip: his 2024-25 per-game average (the prior), his earlier 2025-26 games, and that game's
+// closing line (a pregame number) with the league's average implied team total from earlier
+// days. Scored with this league's current scoring.
 //
 //   node --env-file=.env.local --conditions=react-server --import tsx scripts/backtest-projection.ts
 //   TEST_SEASON=2025 ... tests 2024-25 instead (prior 2023-24). Seasons are named by end year.
 //
-// Game logs (public ESPN data) are cached in data/local/backtest/ (gitignored).
+// Game logs and game lines (public ESPN data) are cached in data/local/backtest/ (gitignored).
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fetchLeague, parseSettings } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
-import { fetchGameLog, type GameLogEntry } from "@fantasy-copilot/nba-data";
+import {
+  fetchGameLog,
+  fetchGameOdds,
+  impliedTeamTotal,
+  type GameLogEntry,
+  type GameOdds,
+} from "@fantasy-copilot/nba-data";
 import { espnConfig } from "../lib/env";
+import { etDate } from "../lib/nba/calendar";
 import { loadFreeAgents, loadLeague } from "../lib/nba/data";
 
 const TEST = Number(process.env.TEST_SEASON || 2026);
@@ -41,8 +49,14 @@ interface Game {
   min: number;
 }
 
-/** A predictor: expected FP for the next game from the prior and the games so far. */
-type Predictor = (prior: number, games: Game[]) => number;
+/** The game being predicted: his team's implied points from the line, and the league's average. */
+interface Next {
+  teamTotal: number | null;
+  leagueTotal: number | null;
+}
+
+/** A predictor: expected FP for the next game from the prior, the games so far and the line. */
+type Predictor = (prior: number, games: Game[], next: Next) => number;
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
@@ -78,8 +92,8 @@ const ewmaBlend =
 /** Scale by recent minutes vs his season minutes (role changes show up in minutes first). */
 const minutesTrend =
   (base: Predictor, window: number, strength: number): Predictor =>
-  (prior, games) => {
-    const p = base(prior, games);
+  (prior, games, next) => {
+    const p = base(prior, games, next);
     if (games.length < window + 3) return p;
     const season = mean(games.map((g) => g.min));
     const recent = mean(games.slice(-window).map((g) => g.min));
@@ -87,6 +101,33 @@ const minutesTrend =
     const ratio = Math.min(1.4, Math.max(0.6, recent / season));
     return p * (1 + strength * (ratio - 1));
   };
+
+/**
+ * Game environment: scale by his team's implied points relative to the league average,
+ * (team / league)^beta. More expected points means more shots, rebounds and assists to go
+ * around. Unchanged when either number is missing.
+ */
+const gameEnvironment =
+  (base: Predictor, beta: number): Predictor =>
+  (prior, games, next) => {
+    const p = base(prior, games, next);
+    if (!next.teamTotal || !next.leagueTotal) return p;
+    return p * Math.pow(next.teamTotal / next.leagueTotal, beta);
+  };
+
+async function gameLines(ids: number[], season: number): Promise<Map<number, GameOdds | null>> {
+  const file = new URL(`odds-${season}.json`, CACHE);
+  const cached: Record<string, GameOdds | null> = existsSync(file)
+    ? JSON.parse(readFileSync(file, "utf8"))
+    : {};
+  const missing = ids.filter((id) => !(id in cached));
+  if (missing.length) console.log(`fetching ${missing.length} game lines (cached after this run)…`);
+  await inBatches(missing, 8, async (id) => {
+    cached[id] = await fetchGameOdds(id).catch(() => null);
+  });
+  writeFileSync(file, JSON.stringify(cached));
+  return new Map(Object.entries(cached).map(([k, v]) => [Number(k), v]));
+}
 
 async function main() {
   const cfg = espnConfig();
@@ -125,8 +166,45 @@ async function main() {
     "blend 15 + minutes trend (10 g, 0.75)": minutesTrend(blend(15), 10, 0.75),
     "blend 10 + minutes trend (5 g, 0.5)": minutesTrend(blend(10), 5, 0.5),
     "recency k=10 hl=15 + minutes trend (5 g, 0.5)": minutesTrend(ewmaBlend(10, 15), 5, 0.5),
+    ...Object.fromEntries(
+      [0.25, 0.5, 0.75, 1, 1.5].map((b) => [
+        `blend 15 + minutes trend + game environment (beta ${b})`,
+        gameEnvironment(minutesTrend(blend(15), 5, 0.5), b),
+      ]),
+    ),
   };
-  const BASELINE = "blend PRIOR_GAMES=15"; // what ships today
+  // What ships today (BASELINE="blend PRIOR_GAMES=15" reproduces the first model card tables).
+  const BASELINE = process.env.BASELINE || "blend 15 + minutes trend (5 g, 0.5)";
+
+  // Game lines for every game in the test season, and the league's average implied team
+  // total from the days before each game (point in time; none until 40 team-games are in).
+  const seasonGames = new Map<number, string>();
+  for (const { cur } of logs)
+    for (const g of cur)
+      if (g.part === "regular") seasonGames.set(g.gameId, etDate(new Date(g.date)));
+  const lines = await gameLines([...seasonGames.keys()], TEST);
+  const totalsByDay = new Map<string, number[]>();
+  for (const [id, day] of seasonGames) {
+    const o = lines.get(id);
+    if (!o) continue;
+    if (!totalsByDay.has(day)) totalsByDay.set(day, []);
+    totalsByDay.get(day)!.push(impliedTeamTotal(o, true), impliedTeamTotal(o, false));
+  }
+  const leagueBefore = new Map<string, number | null>();
+  {
+    let sum = 0;
+    let n = 0;
+    for (const day of [...totalsByDay.keys()].sort()) {
+      leagueBefore.set(day, n >= 40 ? sum / n : null);
+      for (const t of totalsByDay.get(day)!) {
+        sum += t;
+        n++;
+      }
+    }
+  }
+  console.log(
+    `game lines: ${[...lines.values()].filter(Boolean).length} of ${seasonGames.size} games`,
+  );
   /** Per player: mean error difference vs the baseline (negative = better). */
   const perPlayer: Record<string, number[]> = {};
   for (const k of Object.keys(predictors)) perPlayer[k] = [];
@@ -147,8 +225,13 @@ async function main() {
     for (const k of Object.keys(predictors)) mine[k] = [];
     for (const g of curGames) {
       const actual = fp(g);
+      const odds = lines.get(g.gameId);
+      const next: Next = {
+        teamTotal: odds ? impliedTeamTotal(odds, g.home) : null,
+        leagueTotal: leagueBefore.get(etDate(new Date(g.date))) ?? null,
+      };
       for (const [k, pred] of Object.entries(predictors)) {
-        const e = Math.abs(pred(prior, seen) - actual);
+        const e = Math.abs(pred(prior, seen, next) - actual);
         err[k]!.all.push(e);
         mine[k]!.push(e);
         (seen.length < 20 ? err[k]!.early : err[k]!.late).push(e);

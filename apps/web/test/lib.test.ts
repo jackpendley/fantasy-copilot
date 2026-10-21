@@ -10,7 +10,12 @@ import {
   shortDay,
 } from "@/lib/nba/calendar";
 import { buildDayBoard } from "@/lib/nba/day";
-import { minutesTrend, perGameProjection } from "@/lib/nba/projection";
+import {
+  minutesTrend,
+  perGameProjection,
+  gameEnvironment,
+  LEAGUE_TEAM_TOTAL,
+} from "@/lib/nba/projection";
 import { projectTeamWeek, winProbability } from "@/lib/nba/week";
 
 // Anonymized 2026-27 league fixture (packages/espn): team 13's real draft-day roster.
@@ -262,5 +267,20 @@ describe("minutes trend", () => {
   it("needs 8 games before the day, and ignores later games", () => {
     expect(minutesTrend(p, 8)).toBe(1); // only 7 games before day 8
     expect(minutesTrend({ ...p, games: games.slice(0, 5) })).toBe(1);
+  });
+});
+
+describe("gameEnvironment", () => {
+  it("is 1 without a line and for a team at the league average", () => {
+    expect(gameEnvironment(null, true)).toBe(1);
+    expect(gameEnvironment({ total: null, spread: -3 }, true)).toBe(1);
+    expect(gameEnvironment({ total: LEAGUE_TEAM_TOTAL * 2, spread: 0 }, false)).toBeCloseTo(1);
+  });
+  it("raises a favored team in a high total and lowers its opponent", () => {
+    // Total 240, home favored by 6: home 123, away 117.
+    const line = { total: 240, spread: -6 };
+    expect(gameEnvironment(line, true)).toBeCloseTo(Math.pow(123 / LEAGUE_TEAM_TOTAL, 0.75));
+    expect(gameEnvironment(line, true)).toBeGreaterThan(gameEnvironment(line, false));
+    expect(gameEnvironment({ total: 210, spread: 4 }, true)).toBeLessThan(1);
   });
 });

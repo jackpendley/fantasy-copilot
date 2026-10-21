@@ -3,13 +3,15 @@
 // worth fppg x his share of games played). Regular season and playoff weeks are kept apart,
 // because playoff weeks decide the title. Whether the partner would accept is a separate
 // question, answered with market value (lib/nba/market.ts). Uneven trades (2-for-1 etc.)
-// make both sides balance their rosters: drop their least valuable players or add the best
-// free agents. The season simulator then checks the deal Jack picks.
+// make both sides balance their rosters: drop the players their lineup misses least, or add
+// the best free agents. An incoming player who's ruled out goes to an open IL slot instead of
+// costing a roster spot. The season simulator then checks the deal Jack picks.
 
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import {
   expandSlots,
   greedyStarters,
+  irEligible,
   isStartingSlot,
   type Position,
 } from "@fantasy-copilot/fantasy-core";
@@ -28,6 +30,8 @@ export interface ValueContext {
   openSlots: string[];
   /** Active roster size (every slot but IR). */
   rosterLimit: number;
+  /** IR slots: ruled-out players there don't take an active spot. */
+  irSlots: number;
 }
 
 export function valueContext(
@@ -49,7 +53,16 @@ export function valueContext(
   const rosterLimit = Object.entries(slotCounts)
     .filter(([slot]) => slot !== "IR")
     .reduce((a, [, n]) => a + n, 0);
-  return { gameDays, slotCounts, fromDay, lastDay, regularWeeks, openSlots, rosterLimit };
+  return {
+    gameDays,
+    slotCounts,
+    fromDay,
+    lastDay,
+    regularWeeks,
+    openSlots,
+    rosterLimit,
+    irSlots: slotCounts.IR ?? 0,
+  };
 }
 
 /** Expected points per game he plays, discounted for the games he's projected to miss. */
@@ -110,11 +123,44 @@ export interface RosterMoves {
   dropped: RosterPlayer[];
   /** Free agents added to fill open spots (the side receiving fewer). */
   added: RosterPlayer[];
+  /** Incoming players who are ruled out and go straight to an open IL slot. */
+  toIL: RosterPlayer[];
+}
+
+/** Playoff weeks decide the title, so a playoff-week point counts double in the ranking. */
+export const PLAYOFF_WEIGHT = 2;
+
+export const weighted = (v: TeamValue) => v.regular + PLAYOFF_WEIGHT * v.playoffs;
+
+/**
+ * What each player is worth to his own team's lineup: the weighted starting points it loses
+ * without him. A team cuts the player it would miss least, which on a deep roster can be a
+ * good player stuck behind better ones at his positions.
+ */
+export function marginalValues(roster: RosterPlayer[], ctx: ValueContext): Map<number, number> {
+  const base = weighted(teamValue(roster, ctx));
+  return new Map(
+    roster.map((p) => [
+      p.id,
+      base -
+        weighted(
+          teamValue(
+            roster.filter((x) => x.id !== p.id),
+            ctx,
+          ),
+        ),
+    ]),
+  );
 }
 
 /**
- * The roster after a trade: players out, players in, then back to the active roster limit by
- * dropping the lowest rest-of-season values or adding the best free agents not yet `taken`.
+ * The roster after a trade: players out, players in, then back to the active roster limit.
+ * - An incoming player who's ruled out (IR-eligible) takes a free IR slot, not an active spot.
+ * - Over the limit: drop the players the lineup misses least. `"exact"` measures that on the
+ *   roster after the trade (one lineup valuation per candidate); a map (marginalValues of
+ *   the roster before the trade) is the fast approximation used while searching; without
+ *   either, raw rest-of-season points. Never a player just received, never one on IR.
+ * - Under it: add the best free agents not yet `taken` (by the other side of the deal).
  */
 export function applyTrade(
   roster: RosterPlayer[],
@@ -123,16 +169,46 @@ export function applyTrade(
   ctx: ValueContext,
   freeAgents: RosterPlayer[] = [],
   taken: Set<number> = new Set(),
+  marginal?: Map<number, number> | "exact",
 ): { roster: RosterPlayer[]; moves: RosterMoves } {
   const outIds = new Set(out.map((p) => p.id));
-  let next = [
-    ...roster.filter((p) => !outIds.has(p.id)),
-    ...incoming.map((p) => ({ ...p, slot: "BE" })),
-  ];
-  const moves: RosterMoves = { dropped: [], added: [] };
+  const moves: RosterMoves = { dropped: [], added: [], toIL: [] };
+  let next = roster.filter((p) => !outIds.has(p.id));
+  let irFree = ctx.irSlots - next.filter((p) => p.slot === "IR").length;
+  for (const p of incoming) {
+    const toIL = irFree > 0 && irEligible(p.injuryStatus);
+    if (toIL) {
+      irFree--;
+      moves.toIL.push(p);
+    }
+    next.push({ ...p, slot: toIL ? "IR" : "BE" });
+  }
+  const incomingIds = new Set(incoming.map((p) => p.id));
   const active = () => next.filter((p) => p.slot !== "IR");
   while (active().length > ctx.rosterLimit) {
-    const worst = active().sort((a, b) => rawValue([a], ctx) - rawValue([b], ctx))[0]!;
+    const cuttable = active().filter((p) => !incomingIds.has(p.id));
+    // Only received players left to cut: the deal can't fit this roster as is.
+    if (!cuttable.length) break;
+    let keepValue: (p: RosterPlayer) => number;
+    if (marginal === "exact") {
+      const without = new Map(
+        cuttable.map((p) => [
+          p.id,
+          weighted(
+            teamValue(
+              next.filter((x) => x.id !== p.id),
+              ctx,
+            ),
+          ),
+        ]),
+      );
+      // Cutting him leaves the most: he's the one the lineup misses least. On a tie (a bench
+      // player either way), cut the one with fewer raw rest-of-season points.
+      keepValue = (p) => -without.get(p.id)! + rawValue([p], ctx) * 1e-6;
+    } else {
+      keepValue = (p) => marginal?.get(p.id) ?? rawValue([p], ctx);
+    }
+    const worst = cuttable.sort((a, b) => keepValue(a) - keepValue(b))[0]!;
     moves.dropped.push(worst);
     next = next.filter((p) => p.id !== worst.id);
   }
@@ -160,12 +236,19 @@ export interface TradeEval {
   moves: { mine: RosterMoves; theirs: RosterMoves };
   /** Would the partner accept, by market value (when a market context is given). */
   acceptance: Acceptance | null;
+  /** Both rosters fit after the deal (false if a side would have to cut a player it just got). */
+  fits: boolean;
 }
 
 export interface EvalOptions {
   base?: { mine: TeamValue; theirs: TeamValue };
   freeAgents?: RosterPlayer[];
   market?: MarketContext;
+  /**
+   * How each side picks its cuts (applyTrade): marginalValues maps for speed while searching;
+   * by default, exactly on the roster after the trade.
+   */
+  marginal?: { mine: Map<number, number>; theirs: Map<number, number> };
 }
 
 export function evaluateTrade(
@@ -174,13 +257,15 @@ export function evaluateTrade(
   give: RosterPlayer[],
   get: RosterPlayer[],
   ctx: ValueContext,
-  { base, freeAgents = [], market }: EvalOptions = {},
+  { base, freeAgents = [], market, marginal }: EvalOptions = {},
 ): TradeEval {
   const mineBefore = base?.mine ?? teamValue(me.roster, ctx);
   const theirsBefore = base?.theirs ?? teamValue(them.roster, ctx);
+  const mineMarginal = marginal?.mine ?? "exact";
+  const theirsMarginal = marginal?.theirs ?? "exact";
   const taken = new Set<number>();
-  const mineNext = applyTrade(me.roster, give, get, ctx, freeAgents, taken);
-  const theirsNext = applyTrade(them.roster, get, give, ctx, freeAgents, taken);
+  const mineNext = applyTrade(me.roster, give, get, ctx, freeAgents, taken, mineMarginal);
+  const theirsNext = applyTrade(them.roster, get, give, ctx, freeAgents, taken, theirsMarginal);
   const mineAfter = teamValue(mineNext.roster, ctx);
   const theirsAfter = teamValue(theirsNext.roster, ctx);
   const theirs = {
@@ -198,6 +283,9 @@ export function evaluateTrade(
     rawGap: rawValue(get, ctx) - rawValue(give, ctx),
     moves: { mine: mineNext.moves, theirs: theirsNext.moves },
     acceptance: market ? acceptance(get, give, theirs.regular + theirs.playoffs, market) : null,
+    fits: [mineNext.roster, theirsNext.roster].every(
+      (r) => r.filter((p) => p.slot !== "IR").length <= ctx.rosterLimit,
+    ),
   };
 }
 
@@ -206,9 +294,6 @@ export interface TradeIdea extends TradeEval {
   /** Ranking score: regular-season starting points plus playoff-week points counted twice. */
   score: number;
 }
-
-/** Playoff weeks decide the title, so a playoff-week point counts double in the ranking. */
-export const PLAYOFF_WEIGHT = 2;
 
 export const tradeSize = (e: { give: unknown[]; get: unknown[] }) =>
   `${e.give.length}-for-${e.get.length}`;
@@ -249,8 +334,9 @@ const PER_STAR = 2;
  *
  * Search: the top `pool` players on each roster by market value; every pair of subsets whose
  * market values could pass the partner's check; ranked by a quick estimate (each player's
- * marginal lineup value to the team he'd join or leave); the best `exactPerSize` per size and
- * partner get the exact evaluation with roster balancing.
+ * marginal lineup value to the team he'd join or leave, plus the free agents Jack would pick
+ * up or minus the players he'd cut when the counts differ); the best `exactPerSize` per size
+ * and partner get the exact evaluation with roster balancing.
  */
 export function findTradeTargets(
   me: TradeSide,
@@ -266,7 +352,6 @@ export function findTradeTargets(
     return $.get(p.id)!;
   };
   const sumDollars = (ps: RosterPlayer[]) => ps.reduce((a, p) => a + dollars(p), 0);
-  const weighted = (v: TeamValue) => v.regular + PLAYOFF_WEIGHT * v.playoffs;
   const tradeable = (r: RosterPlayer[]) =>
     r
       .filter((p) => !p.tradeLocked)
@@ -274,28 +359,46 @@ export function findTradeTargets(
       .slice(0, pool);
 
   const mineBase = teamValue(me.roster, ctx);
-  // Each of Jack's players: what losing him costs the lineup.
-  const myLoss = new Map(
-    tradeable(me.roster).map((p) => [
-      p.id,
-      weighted(mineBase) -
-        weighted(
-          teamValue(
-            me.roster.filter((x) => x.id !== p.id),
-            ctx,
-          ),
-        ),
-    ]),
-  );
+  // Each of Jack's players: what losing him costs the lineup (and who he'd cut first).
+  const myMarginal = marginalValues(me.roster, ctx);
   const mySets = subsets(tradeable(me.roster), maxSize).map((g) => ({
     players: g,
     $: sumDollars(g),
-    loss: g.reduce((a, p) => a + myLoss.get(p.id)!, 0),
+    loss: g.reduce((a, p) => a + myMarginal.get(p.id)!, 0),
   }));
+  // Receiving more than he sends: Jack cuts the players he'd miss least (not ones he's
+  // trading away, not his IR slot).
+  const cutOrder = me.roster
+    .filter((p) => p.slot !== "IR")
+    .sort((a, b) => myMarginal.get(a.id)! - myMarginal.get(b.id)!);
+  const cutCost = (k: number, give: RosterPlayer[]) => {
+    let cost = 0;
+    let cut = 0;
+    for (const p of cutOrder) {
+      if (cut === k) break;
+      if (give.some((g) => g.id === p.id)) continue;
+      cost += Math.max(0, myMarginal.get(p.id)!);
+      cut++;
+    }
+    return cost;
+  };
+  // Sending more than he receives: Jack fills the open spots with the best free agents.
+  // fill[k] = what the best k free agents add to his lineup.
+  const fill = [0];
+  {
+    const best = [...freeAgents].sort((a, b) => rawValue([b], ctx) - rawValue([a], ctx));
+    let roster = me.roster;
+    for (let k = 1; k < maxSize; k++) {
+      const fa = best[k - 1];
+      if (fa) roster = [...roster, { ...fa, slot: "BE" }];
+      fill.push(weighted(teamValue(roster, ctx)) - weighted(mineBase));
+    }
+  }
 
   const ideas: TradeIdea[] = [];
   for (const other of others) {
     const theirsBase = teamValue(other.roster, ctx);
+    const theirMarginal = marginalValues(other.roster, ctx);
     const theirPool = tradeable(other.roster);
     // Each of their players: what he'd add to Jack's lineup.
     const myGain = new Map(
@@ -317,7 +420,9 @@ export function findTradeTargets(
         // he gets: lineup points say what wins, but when the market and the projection
         // disagree this much, the projection may be the one that's wrong.
         if (g.$ < 0.95 * getDollars || g.$ > MAX_OVERPAY * getDollars + 2) continue;
-        const approx = gain - g.loss;
+        const net = g.players.length - getSet.length;
+        const approx =
+          gain - g.loss + (net > 0 ? fill[net]! : net < 0 ? -cutCost(-net, g.players) : 0);
         if (approx <= 0) continue;
         const size = `${g.players.length}-for-${getSet.length}`;
         if (!bySize.has(size)) bySize.set(size, []);
@@ -331,12 +436,9 @@ export function findTradeTargets(
           base: { mine: mineBase, theirs: theirsBase },
           freeAgents,
           market,
+          marginal: { mine: myMarginal, theirs: theirMarginal },
         });
-        if (!e.acceptance || e.acceptance.realism === "long shot") continue;
-        // A player someone would cut right after receiving him adds nothing to the deal.
-        const cut = (m: RosterMoves, got: RosterPlayer[]) =>
-          m.dropped.some((d) => got.some((p) => p.id === d.id));
-        if (cut(e.moves.mine, c.get) || cut(e.moves.theirs, c.give)) continue;
+        if (!e.acceptance || e.acceptance.realism === "long shot" || !e.fits) continue;
         const score = e.mine.regular + PLAYOFF_WEIGHT * e.mine.playoffs;
         if (score > 1) ideas.push({ ...e, partnerId: other.teamId, score });
       }
@@ -353,7 +455,31 @@ export function findTradeTargets(
     ].join(",");
   ideas.sort((x, y) => y.score - x.score);
   const seen = new Set<string>();
-  const unique = ideas.filter((i) => !seen.has(core(i)) && seen.add(core(i)));
+  const firstPass = ideas.filter((i) => !seen.has(core(i)) && seen.add(core(i)));
+  // Finalists of uneven deals get the exact cut on the roster after the trade (the search used
+  // each player's value to the roster before it, which misses new redundancy).
+  const partners = new Map(others.map((o) => [o.teamId, o]));
+  const perSizeSeen = new Map<string, number>();
+  const unique: TradeIdea[] = [];
+  for (const i of firstPass) {
+    const size = tradeSize(i);
+    const n = perSizeSeen.get(size) ?? 0;
+    if (n >= perSize * 3) continue;
+    perSizeSeen.set(size, n + 1);
+    if (i.give.length === i.get.length) {
+      unique.push(i);
+      continue;
+    }
+    const e = evaluateTrade(me, partners.get(i.partnerId)!, i.give, i.get, ctx, {
+      base: { mine: mineBase, theirs: teamValue(partners.get(i.partnerId)!.roster, ctx) },
+      freeAgents,
+      market,
+    });
+    if (!e.acceptance || e.acceptance.realism === "long shot" || !e.fits) continue;
+    const score = e.mine.regular + PLAYOFF_WEIGHT * e.mine.playoffs;
+    if (score > 1) unique.push({ ...e, partnerId: i.partnerId, score });
+  }
+  unique.sort((x, y) => y.score - x.score);
   const kept = new Map<string, number>();
   const star = (i: TradeIdea) => [...i.give].sort((a, b) => dollars(b) - dollars(a))[0]!.id;
   return unique.filter((i) => {

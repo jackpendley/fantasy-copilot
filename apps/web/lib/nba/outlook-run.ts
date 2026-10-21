@@ -16,7 +16,7 @@ import { loadLeague } from "./data";
 import { weekPointsThroughToday } from "./matchup";
 import { buildOutlookInput } from "./outlook";
 import { dayStarted } from "./roster";
-import { applyTrade, valueContext } from "./trade";
+import { applyTrade, marginalValues, valueContext } from "./trade";
 
 export interface OutlookTeam {
   teamId: number;
@@ -193,8 +193,24 @@ export async function simulateTrade(
     data.settings.regularSeasonWeeks,
   );
   const taken = new Set<number>();
-  const mine = applyTrade(data.me.roster, give, get, ctx, freeAgents, taken);
-  const theirs = applyTrade(partner.roster, get, give, ctx, freeAgents, taken);
+  const mine = applyTrade(
+    data.me.roster,
+    give,
+    get,
+    ctx,
+    freeAgents,
+    taken,
+    marginalValues(data.me.roster, ctx),
+  );
+  const theirs = applyTrade(
+    partner.roster,
+    get,
+    give,
+    ctx,
+    freeAgents,
+    taken,
+    marginalValues(partner.roster, ctx),
+  );
   const traded = data.teams.map((t) =>
     t.id === data.me.id
       ? { ...t, roster: mine.roster }

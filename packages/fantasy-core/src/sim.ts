@@ -106,6 +106,32 @@ export function keyedUniform(seed: number, key: readonly number[]): number {
 }
 
 export function simulateSeason(input: SimInput): SimTeamResult[] {
+  const run = simulation(input);
+  for (;;) {
+    const step = run.next();
+    if (step.done) return step.value;
+  }
+}
+
+/**
+ * The same simulation, pausing every ~`sliceMs` so a server keeps answering other requests
+ * while it runs (a 2,000-season run is ~30 s of CPU).
+ */
+export async function simulateSeasonAsync(input: SimInput, sliceMs = 25): Promise<SimTeamResult[]> {
+  const run = simulation(input);
+  let sliceStart = Date.now();
+  for (;;) {
+    const step = run.next();
+    if (step.done) return step.value;
+    if (Date.now() - sliceStart >= sliceMs) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      sliceStart = Date.now();
+    }
+  }
+}
+
+/** One season per step; the return value is the summary. */
+function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
   const NOISE = input.noise ?? 0.5;
   const FORM = input.form ?? 0.28;
   const OPEN = expandSlots(input.slotCounts).filter(isStartingSlot);
@@ -352,6 +378,7 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
     agg[s1]!.final++;
     agg[s2]!.final++;
     agg[winnerOf(s1, s2, fw)]!.champ++;
+    yield;
   }
 
   const S = input.seasons;

@@ -9,6 +9,7 @@ import { gamedayAlerts } from "./nba/alerts";
 import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calendar";
 import { loadLeague } from "./nba/data";
 import { buildDayBoard } from "./nba/day";
+import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom } from "./nba/news";
 import { recordMatchupSnapshot } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
@@ -22,13 +23,20 @@ const BEFORE_FIRST_TIP_MS = 90 * 60_000;
 const AFTER_LAST_TIP_MS = 15 * 60_000;
 
 /**
- * Every 5 minutes: log status changes, then send any game-day alerts. Outside the window
- * around today's games it returns immediately without touching the database (Neon sleeps).
+ * Every 5 minutes: re-run the outlook if a roster move landed, then log status changes and
+ * send any game-day alerts. Outside the window around today's games it returns without
+ * touching the database unless a move is recent (Neon sleeps).
  */
 export async function gamedayJob(now = new Date()): Promise<Record<string, unknown>> {
   const date = etDate(now);
   const sp = scoringPeriodForDate(date);
   if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
+
+  // Any league roster move re-runs the season outlook within a few minutes, game day or not.
+  const watch = await rosterWatch(now).catch(async (e: Error) => {
+    await log("roster-watch", "error", e.message).catch(() => {});
+    return { watch: "error" };
+  });
 
   let data;
   try {
@@ -46,11 +54,11 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   }
 
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
-  if (!games.length) return { skipped: "no games today" };
+  if (!games.length) return { ...watch, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
   if (t < Math.min(...tips) - BEFORE_FIRST_TIP_MS || t > Math.max(...tips) + AFTER_LAST_TIP_MS) {
-    return { skipped: "outside game window" };
+    return { ...watch, skipped: "outside game window" };
   }
 
   const events = statusEventsFrom({
@@ -91,7 +99,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   for (const a of alerts) {
     if (await sendAlertOnce(a.key, { title: a.title, body: a.body, url: a.url })) sent++;
   }
-  const result = { date, events: events.length, newEvents, alerts: alerts.length, sent };
+  const result = { date, ...watch, events: events.length, newEvents, alerts: alerts.length, sent };
   await log("gameday", "ok", JSON.stringify(result));
   return result;
 }

@@ -7,6 +7,7 @@ import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
 import { loadFreeAgents, loadLeague } from "./data";
 import { buildDayBoard } from "./day";
 import { matchupView } from "./matchup";
+import { rosterLocked } from "./roster";
 import { waiverAnalysis } from "./waivers";
 
 export async function loadWaiverView(now = new Date()) {
@@ -40,8 +41,15 @@ export async function loadWaiverView(now = new Date()) {
     .filter(([slot]) => slot !== "IR")
     .reduce((a, [slot, n]) => a + (isStartingSlot(slot) || slot === "BE" ? n : 0), 0);
 
+  const locked = rosterLocked(
+    data.settings,
+    todayGames.map((g) => g.date),
+    data.scoreboard,
+    now,
+  );
   const analysis = waiverAnalysis({
-    roster: data.me.roster,
+    roster: data.ahead.me.roster,
+    leaving: view.myPending.drops,
     freeAgents,
     week: view.weekInputs,
     myBanked: view.myBanked,
@@ -51,9 +59,22 @@ export async function loadWaiverView(now = new Date()) {
     lockedToday,
     startedToday,
     rosterLimit,
+    irSlots: data.settings.slotCounts.IR ?? 0,
+    rosterLocked: locked,
     lastDay: LAST_SCORING_PERIOD,
   });
   const addsCap = data.settings.addsPerWeek ?? 3;
   const addsUsed = data.me.activity?.addsByPeriod[view.mp] ?? 0;
-  return { sp, date, data, view, freeAgents, analysis, lockedToday, addsCap, addsUsed };
+  return {
+    sp,
+    date,
+    data,
+    view,
+    freeAgents,
+    analysis,
+    lockedToday,
+    rosterLocked: locked,
+    addsCap,
+    addsUsed,
+  };
 }

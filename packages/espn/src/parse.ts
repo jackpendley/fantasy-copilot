@@ -14,6 +14,11 @@ export interface LeagueSettings {
   slotCounts: Record<string, number>;
   benchUnlimited: boolean;
   lineupLock: string | null;
+  /**
+   * When roster moves (adds, drops, IL) stop counting for today: "FIRSTGAME_SCORINGPERIOD" means
+   * once the day's first game tips, moves take effect the next day.
+   */
+  rosterLock: string | null;
   regularSeasonWeeks: number;
   playoffTeams: number;
   /** Adds allowed per 7 days (ESPN stores a per-day rate when the limit is per scoring period). */
@@ -40,6 +45,7 @@ export function parseSettings(data: Json): LeagueSettings {
     slotCounts,
     benchUnlimited: Boolean(s.rosterSettings?.isBenchUnlimited),
     lineupLock: s.rosterSettings?.lineupLocktimeType ?? null,
+    rosterLock: s.rosterSettings?.rosterLocktimeType ?? null,
     regularSeasonWeeks: s.scheduleSettings?.matchupPeriodCount ?? 0,
     playoffTeams: s.scheduleSettings?.playoffTeamCount ?? 0,
     addsPerWeek:
@@ -64,7 +70,10 @@ export interface RosterPlayer {
   positions: string[];
   /** Current lineup slot name, e.g. "UTIL", "BE", "IR". */
   slot: string | null;
+  /** ESPN's injury status (ACTIVE, DAY_TO_DAY, OUT, ...). */
   injuryStatus: string | null;
+  /** He's set to move into the IR slot when the next day starts (a move made after the roster lock). */
+  pendingIR?: boolean;
   percentOwned: number | null;
   /** Change in league-wide ownership over the last week (percentage points). */
   percentChange: number | null;
@@ -150,6 +159,8 @@ function window(stats: Json[], key: string): StatWindow | null {
   return { avg, total, stats: raw };
 }
 
+const ENTRY_STATUSES = ["NORMAL", "FUTURE_TO_IR"];
+
 /** A player object as ESPN nests it (roster entry or free agent). */
 export function parsePlayer(
   player: Json,
@@ -169,7 +180,11 @@ export function parsePlayer(
       .filter((id: number) => POSITIONAL_SLOT_IDS.includes(id))
       .map((id: number) => SLOT_BY_ID[id]),
     slot: slotId != null ? (SLOT_BY_ID[slotId] ?? null) : null,
-    injuryStatus: entryInjury ?? player.injuryStatus ?? null,
+    // The roster entry's own status is about the slot ("NORMAL", "FUTURE_TO_IR"), not his health.
+    injuryStatus:
+      player.injuryStatus ??
+      (entryInjury && !ENTRY_STATUSES.includes(entryInjury) ? entryInjury : null),
+    pendingIR: entryInjury === "FUTURE_TO_IR",
     percentOwned: player.ownership?.percentOwned ?? null,
     percentChange: player.ownership?.percentChange ?? null,
     projection: window(stats, statKey(1, 0, season)),
@@ -376,7 +391,7 @@ export function parseDraftPicks(data: Json): Map<number, number> {
 export interface LeagueTransaction {
   type: "WAIVER" | "FREEAGENT" | "TRADE";
   teamId: number;
-  /** When ESPN processed it (ms since epoch). */
+  /** When ESPN processed it, or when it was made if ESPN hasn't stamped it yet (ms since epoch). */
   at: number;
   /** Players added to and dropped from `teamId`'s roster (for a trade: received and sent). */
   adds: number[];
@@ -390,13 +405,16 @@ export interface LeagueTransaction {
 export function parseTransactions(data: Json): LeagueTransaction[] {
   const out: LeagueTransaction[] = [];
   for (const t of data?.transactions ?? []) {
-    if (t.status !== "EXECUTED" || !t.processDate) continue;
+    // A free-agent add made after the roster lock is executed but has no processDate until it
+    // takes effect the next day; it counts from when it was made.
+    const at = t.processDate ?? t.proposedDate;
+    if (t.status !== "EXECUTED" || !at) continue;
     const items: Json[] = t.items ?? [];
     if (t.type === "WAIVER" || t.type === "FREEAGENT") {
       out.push({
         type: t.type,
         teamId: t.teamId,
-        at: t.processDate,
+        at,
         adds: items.filter((i) => i.type === "ADD").map((i) => i.playerId),
         drops: items.filter((i) => i.type === "DROP").map((i) => i.playerId),
       });
@@ -407,7 +425,7 @@ export function parseTransactions(data: Json): LeagueTransaction[] {
         out.push({
           type: "TRADE",
           teamId: team,
-          at: t.processDate,
+          at,
           adds: items.filter((i) => i.toTeamId === team).map((i) => i.playerId),
           drops: items.filter((i) => i.fromTeamId === team).map((i) => i.playerId),
         });

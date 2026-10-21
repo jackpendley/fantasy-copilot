@@ -1,4 +1,4 @@
-# Project status (2026-10-19, evening)
+# Project status (2026-10-20, night)
 
 ## Where things stand
 
@@ -48,29 +48,32 @@
 
 - **Steadier Outlook (PR #15):** common random numbers, 2,000 seasons, and a "What changed" panel with the roster moves behind odds changes (ADR-020).
 
-- **Model backtest (branch `model-backtest`):**
-  - walk-forward backtest script and `docs/MODEL_CARD.md`;
-  - minutes trend pre-registered, passed a held-out season (2024-25), and ships.
+- **Model backtest (PR #16):** walk-forward backtest and `docs/MODEL_CARD.md`. The minutes trend passed a held-out season and ships.
 
-## Plan in progress (approved 2026-10-20)
+- **Roster moves everywhere + real-time Outlook (branch `roster-ahead-realtime-outlook`):**
+  - Moves made after the first tip (ESPN applies them tomorrow) now count in Matchup, Waivers, League, Trades, Outlook and Players (ADR-021).
+  - "Takes effect tomorrow" banner on Today and Matchup.
+  - Waivers offers the IL slot instead of a drop.
+  - Outlook re-runs after app adds, on page visit, and from the roster watch (ADR-022).
+  - `pnpm --filter @fantasy-copilot/web smoke` loads every page (read-only).
+
+## Plan in progress (approved 2026-10-20, second plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
 
-- PR 1: Today live stat lines (this branch).
-- PR 2: realistic trades up to 3-for-3 (market value from ESPN + league draft).
-- PR 3: steadier Outlook (common random numbers, 2,000 seasons, "What changed").
-- PR 4: model backtests and free data sources.
+1. Roster moves count everywhere; Outlook re-runs on moves (this branch).
+2. Start collecting Vegas lines (ESPN core API: DraftKings props and game lines) and DARKO daily snapshots, and show the Vegas projection.
+3. Today & Matchup redesign: one-line stats with the full box on tap, solid ▲/▼, head-to-head by slot.
+4. Trades: every size (the quick estimate ignored the free-agent fill, so 2-for-1/3-for-1/3-for-2 never surfaced), with drop, IL and adds-left edge cases.
+5. Train the model on market data (game environment backtest now; props stacking after 7 game days).
 
 ## Deferred (Jack's call)
 
-- **Push notifications:** cron-job.org for `/api/cron/gameday`, then enable on the iPhone. Rotate the VAPID keys first; `VAPID_SUBJECT` in Vercel still has the old URL (it's only a contact address).
+- **A 5-minute scheduler for `/api/cron/gameday`** (cron-job.org, or a GitHub Actions schedule with `CRON_SECRET` as a repo secret). It powers push alerts and the outlook's roster watch. Until then, Outlook updates after app adds and when the page is opened.
+- **Push notifications:** enable on the iPhone once the scheduler runs. Rotate the VAPID keys first; `VAPID_SUBJECT` in Vercel still has the old URL (it's only a contact address).
 
-## Next tasks (Jack's order)
+## Next tasks
 
-All four features Jack picked are built. Candidates next, in rough value order:
-
-1. **Check the opener (Oct 20):** live matchup points vs the ESPN app; Jack's first waiver claim (the untested write path).
-2. **Push notifications** (deferred by Jack): rotate VAPID, cron-job.org, enable on the iPhone.
-3. **Data warehouse and ML** (`apps/nba-ml`): our own projections to beat ESPN's, usage and minutes trends.
-4. **Trades v2:** 2-for-1 targets, manager tendencies.
-5. **NFL**, then **MLB** sections.
+1. Merge this branch, then confirm in production that the Outlook re-runs for Jack's Oct 20 move and shows its trigger.
+2. Plan items 2-5 above, in order. Vegas collection goes first because ESPN doesn't keep past props.
+3. Open: Jack's first in-app add/claim (the write path is still untested live); the 5-minute scheduler.

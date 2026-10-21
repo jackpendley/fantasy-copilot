@@ -2,6 +2,7 @@ import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { ApplyMoves } from "@/components/apply-moves";
 import { Callout, DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerRow } from "@/components/fc/player-row";
+import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/nba/calendar";
 import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
 import { liveRows, type LiveRow } from "@/lib/nba/live";
+import { pendingMoves } from "@/lib/nba/roster";
 import { buildDayBoard, type DayRow } from "@/lib/nba/day";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip, slotRank } from "@/lib/format";
@@ -121,6 +123,10 @@ export default async function TodayPage({
           today={date !== today ? "/nba/today" : undefined}
         />
       </PageHeader>
+
+      {date === today && (
+        <PendingMovesNote mine={pendingMoves(data.me.roster, data.ahead.me.roster)} />
+      )}
 
       {data.warnings.map((w) => (
         <Callout key={w} tone="warning">

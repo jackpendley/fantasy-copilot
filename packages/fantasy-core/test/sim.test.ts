@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   keyedUniform,
   simulateSeason,
+  simulateSeasonAsync,
   type SimInput,
   type SimPlayer,
   type SimTeam,
@@ -81,6 +82,15 @@ describe("simulateSeason", () => {
     expect(sum("final")).toBeCloseTo(2, 6);
     expect(sum("champ")).toBeCloseTo(1, 6);
     expect(sum("expWins")).toBeCloseTo(6 * 4, 6); // 4 games per week, 6 weeks
+  });
+
+  it("gives identical results when run in slices (async) and lets other work run meanwhile", async () => {
+    let ticks = 0;
+    const timer = setInterval(() => ticks++, 0);
+    const sliced = await simulateSeasonAsync(league(teams), 0);
+    clearInterval(timer);
+    expect(sliced).toEqual(simulateSeason(league(teams)));
+    expect(ticks).toBeGreaterThan(0);
   });
 
   it("makes the much stronger team the favorite", () => {

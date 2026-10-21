@@ -56,6 +56,13 @@ function OptionRow({
               <PlayerAvatar id={o.drop.id} name={o.drop.name} size={20} />
               <span className="truncate text-foreground">{o.drop.name}</span>
             </>
+          ) : o.il ? (
+            <>
+              <span className="font-medium text-warning">Move to IL</span>
+              <PlayerAvatar id={o.il.id} name={o.il.name} size={20} />
+              <span className="truncate text-foreground">{o.il.name}</span>
+              <span className="hidden sm:inline">· he&apos;s ruled out, so no drop needed</span>
+            </>
           ) : (
             <span>Open roster spot: no drop needed</span>
           )}
@@ -86,19 +93,28 @@ function OptionRow({
             Season {signed(o.rosDelta, 0)}
           </div>
         </div>
-        <AddDropButton
-          move={{
-            addId: o.add.player.id,
-            addName: o.add.player.name,
-            dropId: o.drop?.id ?? null,
-            dropName: o.drop?.name ?? null,
-            claim: o.add.status === "WAIVERS",
-            claimNote: o.add.waiverUntil ? `Claims process ${clearsAt(o.add.waiverUntil)}.` : null,
-            addsLeft,
-            addsCap,
-            rosCost: Math.max(0, -o.rosDelta),
-          }}
-        />
+        {o.il ? (
+          <p className="max-w-40 text-right text-xs text-muted-foreground">
+            Move {o.il.name.split(" ").at(-1)} to IL in the ESPN app first, then add here. When
+            he&apos;s healthy, someone has to be dropped.
+          </p>
+        ) : (
+          <AddDropButton
+            move={{
+              addId: o.add.player.id,
+              addName: o.add.player.name,
+              dropId: o.drop?.id ?? null,
+              dropName: o.drop?.name ?? null,
+              claim: o.add.status === "WAIVERS",
+              claimNote: o.add.waiverUntil
+                ? `Claims process ${clearsAt(o.add.waiverUntil)}.`
+                : null,
+              addsLeft,
+              addsCap,
+              rosCost: Math.max(0, -o.rosDelta),
+            }}
+          />
+        )}
       </div>
     </div>
   );

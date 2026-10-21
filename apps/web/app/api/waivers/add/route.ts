@@ -1,15 +1,19 @@
 // Add a free agent (or file a waiver claim), dropping one player. Called only from the
 // confirm dialog on /nba/waivers. The server re-checks the move against fresh ESPN data:
 // the player must still be available with the same status, the drop must still be on the
-// roster and not locked, and an add must be left this week. Every write is audited.
+// roster (tomorrow's roster, if moves are pending) and not locked, and an add must be left
+// this week. Every write is audited.
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { submitAddDrop } from "@fantasy-copilot/espn";
 import { auditAvailable, recordAction } from "@/lib/audit";
 import { espnConfig } from "@/lib/env";
+import { refreshLogged } from "@/lib/nba/outlook-refresh";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
 
 export const dynamic = "force-dynamic";
+// The outlook re-runs after a successful add (~30 s, after the response is sent).
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin");
@@ -45,13 +49,14 @@ export async function POST(request: NextRequest) {
   }
   const claim = fa.status === "WAIVERS";
   if (dropId != null) {
-    const drop = v.data.me.roster.find((p) => p.id === dropId);
+    const drop = v.data.ahead.me.roster.find((p) => p.id === dropId);
     if (!drop)
       return NextResponse.json(
         { error: "stale", message: "That player isn't on your roster anymore." },
         { status: 409 },
       );
-    if (v.lockedToday.has(dropId)) {
+    // After today's roster lock a drop takes effect tomorrow, so a game in progress is fine.
+    if (!v.rosterLocked && v.lockedToday.has(dropId)) {
       return NextResponse.json(
         { error: "locked", message: "His game has started; he can't be dropped right now." },
         { status: 409 },
@@ -61,7 +66,7 @@ export async function POST(request: NextRequest) {
     const limit = Object.entries(v.data.settings.slotCounts)
       .filter(([s]) => s !== "IR")
       .reduce((a, [, n]) => a + n, 0);
-    if (v.data.me.roster.filter((p) => p.slot !== "IR").length >= limit) {
+    if (v.data.ahead.me.roster.filter((p) => p.slot !== "IR" && !p.pendingIR).length >= limit) {
       return NextResponse.json(
         { error: "roster full", message: "Pick a player to drop." },
         { status: 409 },
@@ -78,6 +83,14 @@ export async function POST(request: NextRequest) {
   const cfg = espnConfig();
   const move = { addId, dropId, claim };
   const result = await submitAddDrop(cfg, cfg.teamId, v.sp, move);
+  // A free-agent add changes the roster now (a claim only once it processes, which the
+  // 5-minute roster watch picks up): bring the season outlook up to date.
+  if (result.ok && !claim) {
+    const dropName = v.data.ahead.me.roster.find((p) => p.id === dropId)?.name;
+    after(() =>
+      refreshLogged(`You added ${fa.player.name}${dropName ? `, dropped ${dropName}` : ""}`),
+    );
+  }
   try {
     await recordAction({
       kind: claim ? "waiver-claim" : "add-drop",
@@ -85,7 +98,7 @@ export async function POST(request: NextRequest) {
       request: {
         ...move,
         add: fa.player.name,
-        drop: v.data.me.roster.find((p) => p.id === dropId)?.name ?? null,
+        drop: v.data.ahead.me.roster.find((p) => p.id === dropId)?.name ?? null,
       },
       ...result,
     });

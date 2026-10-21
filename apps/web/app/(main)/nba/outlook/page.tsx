@@ -1,13 +1,26 @@
+import { after } from "next/server";
+import { RefreshCw } from "lucide-react";
 import { PageHeader, ProbBar, SectionTitle, StatTile } from "@/components/fc/bits";
+import { LiveRefresh } from "@/components/live-refresh";
 import { OddsChart } from "@/components/odds-chart";
 import { RunOutlook } from "@/components/run-outlook";
 import { ErrorNotice } from "@/components/setup-notice";
 import { dbConfigured } from "@/lib/db";
+import { DISPLAY_TZ } from "@/lib/env";
 import { fmtTip } from "@/lib/format";
 import { dateForScoringPeriod, shortDay } from "@/lib/nba/calendar";
 import { leagueMovesBetween, type TeamMove } from "@/lib/nba/changes";
+import {
+  isStale,
+  outlookRunning,
+  recentLeagueMoves,
+  refreshLogged,
+} from "@/lib/nba/outlook-refresh";
 import { latestOutlooks, outlookHistory, type OutlookTeam } from "@/lib/nba/outlook-run";
 import { cn } from "@/lib/utils";
+
+// A visit can start a re-run in the background (after the response), which takes ~30 s.
+export const maxDuration = 120;
 
 const pct = (v: number) => (v < 0.005 && v > 0 ? "<1%" : `${Math.round(v * 100)}%`);
 
@@ -19,8 +32,13 @@ function delta(now: number, before: number | undefined) {
   return { text: `${d > 0 ? "+" : ""}${d}`, up: d > 0 };
 }
 
-const when = (d: Date) =>
-  `${d.toISOString().slice(5, 10).replace("-", "/")} ${fmtTip(d.toISOString())}`;
+// Date and time in the display time zone (an evening run is still that day, not tomorrow's UTC date).
+const when = (d: Date) => {
+  const [, m, day] = new Intl.DateTimeFormat("en-CA", { timeZone: DISPLAY_TZ })
+    .format(d)
+    .split("-");
+  return `${m}/${day} ${fmtTip(d.toISOString())}`;
+};
 const pts = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n).toLocaleString("en-US")}`;
 const names = (ps: { name: string }[]) => ps.map((p) => p.name).join(", ");
 
@@ -119,8 +137,17 @@ export default async function OutlookPage() {
     return <ErrorNotice title="Outlook needs the database" message="Set DATABASE_URL." />;
   }
   const myId = Number(process.env.ESPN_TEAM_ID);
-  const [runs, history] = await Promise.all([latestOutlooks(), outlookHistory(myId)]);
+  const [runs, history, leagueMoves, running] = await Promise.all([
+    latestOutlooks(),
+    outlookHistory(myId),
+    recentLeagueMoves().catch(() => []),
+    outlookRunning(),
+  ]);
   const [latest, previous] = runs;
+  // A roster move newer than the latest run: update now, in the background.
+  const stale = isStale(leagueMoves.at(-1)?.at ?? null, latest?.run_at.getTime() ?? null);
+  if (stale && !running) after(() => refreshLogged());
+  const updating = stale || running;
   const me = latest?.results.find((t) => t.teamId === myId);
   const before = previous?.results.find((t) => t.teamId === myId);
   // The roster moves between the two runs. Never blocks the page.
@@ -140,12 +167,23 @@ export default async function OutlookPage() {
         title="Season outlook"
         subtitle={
           latest
-            ? `${latest.seasons} simulated seasons from ${shortDay(dateForScoringPeriod(latest.scoring_period))} · updated ${latest.run_at.toISOString().slice(5, 10).replace("-", "/")} ${fmtTip(latest.run_at.toISOString())}`
+            ? `${latest.seasons.toLocaleString("en-US")} simulated seasons from ${shortDay(dateForScoringPeriod(latest.scoring_period))} · updated ${when(latest.run_at)}${latest.trigger ? ` after: ${latest.trigger}` : ""}`
             : "No simulation yet. Run one to get your odds."
         }
       >
         <RunOutlook />
       </PageHeader>
+
+      {updating && (
+        <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm">
+          <RefreshCw className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
+          <span>
+            Updating for the latest roster move. This page refreshes itself when it&apos;s done
+            (about 30 seconds).
+          </span>
+          <LiveRefresh active seconds={10} />
+        </div>
+      )}
 
       {me && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

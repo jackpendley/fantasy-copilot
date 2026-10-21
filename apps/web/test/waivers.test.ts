@@ -133,3 +133,66 @@ describe("waiverAnalysis", () => {
     expect(res.thisWeek[0]!.drop).toBeNull();
   });
 });
+
+describe("waiverAnalysis after the roster lock and with the IL", () => {
+  const guard = () => fa(1, "Daily Guard", 99, 22, ["PG", "SG"]);
+
+  it("once today's roster has locked, an add only counts from tomorrow", () => {
+    const open = waiverAnalysis({ ...base, freeAgents: [guard()] });
+    const locked = waiverAnalysis({ ...base, rosterLocked: true, freeAgents: [guard()] });
+    expect(open.candidates[0]!.weekGames).toBe(6);
+    expect(locked.candidates[0]!.weekGames).toBe(5);
+    expect(locked.thisWeek[0]!.deltaPts).toBeLessThan(open.thisWeek[0]!.deltaPts);
+  });
+
+  it("after the lock, a player whose game has started can still be dropped (from tomorrow)", () => {
+    const lockedToday = new Set(roster.map((p) => p.id));
+    const res = waiverAnalysis({
+      ...base,
+      lockedToday,
+      rosterLocked: true,
+      freeAgents: [guard()],
+    });
+    expect(res.thisWeek[0]!.drop).not.toBeNull();
+  });
+
+  it("offers moving a ruled-out player to a free IL slot instead of a drop", () => {
+    const hurt = roster.map((p, i) => (i === 0 ? { ...p, injuryStatus: "OUT" } : p));
+    const res = waiverAnalysis({ ...base, roster: hurt, irSlots: 1, freeAgents: [guard()] });
+    const top = res.thisWeek[0]!;
+    expect(top.drop).toBeNull();
+    expect(top.il?.id).toBe(hurt[0]!.id);
+    // With the IL slot taken (or no IL), it's back to a drop.
+    const full = waiverAnalysis({
+      ...base,
+      roster: [...hurt, { ...hurt[1]!, id: 999, slot: "IR" }],
+      irSlots: 1,
+      rosterLimit: 12,
+      freeAgents: [guard()],
+    });
+    expect(full.thisWeek[0]!.il).toBeNull();
+  });
+
+  it("doesn't count a player already headed to the IL against the roster", () => {
+    // Moved to IL after the lock: ESPN frees his spot tomorrow, so an add needs no drop.
+    const pending = roster.map((p, i) =>
+      i === 0 ? { ...p, injuryStatus: "OUT", pendingIR: true } : p,
+    );
+    const res = waiverAnalysis({ ...base, roster: pending, irSlots: 1, freeAgents: [guard()] });
+    expect(res.thisWeek[0]!.drop).toBeNull();
+    expect(res.thisWeek[0]!.il).toBeNull();
+  });
+
+  it("a player already dropped (leaving tomorrow) is never offered as the drop again", () => {
+    // Synthetic: a strong guard who plays every day, dropped after today's lock.
+    const leaving: RosterPlayer = { ...guard().player, id: 500, name: "Leaving", slot: "BE" };
+    const res = waiverAnalysis({
+      ...base,
+      leaving: [leaving],
+      week: { ...base.week, availableUntil: new Map([[500, 1]]) },
+      freeAgents: [fa(2, "Other Guard", 99, 22, ["PG"])],
+    });
+    expect(res.thisWeek.length).toBeGreaterThan(0);
+    expect(res.thisWeek.every((o) => o.drop?.id !== 500)).toBe(true);
+  });
+});

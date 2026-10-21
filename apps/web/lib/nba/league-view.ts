@@ -12,12 +12,15 @@ import { teamValue, valueContext, type TeamValue } from "./trade";
 export async function loadLeagueView(now = new Date()) {
   const date = etDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
-  const [data, outlook, freeAgents, draftPicks] = await Promise.all([
+  const [league, outlook, freeAgents, draftPicks] = await Promise.all([
     loadLeague(sp, date),
     dbConfigured() ? latestOutlook().catch(() => null) : Promise.resolve(null),
     loadFreeAgents(sp).catch(() => []),
     loadDraftPicks().catch(() => new Map<number, number>()),
   ]);
+  // Rosters as they stand from tomorrow: moves made after today's lock count for everything
+  // forward-looking here (strength, trades, team pages).
+  const data = { ...league, teams: league.ahead.teams, me: league.ahead.me };
   const free = freeAgents.map((f) => f.player);
   const market = marketContext([...data.teams.flatMap((t) => t.roster), ...free], draftPicks);
   const ctx = valueContext(

@@ -7,12 +7,16 @@
 // (fppg x expected games after this week) flags streams that cost long-term value.
 
 import type { FreeAgent, ProGame, RosterPlayer } from "@fantasy-copilot/espn";
+import { irEligible } from "@fantasy-copilot/fantasy-core";
 import { etDate, scoringPeriodForDate } from "./calendar";
 import { perGameProjection } from "./projection";
 import { projectTeamWeek, winProbability, type WeekInputs } from "./week";
 
 export interface WaiverInputs {
+  /** The roster from tomorrow on (ESPN's, including moves made after today's lock). */
   roster: RosterPlayer[];
+  /** Players dropped after today's lock: they still score today. */
+  leaving?: RosterPlayer[];
   freeAgents: FreeAgent[];
   week: WeekInputs;
   myBanked: number;
@@ -26,6 +30,13 @@ export interface WaiverInputs {
   startedToday: Set<number>;
   /** Roster spots excluding IR (starters + bench). */
   rosterLimit: number;
+  /** IR slots in this league. */
+  irSlots?: number;
+  /**
+   * Today's roster has locked (a game has tipped): an add or drop made now takes effect
+   * tomorrow, so the add can't play today and the dropped player still can.
+   */
+  rosterLocked?: boolean;
   /** Last day of the league season (rest-of-season horizon). */
   lastDay: number;
 }
@@ -44,6 +55,8 @@ export interface WaiverCandidate {
 export interface StreamOption {
   add: WaiverCandidate;
   drop: RosterPlayer | null;
+  /** Instead of a drop: move this ruled-out player to the IR slot to open a spot. */
+  il: RosterPlayer | null;
   dropRos: number;
   /** Projected points gained this week. */
   deltaPts: number;
@@ -82,15 +95,19 @@ export function waiverAnalysis(a: WaiverInputs): {
     availability(p) *
     gamesBetween(p.proTeamId, lastWeekDay + 1, a.lastDay);
 
-  // When each free agent can first play: after his claim processes, and not in a game already under way.
-  const availableFrom = new Map<number, number>();
+  // When each free agent can first play: after his claim processes, and not in a game already
+  // under way (or not today at all once the roster has locked). Starts from the week's own
+  // windows (players added after today's lock).
+  const availableFrom = new Map(week.availableFrom ?? []);
   const candidates: WaiverCandidate[] = a.freeAgents
     .map((f) => {
       let from = week.fromPeriod;
       if (f.status === "WAIVERS" && f.waiverUntil) {
         from = Math.max(from, scoringPeriodForDate(etDate(new Date(f.waiverUntil))));
       }
-      if (from === week.fromPeriod && a.startedToday.has(f.player.proTeamId)) from += 1;
+      if (from === week.fromPeriod && (a.rosterLocked || a.startedToday.has(f.player.proTeamId))) {
+        from += 1;
+      }
       availableFrom.set(f.player.id, from);
       return {
         player: f.player,
@@ -104,22 +121,33 @@ export function waiverAnalysis(a: WaiverInputs): {
     .filter((c) => c.fppg > 0)
     .sort((x, y) => y.fppg - x.fppg);
 
-  const baseline = projectTeamWeek(a.roster, week);
+  const current = [...a.roster, ...(a.leaving ?? [])];
+  const baseline = projectTeamWeek(current, week);
   const baseStarts = [...baseline.startsByDay.values()].reduce((s, d) => s + d.size, 0);
   const baseWin =
     a.oppRemaining == null
       ? null
       : winProbability(a.myBanked, a.myRemaining, a.oppBanked, a.oppRemaining);
 
-  // Drop candidates: the lowest rest-of-season values among players who can be dropped now.
+  // Drop candidates: the lowest rest-of-season values among players who can be dropped now
+  // (after the roster lock any player can be: the drop takes effect tomorrow).
   const droppable = a.roster
-    .filter((p) => !a.lockedToday.has(p.id) && p.slot !== "IR")
-    .map((p) => ({ p, ros: ros(p) }))
+    .filter((p) => (a.rosterLocked || !a.lockedToday.has(p.id)) && p.slot !== "IR")
+    .map((p) => ({ p, ros: ros(p), il: null }))
     .sort((x, y) => x.ros - y.ros)
     .slice(0, MAX_DROPS);
-  const openSpot = a.roster.filter((p) => p.slot !== "IR").length < a.rosterLimit;
-  const drops: { p: RosterPlayer | null; ros: number }[] = [
-    ...(openSpot ? [{ p: null, ros: 0 }] : []),
+  const active = a.roster.filter((p) => p.slot !== "IR" && !p.pendingIR);
+  const openSpot = active.length < a.rosterLimit;
+  // No open spot, but a ruled-out player could move to a free IR slot instead of a drop.
+  const irFree = a.roster.filter((p) => p.slot === "IR" || p.pendingIR).length < (a.irSlots ?? 0);
+  const toIL =
+    !openSpot && irFree
+      ? (active.filter((p) => irEligible(p.injuryStatus)).sort((x, y) => ros(x) - ros(y))[0] ??
+        null)
+      : null;
+  const drops: { p: RosterPlayer | null; ros: number; il: RosterPlayer | null }[] = [
+    ...(openSpot ? [{ p: null, ros: 0, il: null }] : []),
+    ...(toIL ? [{ p: null, ros: 0, il: toIL }] : []),
     ...droppable,
   ];
 
@@ -138,13 +166,21 @@ export function waiverAnalysis(a: WaiverInputs): {
     let bestWeek: StreamOption | null = null;
     let bestSeason: StreamOption | null = null;
     for (const d of drops) {
-      const roster = [...a.roster.filter((p) => p !== d.p), { ...c.player, slot: "BE" }];
-      const tw = projectTeamWeek(roster, { ...week, availableFrom });
+      // A drop made after the lock still plays today; otherwise he's gone now.
+      const keepToday = a.rosterLocked && d.p;
+      const roster = [
+        ...current.filter((p) => keepToday || p !== d.p),
+        { ...c.player, slot: "BE" },
+      ];
+      const availableUntil = new Map(week.availableUntil ?? []);
+      if (keepToday) availableUntil.set(d.p!.id, week.fromPeriod);
+      const tw = projectTeamWeek(roster, { ...week, availableFrom, availableUntil });
       const deltaPts = tw.remaining - baseline.remaining;
       const starts = [...tw.startsByDay.values()].reduce((s, x) => s + x.size, 0);
       const option: StreamOption = {
         add: c,
         drop: d.p,
+        il: d.il,
         dropRos: d.ros,
         deltaPts,
         deltaStarts: starts - baseStarts,

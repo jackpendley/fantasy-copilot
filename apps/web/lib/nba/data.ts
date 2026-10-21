@@ -15,6 +15,7 @@ import {
   parseSettings,
   parseTeams,
   type ProGame,
+  type RosterPlayer,
 } from "@fantasy-copilot/espn";
 import {
   fetchDailyLineups,
@@ -24,6 +25,7 @@ import {
 } from "@fantasy-copilot/nba-data";
 import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
+import { LAST_SCORING_PERIOD } from "./calendar";
 
 // The NBA schedule is ~400 KB and changes rarely: keep it in memory for 6 hours.
 let scheduleCache: { at: number; games: ProGame[] } | null = null;
@@ -65,9 +67,24 @@ async function leagueJson(
   return { raw, teamId: cfg.teamId, season: cfg.season };
 }
 
+/**
+ * Every team's roster for tomorrow, as ESPN has it. A move made after today's roster lock (the
+ * first tip) only shows up here. Null on the last day and in ESPN_LEAGUE_FILE dev mode.
+ */
+async function rostersAhead(scoringPeriodId: number): Promise<Map<number, RosterPlayer[]> | null> {
+  if (process.env.ESPN_LEAGUE_FILE || scoringPeriodId >= LAST_SCORING_PERIOD) return null;
+  const raw = await fetchLeague(espnConfig(), ["mRoster"], {
+    scoringPeriodId: scoringPeriodId + 1,
+  });
+  return new Map(parseTeams(raw).map((t) => [t.id, t.roster]));
+}
+
 export async function loadLeague(scoringPeriodId: number, ymd: string) {
-  const { raw, teamId, season } = await leagueJson(scoringPeriodId);
   const yyyymmdd = ymd.replace(/-/g, "");
+  const [{ raw, teamId, season }, ahead] = await Promise.all([
+    leagueJson(scoringPeriodId),
+    rostersAhead(scoringPeriodId),
+  ]);
   const [games, scoreboard, injuries, lineups] = await Promise.all([
     nbaSchedule(season),
     fetchScoreboard(yyyymmdd).catch(() => []),
@@ -79,10 +96,14 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
   const teams = parseTeams(raw);
   const me = teams.find((t) => t.id === teamId);
   if (!me) throw new Error(`team ${teamId} not found in the league`);
+  const teamsAhead = teams.map((t) => ({ ...t, roster: ahead?.get(t.id) ?? t.roster }));
   return {
     settings,
+    /** Today's rosters: who scores today. */
     teams,
     me,
+    /** Tomorrow's rosters (moves made after today's lock): who scores from tomorrow on. */
+    ahead: { teams: teamsAhead, me: teamsAhead.find((t) => t.id === teamId)! },
     matchups: parseMatchups(raw),
     games,
     scoreboard,

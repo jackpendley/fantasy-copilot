@@ -3,15 +3,20 @@ import "server-only";
 // daily DARKO snapshot. Pages read today's props live (cached in memory for 15 minutes).
 
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
+import { fantasyPoints, withDerived } from "@fantasy-copilot/fantasy-core";
 import {
   buildMatcher,
   darkoPerGame,
   fetchDarko,
+  fetchGameSummary,
   fetchPropBets,
   fetchScoreboard,
+  parseBoxScore,
   type PropLine,
 } from "@fantasy-copilot/nba-data";
 import { db } from "@/lib/db";
+import { gameEnvironment, perGameProjection, type GameLine } from "./projection";
+import { vegasProjection } from "./vegas";
 
 export type Snapshot = "morning" | "pregame" | "close";
 
@@ -37,15 +42,26 @@ export async function propsForGames(gameIds: number[]): Promise<Map<number, Prop
   return byPlayer;
 }
 
+/** Who we project and how: players by id (with ESPN's projected box score) and the scoring. */
+export interface ProjectionContext {
+  players: Map<number, RosterPlayer>;
+  scoring: Record<string, number>;
+  /** Scoring period of these games (the projection's as-of day). */
+  sp: number;
+}
+
 /**
- * Store props and game lines for `games` that haven't tipped. 'close' overwrites itself on
- * every run (the last capture before tip); the other snapshots keep their first capture.
+ * Store props and game lines for `games` that haven't tipped, plus our projection and the
+ * props-implied one for every player with lines (for the walk-forward test). 'close'
+ * overwrites itself on every run (the last capture before tip); the other snapshots keep
+ * their first capture.
  */
 export async function collectMarketData(
   games: ProGame[],
   yyyymmdd: string,
   snapshot: Snapshot,
   now = new Date(),
+  projections?: ProjectionContext,
 ): Promise<{ games: number; props: number }> {
   const board = await fetchScoreboard(yyyymmdd);
   const pre = games.filter((g) => {
@@ -93,6 +109,10 @@ export async function collectMarketData(
           `
         : db()`insert into prop_lines ${db()(rows, ...cols)} on conflict do nothing`);
       props += rows.length;
+      if (projections) {
+        const line = board.find((b) => b.gameId === g.gameId);
+        await storeProjections(g, line, lines, projections, snapshot, now);
+      }
     }
     const s = board.find((b) => b.gameId === g.gameId);
     if (s && (s.spread != null || s.total != null)) {
@@ -146,4 +166,80 @@ export async function snapshotDarko(players: RosterPlayer[]) {
     `;
   }
   return { darko: asOf, matched: rows.length, of: darko.length };
+}
+
+async function storeProjections(
+  g: ProGame,
+  board: GameLine | undefined,
+  lines: PropLine[],
+  ctx: ProjectionContext,
+  snapshot: Snapshot,
+  now: Date,
+) {
+  const byPlayer = new Map<number, PropLine[]>();
+  for (const l of lines) byPlayer.set(l.playerId, [...(byPlayer.get(l.playerId) ?? []), l]);
+  const rows = [];
+  for (const [id, props] of byPlayer) {
+    const p = ctx.players.get(id);
+    if (!p) continue;
+    const base = perGameProjection(p, ctx.sp).fppg;
+    const env = gameEnvironment(board, p.proTeamId === g.homeProTeamId);
+    rows.push({
+      game_id: g.gameId,
+      player_id: id,
+      snapshot,
+      captured_at: now,
+      tip: new Date(g.date),
+      model_fppg: base * env,
+      vegas_fppg: vegasProjection(props, p.projection?.stats, base, ctx.scoring)?.fppg ?? null,
+    });
+  }
+  if (!rows.length) return;
+  const cols = [
+    "game_id",
+    "player_id",
+    "snapshot",
+    "captured_at",
+    "tip",
+    "model_fppg",
+    "vegas_fppg",
+  ] as const;
+  await (snapshot === "close"
+    ? db()`
+        insert into pregame_projections ${db()(rows, ...cols)}
+        on conflict (game_id, player_id, snapshot) do update set
+          captured_at = excluded.captured_at, model_fppg = excluded.model_fppg,
+          vegas_fppg = excluded.vegas_fppg
+      `
+    : db()`insert into pregame_projections ${db()(rows, ...cols)} on conflict do nothing`);
+}
+
+/** Box scores of finished games, scored with the league's settings (bonuses included). */
+export async function recordResults(games: ProGame[], scoring: Record<string, number>) {
+  let rows = 0;
+  for (const g of games) {
+    const summary = await fetchGameSummary(g.gameId).catch(() => null);
+    if (summary?.header?.competitions?.[0]?.status?.type?.state !== "post") continue;
+    const lines = parseBoxScore(summary);
+    if (!lines.length) continue;
+    await db()`
+      insert into game_results ${db()(
+        lines.map((l) => ({
+          game_id: g.gameId,
+          player_id: l.playerId,
+          team_id: l.teamId,
+          line: db().json(l.line as never),
+          fp: fantasyPoints(withDerived(l.line), scoring),
+        })),
+        "game_id",
+        "player_id",
+        "team_id",
+        "line",
+        "fp",
+      )}
+      on conflict do nothing
+    `;
+    rows += lines.length;
+  }
+  return { results: rows };
 }

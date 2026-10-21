@@ -73,6 +73,7 @@ export function matchupView(data: LeagueData, sp: number): MatchupView {
     injuries: data.injuries,
     availableFrom: new Map([...myWeek.availableFrom, ...(oppWeek?.availableFrom ?? [])]),
     availableUntil: new Map([...myWeek.availableUntil, ...(oppWeek?.availableUntil ?? [])]),
+    lines: new Map(data.scoreboard.map((g) => [g.gameId, g])),
   };
   const mine = projectTeamWeek(myWeek.roster, {
     ...weekInputs,

@@ -8,6 +8,7 @@ import {
   parseInjuries,
   parseScoreboard,
   toEspnTeam,
+  parseBoxScore,
 } from "../src/index";
 
 const fixture = (f: string) =>
@@ -107,5 +108,52 @@ describe("parseGameLog", () => {
     // Points add up from the makes.
     expect(g.line.PTS).toBe(2 * g.line.FGM! + g.line["3PM"]! + g.line.FTM!);
     expect(g.opponent).toMatch(/^[A-Z]{2,4}$/);
+  });
+});
+
+describe("parseBoxScore", () => {
+  it("reads every player who played (synthetic summary)", () => {
+    const rows = parseBoxScore({
+      boxscore: {
+        players: [
+          {
+            team: { id: "2" },
+            statistics: [
+              {
+                names: ["MIN", "PTS", "FG", "3PT", "FT", "REB", "AST", "TO", "STL", "BLK", "PF"],
+                athletes: [
+                  {
+                    athlete: { id: "11" },
+                    stats: ["31", "38", "12-21", "7-12", "7-8", "5", "3", "3", "5", "0", "2"],
+                  },
+                  { athlete: { id: "12" }, didNotPlay: true, stats: [] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(rows).toEqual([
+      {
+        playerId: 11,
+        teamId: 2,
+        line: {
+          MIN: 31,
+          PTS: 38,
+          FGM: 12,
+          FGA: 21,
+          "3PM": 7,
+          "3PA": 12,
+          FTM: 7,
+          FTA: 8,
+          REB: 5,
+          AST: 3,
+          TO: 3,
+          STL: 5,
+          BLK: 0,
+        },
+      },
+    ]);
   });
 });

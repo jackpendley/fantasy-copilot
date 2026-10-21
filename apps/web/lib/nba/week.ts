@@ -4,7 +4,7 @@
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { optimizeLineup, playProbability, type Position } from "@fantasy-copilot/fantasy-core";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
-import { perGameProjection } from "./projection";
+import { gameEnvironment, perGameProjection, type GameLine } from "./projection";
 
 export interface TeamWeek {
   /** Per scoring period: ids projected to start (and with a game). */
@@ -29,6 +29,8 @@ export interface WeekInputs {
   availableFrom?: Map<number, number>;
   /** Last scoring period a player can be used (dropped, but the drop takes effect tomorrow). */
   availableUntil?: Map<number, number>;
+  /** Posted lines by game id (today's scoreboard): the game-environment factor where known. */
+  lines?: Map<number, GameLine>;
 }
 
 /** Rest-of-week chance a listed player plays: today's status applies to the next two days; OUT holds all week. */
@@ -47,11 +49,14 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, input.fromPeriod).fppg]));
   let remaining = 0;
   for (const sp of input.periods) {
-    const teams = new Set(
-      input.games
-        .filter((g) => g.scoringPeriodId === sp)
-        .flatMap((g) => [g.homeProTeamId, g.awayProTeamId]),
-    );
+    const dayGames = input.games.filter((g) => g.scoringPeriodId === sp);
+    const teams = new Set(dayGames.flatMap((g) => [g.homeProTeamId, g.awayProTeamId]));
+    const env = (proTeamId: number) => {
+      const g = dayGames.find(
+        (x) => x.homeProTeamId === proTeamId || x.awayProTeamId === proTeamId,
+      );
+      return g ? gameEnvironment(input.lines?.get(g.gameId), g.homeProTeamId === proTeamId) : 1;
+    };
     const playing = roster.filter((p) => teams.has(p.proTeamId));
     gamesByDay.set(sp, new Set(playing.map((p) => p.id)));
     if (sp < input.fromPeriod) continue;
@@ -64,7 +69,8 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
         (input.availableFrom?.get(p.id) ?? 0) <= sp &&
         sp <= (input.availableUntil?.get(p.id) ?? Infinity)
           ? playChance(injuries.get(p.id) ?? p.injuryStatus ?? "ACTIVE", ahead) *
-            (fppg.get(p.id) ?? 0)
+            (fppg.get(p.id) ?? 0) *
+            env(p.proTeamId)
           : 0,
       currentSlot: "BE",
     }));

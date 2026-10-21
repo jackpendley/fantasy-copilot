@@ -20,7 +20,7 @@ import {
   type LineupEntry,
   type ScoreboardGame,
 } from "@fantasy-copilot/nba-data";
-import { perGameProjection, type PerGame } from "./projection";
+import { gameEnvironment, perGameProjection, type PerGame } from "./projection";
 
 export interface DayGame {
   gameId: number;
@@ -144,6 +144,8 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       : injury.note;
     const playProb = game ? playProbability(status) : 0;
     const projection = perGameProjection(player, input.games[0]?.scoringPeriodId);
+    // Vegas game environment: more expected team points, more fantasy points to go around.
+    const env = game ? gameEnvironment(live.get(game.gameId), game.home) : 1;
     return {
       player,
       game,
@@ -152,7 +154,7 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       injuryNote: note,
       playProb,
       projection,
-      value: game ? playProb * projection.fppg : 0,
+      value: game ? playProb * projection.fppg * env : 0,
       currentSlot: player.slot ?? "BE",
       recommendedSlot: player.slot ?? "BE",
       nba,

@@ -69,6 +69,10 @@
 
 - **Trades every size (branch `trades-every-size`):** 2-for-1, 3-for-2 and the other shapes now surface, with exact cuts, IL for injured arrivals, and free-agent fills (ADR-024).
 
+- **Model: game environment + props tracking (branch `game-environment`):**
+  - Vegas game totals now scale projections (passed the held-out test, ADR-025);
+  - pregame projections (ours and Vegas) and box scores are stored for the props test.
+
 ## Plan in progress (approved 2026-10-20, second plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
@@ -87,5 +91,6 @@
 ## Next tasks
 
 1. After the `market-data` merge: check that the 22:00Z pregame cron and the nightly job store props, and that rows show "Vegas".
-2. Plan item 5: train on market data (game-environment backtest now; props after 7 game days of collection).
-3. Open: Jack's first in-app add/claim (the write path is still untested live); the 5-minute scheduler.
+2. **Around Oct 29 (7 game days of props):** run the pre-registered props test (`/api/model/props`). If the blend passes, wire it into daily projections.
+3. Replace the fixed league-average team total (115.3) with this season's collected average.
+4. Open: Jack's first in-app add/claim (the write path is still untested live); the 5-minute scheduler.

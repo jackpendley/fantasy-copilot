@@ -102,3 +102,32 @@ Several variants were tried on this season, so it is **not** a clean test.
 - **Held-out test:** 2024-25 (prior 2023-24), same setup.
   - 2024-25 was already the held-out season for the minutes trend. This is a separate hypothesis, but it's the second test on that season. So the bar stays the same: the interval must be entirely below 0.
 - **Ships if** its per-player mean error difference vs the current model has a 95% interval entirely below 0. Then it applies to daily and weekly projections for games with a posted line.
+
+### Held-out result: 2024-25 (256 players, 15,859 games, 1,239 of 1,240 games with lines)
+
+| Predictor                                     |       MAE | vs current (95% CI)         |
+| --------------------------------------------- | --------: | --------------------------- |
+| **current model + game environment (β 0.75)** | **10.49** | **−0.028 [−0.047, −0.008]** |
+| current model (15-game blend + minutes trend) |     10.52 | baseline                    |
+| Season-to-date only                           |     10.71 | +0.191 [0.136, 0.245]       |
+| Prior only (previous season's average)        |     10.94 | +0.411 [0.315, 0.508]       |
+
+**Decision (2026-10-21): ships.**
+
+- The interval is entirely below 0. The effect is small, about 0.3% lower error per game.
+- **In production:** daily lineups and today's part of the week projection use the posted line from ESPN's scoreboard. Days without a line yet are unchanged.
+- **League average:** fixed at 115.3, 2025-26's average implied team total; 2024-25's was 113.3. A fixed value scales every game alike, so start/sit choices and head-to-head odds barely depend on it. Replace it with this season's collected average (`game_lines`) once there are a few weeks of lines.
+
+## Pre-registration: sportsbook props (2026-10-21, before any data)
+
+- **Data:** for every player with DraftKings props, the `pregame` snapshot (22:00Z cron) stores two projections in `pregame_projections`:
+  - our projection: current model + game environment, before play probability;
+  - the props-implied one (`lib/nba/vegas.ts`).
+- **Scoring:** the next morning's job stores box scores in `game_results`, scored with league settings including bonuses. Only games the player actually played count.
+- **When:** first evaluation once there are ≥7 game days and ≥800 player-games (`GET /api/model/props`, `lib/nba/props-eval.ts`).
+- **Walk-forward:**
+  - choose the blend weight w (0, 0.1, …, 1) on the first half of the game days by MAE;
+  - judge (1 − w)·ours + w·Vegas on the second half.
+- **Ships if** w > 0 and the blend's per-player mean error difference vs our model has a 95% interval entirely below 0.
+  - Then today's lineups, live projections and this week's odds use the blend for players with props.
+  - The weight is refit as data grows, re-checked on the most recent half each time.

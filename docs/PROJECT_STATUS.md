@@ -62,6 +62,11 @@
   - a "Vegas" projection shows on Today and player pages;
   - new daily `pregame` cron.
 
+- **Matchup redesign (branch `matchup-redesign`):**
+  - head-to-head by lineup slot, ESPN style, for any day of the week (past finals, live today, projected days ahead);
+  - scoreboard with current points big and projected finals;
+  - one-line box scores (tap for the full line) and solid ▲/▼ on Today and Matchup.
+
 ## Plan in progress (approved 2026-10-20, second plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
@@ -80,5 +85,5 @@
 ## Next tasks
 
 1. After the `market-data` merge: check that the 22:00Z pregame cron and the nightly job store props, and that rows show "Vegas".
-2. Plan items 3-5 above, in order.
+2. Plan items 4-5 above (trades every size; train on market data).
 3. Open: Jack's first in-app add/claim (the write path is still untested live); the 5-minute scheduler.

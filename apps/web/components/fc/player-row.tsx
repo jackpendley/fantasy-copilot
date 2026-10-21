@@ -1,10 +1,10 @@
-import { Fragment } from "react";
-import { Lock, TrendingDown, TrendingUp } from "lucide-react";
+import { Lock } from "lucide-react";
 import type { DayRow } from "@/lib/nba/day";
-import { statLine, type LiveRow } from "@/lib/nba/live";
+import type { LiveRow } from "@/lib/nba/live";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SlotChip } from "./bits";
+import { BoxScore, TrendMark } from "./box-score";
 import { PlayerAvatar } from "./player-avatar";
 import { Pill, StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
@@ -40,26 +40,21 @@ function Points({ live }: { live: LiveRow }) {
     <>
       <div
         className={cn(
-          "text-base font-semibold tabular-nums",
+          "text-lg leading-tight font-semibold tabular-nums",
           live.row.game?.state === "in" && "text-success",
         )}
       >
         {fmtPts(live.points)}
       </div>
       <div
-        className="flex items-center justify-end gap-0.5 text-[10px] text-muted-foreground tabular-nums"
+        className="flex items-center justify-end gap-1 text-xs text-muted-foreground tabular-nums"
         title={
           final
             ? `Projected ${fmtPts(live.pregame)} before the game`
             : `Projected ${fmtPts(live.projected)} now (${fmtPts(live.pregame)} before the game)`
         }
       >
-        {live.trend === "up" && (
-          <TrendingUp className="size-3 text-success" aria-label="Above projection" />
-        )}
-        {live.trend === "down" && (
-          <TrendingDown className="size-3 text-danger" aria-label="Below projection" />
-        )}
+        <TrendMark trend={live.trend} />
         proj {fmtPts(final ? live.pregame : live.projected)}
       </div>
     </>
@@ -86,7 +81,7 @@ export function PlayerRow({
   const moved = showMoves && row.recommendedSlot !== row.currentSlot;
   const idle = !row.game;
   const started = Boolean(live && row.game && row.game.state !== "pre");
-  const box = started ? statLine(live!.line) : null;
+  const box = started ? live!.line : null;
   return (
     <div
       className={cn(
@@ -126,14 +121,7 @@ export function PlayerRow({
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
           {box ? (
-            <span className="text-foreground/80 tabular-nums">
-              {box.split(" · ").map((t, i) => (
-                <Fragment key={t}>
-                  {i > 0 && " · "}
-                  <span className="whitespace-nowrap">{t}</span>
-                </Fragment>
-              ))}
-            </span>
+            <BoxScore line={box} />
           ) : (
             <span className="inline-flex items-center gap-1">
               <TeamLogo abbr={row.player.proTeam} size={14} />
@@ -153,20 +141,22 @@ export function PlayerRow({
       <div className="hidden w-56 shrink-0 text-sm sm:block">
         <GameLine row={row} live={live} />
       </div>
-      <div className="w-16 shrink-0 text-right">
+      <div className="w-20 shrink-0 text-right">
         {started ? (
           <Points live={live!} />
         ) : row.game ? (
           <>
-            <div className="text-base font-semibold tabular-nums">{fmtPts(row.value)}</div>
+            <div className="text-lg leading-tight font-semibold tabular-nums">
+              {fmtPts(row.value)}
+            </div>
             {row.playProb < 1 && row.playProb > 0 && (
-              <div className="text-[10px] text-muted-foreground tabular-nums">
+              <div className="text-xs text-muted-foreground tabular-nums">
                 {Math.round(row.playProb * 100)}%×{fmtPts(row.projection.fppg)}
               </div>
             )}
             {vegas != null && (
               <div
-                className="text-[10px] text-muted-foreground tabular-nums"
+                className="text-xs text-muted-foreground tabular-nums"
                 title="Projection implied by DraftKings player props"
               >
                 Vegas {fmtPts(vegas)}

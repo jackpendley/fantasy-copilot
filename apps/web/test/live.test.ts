@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import type { DayRow } from "@/lib/nba/day";
-import { gameElapsed, liveRows, sortLive, statLine, trendOf } from "@/lib/nba/live";
+import { gameElapsed, liveRows, sortLive, statDetail, statSummary, trendOf } from "@/lib/nba/live";
 
 describe("gameElapsed", () => {
   const g = (state: ScoreboardGame["state"], period: number, clock: string) => ({
@@ -140,23 +140,33 @@ describe("pregame vs updated projection", () => {
   });
 });
 
-describe("statLine", () => {
-  it("formats like the ESPN app, skipping empty extras", () => {
-    expect(
-      statLine({
-        PTS: 13,
-        REB: 4,
-        AST: 11,
-        FGM: 6,
-        FGA: 23,
-        "3PM": 0,
-        "3PA": 7,
-        FTM: 1,
-        FTA: 1,
-        TO: 2,
-        MIN: 38,
-      }),
-    ).toBe("13 PTS · 4 REB · 11 AST · 6-23 FG · 0-7 3PT · 1-1 FT · 2 TO · 38 MIN");
-    expect(statLine(null)).toBeNull();
+describe("box score lines", () => {
+  const line = {
+    PTS: 22,
+    REB: 9,
+    AST: 1,
+    STL: 1,
+    BLK: 0,
+    "3PM": 0,
+    FGM: 8,
+    FGA: 13,
+    "3PA": 0,
+    FTM: 6,
+    FTA: 7,
+    TO: 1,
+    MIN: 28,
+  };
+  it("puts the scoring stats on one line, leaving out zeros", () => {
+    expect(statSummary(line)).toBe("22 PTS 9 REB 1 AST 1 STL");
+    expect(statSummary({ ...line, "3PM": 2, BLK: 3 })).toBe("22 PTS 9 REB 1 AST 1 STL 3 BLK 2 3PM");
+    expect(statSummary({ MIN: 3 })).toBe("0 PTS");
+    expect(statSummary(null)).toBeNull();
+  });
+  it("keeps shooting, turnovers and minutes for the full box score", () => {
+    expect(statDetail(line)).toBe("8-13 FG · 6-7 FT · 1 TO · 28 MIN");
+    expect(statDetail({ ...line, "3PM": 1, "3PA": 4, TO: 0 })).toBe(
+      "8-13 FG · 1-4 3PT · 6-7 FT · 28 MIN",
+    );
+    expect(statDetail(null)).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { PageHeader, SectionTitle } from "@/components/fc/bits";
-import { PlayerRow } from "@/components/fc/player-row";
+import { H2HBoard } from "@/components/fc/h2h-board";
 import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
 import { WinChart } from "@/components/win-chart";
@@ -18,7 +19,18 @@ import {
 } from "@/lib/nba/calendar";
 import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
 import { dbConfigured } from "@/lib/db";
-import { liveRows, sortLive, type LiveRow } from "@/lib/nba/live";
+import {
+  cellFromFinal,
+  cellFromLive,
+  cellsAhead,
+  dayTotal,
+  gameOn,
+  pairBySlot,
+  startingSlots,
+  type Placed,
+} from "@/lib/nba/h2h";
+import { liveRows } from "@/lib/nba/live";
+import { perGameProjection } from "@/lib/nba/projection";
 import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
@@ -28,65 +40,70 @@ import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
 
-/** One side's players today: who's starting, live fantasy points, and what's still to come. */
-function TodaySide({ title, rows }: { title: string; rows: LiveRow[] }) {
-  const starters = sortLive(rows.filter((r) => r.starting));
-  const benchPts = rows.filter((r) => !r.starting).reduce((a, r) => a + r.points, 0);
-  const pts = starters.reduce((a, r) => a + r.points, 0);
-  const toCome = starters.reduce((a, r) => a + r.toCome, 0);
-  return (
-    <div className="space-y-1">
-      <div className="flex items-baseline justify-between px-1 text-xs">
-        <span className="truncate font-medium">{title}</span>
-        <span className="text-muted-foreground tabular-nums">
-          <span className="font-semibold text-foreground">{fmtPts(pts)}</span> today
-          {toCome > 0.05 && <> · +{fmtPts(toCome)} to come</>}
-        </span>
-      </div>
-      <div className="divide-y overflow-hidden rounded-xl border bg-card">
-        {starters.map((r) => (
-          <PlayerRow key={r.row.player.id} row={r.row} live={r} showMoves={false} />
-        ))}
-        {benchPts !== 0 && (
-          <div className="px-3 py-2 text-xs text-muted-foreground">
-            Bench and IR scored {fmtPts(benchPts)} (not counted)
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function Side({
-  label,
-  name,
-  banked,
-  remaining,
-  align,
+/** The score at the top: points so far (big), projected finals, and the win chance. */
+function Scoreboard({
+  me,
+  opp,
+  myBanked,
+  oppBanked,
+  myFinal,
+  oppFinal,
+  pWin,
+  live,
 }: {
-  label: string;
-  name: string;
-  banked: number;
-  remaining: number;
-  align: "left" | "right";
+  me: string;
+  opp: string;
+  myBanked: number;
+  oppBanked: number;
+  myFinal: number;
+  oppFinal: number;
+  pWin: number;
+  live: boolean;
 }) {
+  const side = (name: string, pts: number, final: number, right: boolean) => (
+    <div className={cn("min-w-0", right && "text-right")}>
+      <div className="truncate text-xs font-medium text-muted-foreground sm:text-sm">{name}</div>
+      <div className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
+        {fmtPts(pts)}
+      </div>
+      <div className="text-xs text-muted-foreground tabular-nums sm:text-sm">
+        proj {fmtPts(final)}
+      </div>
+    </div>
+  );
   return (
-    <div className={cn("min-w-0", align === "right" && "text-right")}>
-      <div className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-        {label}
+    <div className="rounded-xl border bg-card p-4 sm:p-5">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+        {side(me, myBanked, myFinal, false)}
+        <div className="flex flex-col items-center gap-1">
+          <span className="text-xs font-semibold text-muted-foreground">VS</span>
+          {live && <Pill tone="success">Live</Pill>}
+        </div>
+        {side(opp, oppBanked, oppFinal, true)}
       </div>
-      <div className="truncate text-sm font-medium">{name}</div>
-      <div className="mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
-        {fmtPts(banked + remaining)}
+      <div className="mt-4">
+        <div className="mb-1.5 flex justify-between text-xs font-semibold tabular-nums sm:text-sm">
+          <span className="text-primary">{Math.round(pWin * 100)}% to win</span>
+          <span className="text-muted-foreground">{Math.round((1 - pWin) * 100)}%</span>
+        </div>
+        <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
+          <div className="bg-primary" style={{ width: `${pWin * 100}%` }} />
+        </div>
       </div>
-      <div className="text-xs text-muted-foreground tabular-nums">
-        {fmtPts(banked)} scored · {fmtPts(remaining)} to come
-      </div>
+      <p className="mt-3 text-xs text-muted-foreground">
+        Big numbers are points so far{live ? " (updating every minute)" : ""}. Projected finals
+        assume both teams set their best lineup every day; the win chance uses 2025-26 weekly
+        volatility.
+      </p>
     </div>
   );
 }
 
-export default async function WeekPage() {
+export default async function WeekPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ day?: string }>;
+}) {
   const today = etDate();
   const sp = Math.min(Math.max(scoringPeriodForDate(today), 1), LAST_SCORING_PERIOD);
   const mp = matchupPeriodOf(sp);
@@ -119,7 +136,6 @@ export default async function WeekPage() {
   ]);
   const myLive = liveRows(myToday, live?.get(data.me.id), data.scoreboard);
   const oppLive = opp && oppToday ? liveRows(oppToday, live?.get(opp.id), data.scoreboard) : null;
-  const playing = (rows: LiveRow[] | null) => (rows ?? []).some((r) => r.starting && r.row.game);
   const gamesLive = [...myLive, ...(oppLive ?? [])].some((r) => r.row.game?.state === "in");
   // Snapshots are taken before each day's games; "Now" is added once today's games start.
   const started = [...myLive, ...(oppLive ?? [])].some(
@@ -134,6 +150,75 @@ export default async function WeekPage() {
   ];
 
   const days = periods.map((p) => ({ sp: p, date: dateForScoringPeriod(p) }));
+
+  // The day shown head to head: today by default; any day of this week via ?day=.
+  const { day: dayParam } = await searchParams;
+  const day = periods.includes(Number(dayParam)) ? Number(dayParam) : sp;
+  const statusOf = new Map(data.injuries.map((i) => [i.playerId, i]));
+  const statusFor = (p: { id: number; injuryStatus?: string | null }) =>
+    statusOf.get(p.id)?.status ?? p.injuryStatus ?? "ACTIVE";
+  const oppAhead = opp ? data.ahead.teams.find((t) => t.id === opp.id) : undefined;
+  let minePlaced: Placed[] = [];
+  let theirsPlaced: Placed[] = [];
+  if (day === sp) {
+    minePlaced = myLive.map(cellFromLive);
+    theirsPlaced = (oppLive ?? []).map(cellFromLive);
+  } else if (day < sp) {
+    // A past day: ESPN's final points per player, in the slots they were in.
+    const past = await loadLiveRosters(day, mp).catch(() => null);
+    const people = new Map(
+      [...data.teams, ...data.ahead.teams].flatMap((t) => t.roster).map((p) => [p.id, p]),
+    );
+    const final = (teamId: number) =>
+      (past?.get(teamId) ?? []).map((e) => {
+        const p = people.get(e.playerId);
+        return cellFromFinal(
+          e,
+          p,
+          p ? gameOn(data.games, p.proTeamId, day, "post") : null,
+          p ? perGameProjection(p, day).fppg : 0,
+        );
+      });
+    minePlaced = final(data.me.id);
+    theirsPlaced = opp ? final(opp.id) : [];
+  } else {
+    // A day ahead: projected lineups from tomorrow's rosters.
+    const proj = (p: Parameters<typeof perGameProjection>[0]) => perGameProjection(p, sp).fppg;
+    minePlaced = cellsAhead(
+      data.ahead.me.roster,
+      mine.slotsByDay.get(day),
+      data.games,
+      day,
+      proj,
+      statusFor,
+    );
+    theirsPlaced =
+      oppAhead && theirs
+        ? cellsAhead(oppAhead.roster, theirs.slotsByDay.get(day), data.games, day, proj, statusFor)
+        : [];
+  }
+  const board = pairBySlot(startingSlots(data.settings.slotCounts), minePlaced, theirsPlaced);
+  const ahead = day > sp;
+  const totals = {
+    mine: dayTotal(board.rows, "mine", ahead),
+    theirs: dayTotal(board.rows, "theirs", ahead),
+  };
+  // Each day's score for the tabs: ESPN's per-day totals, live today, projected ahead.
+  const matchup = data.matchups.find(
+    (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
+  );
+  const iAmHome = matchup?.homeTeamId === data.me.id;
+  const dayScore = (d: number) => {
+    if (d > sp) {
+      return {
+        mine: mine.projectedByDay.get(d) ?? 0,
+        theirs: theirs?.projectedByDay.get(d) ?? 0,
+      };
+    }
+    if (d === sp && day === sp) return totals;
+    const by = (home: boolean) => (home ? matchup?.homeByPeriod : matchup?.awayByPeriod)?.[d] ?? 0;
+    return { mine: by(iAmHome), theirs: by(!iAmHome) };
+  };
   const opponentOf = (proTeamId: number, p: number) => {
     const g = data.games.find(
       (x) =>
@@ -143,7 +228,6 @@ export default async function WeekPage() {
     const home = g.homeProTeamId === proTeamId;
     return { abbr: PRO_TEAM_BY_ID[home ? g.awayProTeamId : g.homeProTeamId] ?? "?", home };
   };
-  const statusOf = new Map(data.injuries.map((i) => [i.playerId, i]));
   const starts = (id: number) => [...mine.startsByDay.values()].filter((s) => s.has(id)).length;
   // Everyone who plays for you this week, including moves that take effect tomorrow.
   const rows = [...myWeekRoster].sort((a, b) => starts(b.id) - starts(a.id));
@@ -157,59 +241,71 @@ export default async function WeekPage() {
       />
 
       {opp && theirs && pWin != null && (
-        <div className="rounded-xl border bg-card p-4 sm:p-5">
-          <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
-            <Side
-              label="You"
-              name={data.me.name}
-              banked={myBanked}
-              remaining={mine.remaining}
-              align="left"
-            />
-            <div className="pb-2 text-xs font-semibold text-muted-foreground">VS</div>
-            <Side
-              label="Opponent"
-              name={opp.name}
-              banked={oppBanked}
-              remaining={theirs.remaining}
-              align="right"
-            />
-          </div>
-          {gamesLive && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <Pill tone="success">Live</Pill>
-              Updates every minute while games are on.
-            </div>
-          )}
-          <div className="mt-4">
-            <div className="mb-1.5 flex justify-between text-xs font-semibold tabular-nums">
-              <span className="text-primary">{Math.round(pWin * 100)}% to win</span>
-              <span className="text-muted-foreground">{Math.round((1 - pWin) * 100)}%</span>
-            </div>
-            <div className="flex h-2 overflow-hidden rounded-full bg-muted">
-              <div className="bg-primary" style={{ width: `${pWin * 100}%` }} />
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-muted-foreground">
-            Assumes both teams set their best lineup every day; the win chance uses 2025-26 weekly
-            volatility.
-          </p>
-        </div>
+        <Scoreboard
+          me={data.me.name}
+          opp={opp.name}
+          myBanked={myBanked}
+          oppBanked={oppBanked}
+          myFinal={myBanked + mine.remaining}
+          oppFinal={oppBanked + theirs.remaining}
+          pWin={pWin}
+          live={gamesLive}
+        />
       )}
 
       <PendingMovesNote mine={myPending} theirs={oppPending} opponent={opp?.name} />
 
       <LiveRefresh active={gamesLive} />
 
-      {opp && oppLive && (playing(myLive) || playing(oppLive)) && (
-        <section className="space-y-1.5">
-          <SectionTitle aside="ESPN fantasy points; + is projected still to come">
-            Today
-          </SectionTitle>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <TodaySide title={data.me.name} rows={myLive} />
-            <TodaySide title={opp.name} rows={oppLive} />
-          </div>
+      {opp && (
+        <section className="space-y-2">
+          <nav
+            className="grid gap-1.5"
+            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+            aria-label="Day of the matchup"
+          >
+            {days.map((d) => {
+              const score = dayScore(d.sp);
+              return (
+                <Link
+                  key={d.sp}
+                  href={d.sp === sp ? "/nba/week" : `/nba/week?day=${d.sp}`}
+                  scroll={false}
+                  className={cn(
+                    "rounded-lg border bg-card px-1 py-1.5 text-center",
+                    d.sp === day ? "border-primary ring-1 ring-primary" : "hover:bg-muted/50",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "text-xs font-semibold",
+                      d.sp === sp ? "text-primary" : "text-muted-foreground",
+                    )}
+                  >
+                    {d.sp === sp ? "Today" : shortDay(d.date).split(" ")[0]}
+                  </div>
+                  <div className="text-[11px] leading-tight tabular-nums">
+                    <div className="font-medium">{fmtPts(score.mine)}</div>
+                    <div className="text-muted-foreground">{fmtPts(score.theirs)}</div>
+                  </div>
+                </Link>
+              );
+            })}
+          </nav>
+          <H2HBoard
+            rows={board.rows}
+            bench={board.bench}
+            ir={board.ir}
+            totals={totals}
+            ahead={ahead}
+          />
+          <p className="px-1 text-xs text-muted-foreground">
+            {day < sp
+              ? "Final ESPN fantasy points in each slot, with the pregame projection and ▲/▼ when a player finished well above or below it."
+              : day > sp
+                ? "Projected lineups (best lineup each team can set that day), from rosters as they stand after pending moves."
+                : "ESPN fantasy points in each slot. Under the points: the projection (live: points so far plus the rest of his pregame projection). ▲/▼ = 5+ points and 20%+ off. Tap a stat line for the full box score."}
+          </p>
         </section>
       )}
 

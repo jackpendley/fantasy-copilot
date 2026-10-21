@@ -9,6 +9,8 @@ import { perGameProjection } from "./projection";
 export interface TeamWeek {
   /** Per scoring period: ids projected to start (and with a game). */
   startsByDay: Map<number, Set<number>>;
+  /** Per scoring period: the slot each projected starter fills. */
+  slotsByDay: Map<number, Map<number, string>>;
   gamesByDay: Map<number, Set<number>>;
   projectedByDay: Map<number, number>;
   remaining: number;
@@ -39,6 +41,7 @@ function playChance(status: string, daysAhead: number): number {
 export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): TeamWeek {
   const injuries = new Map(input.injuries.map((i) => [i.playerId, i.status]));
   const startsByDay = new Map<number, Set<number>>();
+  const slotsByDay = new Map<number, Map<number, string>>();
   const gamesByDay = new Map<number, Set<number>>();
   const projectedByDay = new Map<number, number>();
   const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, input.fromPeriod).fppg]));
@@ -74,12 +77,13 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
         .map((x) => x.id),
     );
     startsByDay.set(sp, starts);
+    slotsByDay.set(sp, new Map([...starts].map((id) => [id, best.slotOf.get(id)!])));
     const pts =
       sp === input.fromPeriod && input.todayRemaining != null ? input.todayRemaining : best.points;
     projectedByDay.set(sp, pts);
     remaining += pts;
   }
-  return { startsByDay, gamesByDay, projectedByDay, remaining };
+  return { startsByDay, slotsByDay, gamesByDay, projectedByDay, remaining };
 }
 
 // Weekly score spread calibrated on 2025-26 (CV ~0.13 for active managers), applied to

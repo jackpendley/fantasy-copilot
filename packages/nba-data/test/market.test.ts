@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { darkoPerGame, noVigOver, parseDarko, parsePropBets, unflatten } from "../src/index";
+import {
+  darkoPerGame,
+  impliedTeamTotal,
+  noVigOver,
+  parseDarko,
+  parseGameOdds,
+  parsePropBets,
+  unflatten,
+} from "../src/index";
 
 // Synthetic payloads in the shapes ESPN's core API and DARKO's data endpoint return.
 const prop = (athlete: number, type: string, line: number, price: number, open = line) => ({
@@ -97,5 +105,21 @@ describe("DARKO", () => {
     expect(g.FGM).toBeCloseTo(9.375);
     expect(g.REB).toBeCloseTo(9);
     expect(g.AST).toBe(0);
+  });
+});
+
+describe("game lines", () => {
+  it("reads the first book with a total and splits it into team totals", () => {
+    const odds = parseGameOdds({
+      items: [
+        { provider: { name: "Live" } },
+        { provider: { name: "Draft Kings" }, overUnder: 227.5, spread: 1.5 },
+      ],
+    })!;
+    expect(odds).toEqual({ provider: "Draft Kings", total: 227.5, spread: 1.5 });
+    // Home is a 1.5-point underdog: 113 for them, 114.5 for the visitors.
+    expect(impliedTeamTotal(odds, true)).toBe(113);
+    expect(impliedTeamTotal(odds, false)).toBe(114.5);
+    expect(parseGameOdds({ items: [] })).toBeNull();
   });
 });

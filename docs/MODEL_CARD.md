@@ -76,3 +76,29 @@ Several variants were tried on this season, so it is **not** a clean test.
 - **Paid, only with Jack's approval:**
   - balldontlie ALL-STAR $9.99/mo (game stats, injuries) and GOAT $39.99/mo (lineups, advanced stats, player props);
   - betting-line player props, the strongest single-game signal.
+
+## Game environment from Vegas lines
+
+### Exploration: 2025-26 (284 players, 17,669 games, written 2026-10-21)
+
+- **Idea:** scale each game's projection by his team's implied points from the closing line, relative to the league average: (team ÷ league)^β.
+  - Team total = (total − home spread) ÷ 2 for the home team, (total + spread) ÷ 2 for the visitors.
+  - League average = the mean implied team total over the earlier days of that season. There's no adjustment until 40 team-games have lines.
+  - Lines come from ESPN's odds endpoint per game (closing, pregame). 1,237 of 1,241 games have one.
+- **Baseline:** the current model (15-game blend + minutes trend).
+
+| β on top of the current model |   MAE | vs current (95% CI)     |
+| ----------------------------- | ----: | ----------------------- |
+| 0.75                          | 10.19 | −0.022 [−0.035, −0.008] |
+| 1                             | 10.19 | −0.021 [−0.038, −0.003] |
+| 0.5                           | 10.19 | −0.018 [−0.028, −0.009] |
+| 0.25                          | 10.20 | −0.011 [−0.016, −0.006] |
+| 1.5                           | 10.20 | −0.006 [−0.032, 0.020]  |
+| current model                 | 10.21 | baseline                |
+
+### Pre-registration (2026-10-21, before the held-out run)
+
+- **Candidate:** current model × (team implied total ÷ league average)^0.75.
+- **Held-out test:** 2024-25 (prior 2023-24), same setup.
+  - 2024-25 was already the held-out season for the minutes trend. This is a separate hypothesis, but it's the second test on that season. So the bar stays the same: the interval must be entirely below 0.
+- **Ships if** its per-player mean error difference vs the current model has a 95% interval entirely below 0. Then it applies to daily and weekly projections for games with a posted line.

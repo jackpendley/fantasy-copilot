@@ -231,3 +231,4 @@
   - start tomorrow, on tomorrow's rosters;
   - this week banks every team's live points plus the expected rest of today (the same `remainingToday` logic as the matchup).
 - **CPU:** the simulator runs in ~25 ms slices (`simulateSeasonAsync`, same results as `simulateSeason`). Locally, pages took ~1.2 s during a run instead of 34 s.
+- **Time:** a run takes ~35 s locally and ~80 s on Vercel, so every route that starts one in the background gets `maxDuration = 300`.

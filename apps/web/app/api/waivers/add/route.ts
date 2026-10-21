@@ -12,8 +12,8 @@ import { refreshLogged } from "@/lib/nba/outlook-refresh";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
 
 export const dynamic = "force-dynamic";
-// The outlook re-runs after a successful add (~30 s, after the response is sent).
-export const maxDuration = 120;
+// The outlook re-runs after a successful add (~80 s on Vercel, after the response is sent).
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const origin = request.headers.get("origin");

@@ -53,6 +53,10 @@ interface Game {
 interface Next {
   teamTotal: number | null;
   leagueTotal: number | null;
+  /** Minutes his absent regular teammates usually play (point in time; 0 when all are in). */
+  vacated: number;
+  /** The same, counting only absent teammates who share a position with him. */
+  vacatedSamePosition: number;
 }
 
 /** A predictor: expected FP for the next game from the prior, the games so far and the line. */
@@ -115,6 +119,89 @@ const gameEnvironment =
     return p * Math.pow(next.teamTotal / next.leagueTotal, beta);
   };
 
+/**
+ * Teammate role boost: more minutes and shots to go around when regulars sit, scaled by the
+ * minutes vacated (out of 240 a game), optionally by his own role.
+ */
+const roleBoost =
+  (base: Predictor, k: number, byRole: boolean, samePosition = false): Predictor =>
+  (prior, games, next) => {
+    const p = base(prior, games, next);
+    const vacated = samePosition ? next.vacatedSamePosition : next.vacated;
+    if (!vacated) return p;
+    const role = byRole && games.length ? mean(games.slice(-10).map((g) => g.min)) / 30 : 1;
+    return p * (1 + k * (vacated / 240) * role);
+  };
+
+const DAY_MS = 86_400_000;
+
+/**
+ * For every player-game in the pool: minutes vacated by regular teammates who didn't play.
+ * A regular has averaged 20+ minutes over his last 10 games, the last of them for this team
+ * within 10 days (point in time). A game's teams come from the opponents its players faced.
+ */
+function vacatedMinutes(
+  players: { id: number; games: GameLogEntry[] }[],
+  /** Only count absent teammates for whom this returns true (e.g. shares a position). */
+  counts: (playerId: number, absentId: number) => boolean = () => true,
+): Map<string, number> {
+  const opponents = new Map<number, Set<string>>();
+  for (const p of players)
+    for (const g of p.games) {
+      if (!opponents.has(g.gameId)) opponents.set(g.gameId, new Set());
+      opponents.get(g.gameId)!.add(g.opponent);
+    }
+  const teamOf = (g: GameLogEntry) => {
+    const s = opponents.get(g.gameId);
+    return s && s.size === 2 ? ([...s].find((t) => t !== g.opponent) ?? null) : null;
+  };
+  const hist = players.map((p) => ({
+    id: p.id,
+    games: p.games
+      .filter((g) => (g.line.MIN ?? 0) > 0)
+      .map((g) => ({
+        gameId: g.gameId,
+        t: Date.parse(g.date),
+        team: teamOf(g),
+        min: g.line.MIN ?? 0,
+      }))
+      .sort((a, b) => a.t - b.t),
+  }));
+  const present = new Map<string, { t: number; ids: Set<number> }>();
+  for (const h of hist)
+    for (const g of h.games) {
+      if (!g.team) continue;
+      const key = `${g.gameId}:${g.team}`;
+      if (!present.has(key)) present.set(key, { t: g.t, ids: new Set() });
+      present.get(key)!.ids.add(h.id);
+    }
+  const out = new Map<string, number>();
+  for (const [key, { t, ids }] of present) {
+    const [gameId, team] = key.split(":");
+    const absent: { id: number; avg: number }[] = [];
+    for (const h of hist) {
+      if (ids.has(h.id)) continue;
+      let i = -1;
+      for (let j = h.games.length - 1; j >= 0; j--)
+        if (h.games[j]!.t < t) {
+          i = j;
+          break;
+        }
+      if (i < 0) continue;
+      const last = h.games[i]!;
+      if (last.team !== team || t - last.t > 10 * DAY_MS) continue;
+      const avg = mean(h.games.slice(Math.max(0, i - 9), i + 1).map((g) => g.min));
+      if (avg >= 20) absent.push({ id: h.id, avg });
+    }
+    for (const id of ids)
+      out.set(
+        `${id}:${gameId}`,
+        absent.filter((a) => counts(id, a.id)).reduce((s, a) => s + a.avg, 0),
+      );
+  }
+  return out;
+}
+
 async function gameLines(ids: number[], season: number): Promise<Map<number, GameOdds | null>> {
   const file = new URL(`odds-${season}.json`, CACHE);
   const cached: Record<string, GameOdds | null> = existsSync(file)
@@ -172,9 +259,31 @@ async function main() {
         gameEnvironment(minutesTrend(blend(15), 5, 0.5), b),
       ]),
     ),
+    // What ships today, plus the teammate role boost.
+    "current model (+ game environment 0.75)": gameEnvironment(
+      minutesTrend(blend(15), 5, 0.5),
+      0.75,
+    ),
+    ...Object.fromEntries(
+      [0.25, 0.5, 0.75, 1].flatMap((k) => [
+        [
+          `current + role boost (k ${k})`,
+          roleBoost(gameEnvironment(minutesTrend(blend(15), 5, 0.5), 0.75), k, false),
+        ],
+        [
+          `current + role boost by role (k ${k})`,
+          roleBoost(gameEnvironment(minutesTrend(blend(15), 5, 0.5), 0.75), k, true),
+        ],
+        [
+          `current + role boost, same position (k ${k})`,
+          roleBoost(gameEnvironment(minutesTrend(blend(15), 5, 0.5), 0.75), k, false, true),
+        ],
+      ]),
+    ),
   };
-  // What ships today (BASELINE="blend PRIOR_GAMES=15" reproduces the first model card tables).
-  const BASELINE = process.env.BASELINE || "blend 15 + minutes trend (5 g, 0.5)";
+  // What ships today (BASELINE="blend PRIOR_GAMES=15" reproduces the first model card tables;
+  // "blend 15 + minutes trend (5 g, 0.5)" the game-environment ones).
+  const BASELINE = process.env.BASELINE || "current model (+ game environment 0.75)";
 
   // Game lines for every game in the test season, and the league's average implied team
   // total from the days before each game (point in time; none until 40 team-games are in).
@@ -212,7 +321,22 @@ async function main() {
   const err: Record<string, { all: number[]; early: number[]; late: number[] }> = {};
   for (const k of Object.keys(predictors)) err[k] = { all: [], early: [], late: [] };
   let players = 0;
-  for (const { prev, cur } of logs) {
+  const playerGames = logs.map((l) => ({
+    id: l.id,
+    games: l.cur.filter((g) => g.part === "regular"),
+  }));
+  const vacated = vacatedMinutes(playerGames);
+  // Positions from today's ESPN data (eligibility rarely changes year to year).
+  const positions = new Map(
+    [...league.teams.flatMap((t) => t.roster), ...fas.map((f) => f.player)].map((p) => [
+      p.id,
+      new Set(p.positions),
+    ]),
+  );
+  const vacatedSame = vacatedMinutes(playerGames, (id, absent) =>
+    [...(positions.get(id) ?? [])].some((pos) => positions.get(absent)?.has(pos)),
+  );
+  for (const { id, prev, cur } of logs) {
     const fp = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
     const prevGames = prev.filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0);
     const curGames = cur.filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0);
@@ -229,6 +353,8 @@ async function main() {
       const next: Next = {
         teamTotal: odds ? impliedTeamTotal(odds, g.home) : null,
         leagueTotal: leagueBefore.get(etDate(new Date(g.date))) ?? null,
+        vacated: vacated.get(`${id}:${g.gameId}`) ?? 0,
+        vacatedSamePosition: vacatedSame.get(`${id}:${g.gameId}`) ?? 0,
       };
       for (const [k, pred] of Object.entries(predictors)) {
         const e = Math.abs(pred(prior, seen, next) - actual);

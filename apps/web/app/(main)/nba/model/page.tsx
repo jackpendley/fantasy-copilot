@@ -25,7 +25,7 @@ const TESTS = [
     "Win probability: variance model",
     "Did not ship (Brier 0.0831 vs 0.0778); recalibration after week 13",
   ],
-  ["Teammate role boost", "Testing (backtest on 2025-26 and 2024-25)"],
+  ["Teammate role boost", "Not shipped: no gain even in exploration (2025-26)"],
 ];
 
 export default async function ModelPage() {

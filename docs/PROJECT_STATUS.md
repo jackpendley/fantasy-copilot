@@ -85,6 +85,8 @@
 
 - **Accuracy and blend (branch `accuracy-blend`):** every player's projections logged (ours, ESPN, Vegas); nightly props test sets the blend weight only if it passes; `/nba/model` shows accuracy (ADR-030).
 
+- **Teammate role boost (branch `role-boost`):** tested in three forms; no gain, not shipped (ADR-031).
+
 ## Plan in progress (approved 2026-10-27, third plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
@@ -94,7 +96,7 @@
 3. Win probability (merged, #26; recalibration test after week 13).
 4. ESPN-mobile-style Today/Matchup with player cards (merged, #27).
 5. The most accurate projection (this branch). The props test runs itself each morning; ~800 games around Oct 29.
-6. Teammate role boost, backtest-gated.
+6. Teammate role boost: tested, no gain, not shipped (this branch).
 
 ## Earlier plan (2026-10-20, second plan): done
 

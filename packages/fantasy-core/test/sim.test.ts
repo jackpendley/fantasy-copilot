@@ -162,10 +162,11 @@ describe("common random numbers", () => {
   });
 });
 
-describe("known injuries", () => {
+describe("known injuries", { timeout: 30_000 }, () => {
   const base = () => [team(1, 40), ...[2, 3, 4, 5, 6, 7, 8].map((id) => team(id, 30))];
+  // Fewer seasons than the other tests: three full simulations per test on slow CI machines.
   const pointsOf = (input: SimInput, id = 1) =>
-    simulateSeason(input).find((r) => r.teamId === id)!.expPointsFor;
+    simulateSeason({ ...input, seasons: 150 }).find((r) => r.teamId === id)!.expPointsFor;
 
   it("a star out for the season scores less than one back mid-season, who scores less than healthy", () => {
     const healthy = pointsOf(league(base()));

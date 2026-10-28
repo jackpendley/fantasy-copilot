@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlayerCardButton } from "@/components/fc/player-card";
 import { IlPlanNote } from "@/components/fc/il-plan-note";
 import { ilReturnPlan } from "@/lib/nba/il-plan";
 import { AddDropButton } from "@/components/add-drop-button";
@@ -21,7 +22,7 @@ const clearsAt = (ms: number) =>
 
 function Who({ c }: { c: WaiverCandidate }) {
   return (
-    <div className="flex min-w-0 items-center gap-2.5">
+    <PlayerCardButton id={c.player.id} className="flex min-w-0 items-center gap-2.5 rounded-md">
       <PlayerAvatar id={c.player.id} name={c.player.name} size={40} />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
@@ -35,7 +36,7 @@ function Who({ c }: { c: WaiverCandidate }) {
           {c.weekGames === 1 ? "" : "s"} left this week
         </div>
       </div>
-    </div>
+    </PlayerCardButton>
   );
 }
 
@@ -262,7 +263,7 @@ export default async function WaiversPage({
               {pool.map((c) => (
                 <tr key={c.player.id}>
                   <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
+                    <PlayerCardButton id={c.player.id} className="flex items-center gap-2">
                       <PlayerAvatar id={c.player.id} name={c.player.name} size={28} />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1">
@@ -277,7 +278,7 @@ export default async function WaiversPage({
                           {c.status === "WAIVERS" && <span>· waivers</span>}
                         </div>
                       </div>
-                    </div>
+                    </PlayerCardButton>
                   </td>
                   <td className="px-3 py-2 text-right font-semibold tabular-nums">
                     {fmtPts(c.fppg)}

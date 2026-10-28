@@ -8,8 +8,13 @@ import {
   type ProGame,
   type RosterPlayer,
 } from "@fantasy-copilot/espn";
-import { expandSlots, isStartingSlot } from "@fantasy-copilot/fantasy-core";
-import { slotRank } from "@/lib/format";
+import {
+  expandSlots,
+  isStartingSlot,
+  slotAccepts,
+  type Position,
+} from "@fantasy-copilot/fantasy-core";
+import { slotRank } from "@/lib/display";
 import { trendOf, type LiveRow, type Trend } from "./live";
 
 export interface H2HGame {
@@ -20,6 +25,8 @@ export interface H2HGame {
   tip: string;
   /** ESPN's status text while live ("Q3 5:12"). */
   detail: string;
+  /** Display label for the game time or state ("5:00 PM", "Q3 5:12", "Final"), set by the page. */
+  when?: string;
   score: { us: number; them: number } | null;
 }
 
@@ -84,7 +91,9 @@ export function pairBySlot(slots: string[], mine: Placed[], theirs: Placed[]) {
 
 /** Today: a live row as a cell. */
 export function cellFromLive(r: LiveRow): Placed {
-  const g = r.row.game;
+  // A ruled-out player whose team is playing has nothing to score or project.
+  const out = r.row.playProb === 0 && r.points === 0;
+  const g = out ? null : r.row.game;
   const started = Boolean(g && g.state !== "pre");
   return {
     slot: r.slot,
@@ -159,7 +168,11 @@ export function cellFromFinal(
   };
 }
 
-/** A day ahead: the projected lineup (starters in their slots, others with a game on the bench). */
+/**
+ * A day ahead: the projected lineup (starters in their slots, others with a game on the bench).
+ * With `slots`, players without a game fill the starting slots nobody plays in, as ESPN shows a
+ * full lineup, so the bench holds only what fits on it and the board keeps its size.
+ */
 export function cellsAhead(
   roster: RosterPlayer[],
   slotOf: Map<number, string> | undefined,
@@ -168,8 +181,9 @@ export function cellsAhead(
   projOf: (p: RosterPlayer) => number,
   statusOf: (p: RosterPlayer) => string,
   backOf: (p: RosterPlayer) => string | null = () => null,
+  slots?: string[],
 ): Placed[] {
-  return roster.map((p) => {
+  const placed = roster.map((p) => {
     const game = gameOn(games, p.proTeamId, sp, "pre");
     return {
       slot: slotOf?.get(p.id) ?? (p.slot === "IR" ? "IR" : "BE"),
@@ -186,6 +200,20 @@ export function cellsAhead(
       },
     };
   });
+  if (slots) {
+    const open = [...slots];
+    for (const x of placed) {
+      const k = open.indexOf(x.slot);
+      if (k >= 0) open.splice(k, 1);
+    }
+    for (const x of placed.filter((x) => x.slot === "BE" && !x.cell.game)) {
+      const k = open.findIndex((slot) => slotAccepts(slot, x.cell.player.positions as Position[]));
+      if (k < 0) continue;
+      x.slot = open[k]!;
+      open.splice(k, 1);
+    }
+  }
+  return placed;
 }
 
 /** Points that count for a side on a day: starters' points (live) or projections (ahead). */

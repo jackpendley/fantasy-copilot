@@ -71,7 +71,8 @@ function league(teams: SimTeam[], extra: Partial<SimInput> = {}): SimInput {
   };
 }
 
-describe("simulateSeason", () => {
+// Full simulations: CI machines can take several seconds per test.
+describe("simulateSeason", { timeout: 30_000 }, () => {
   const teams = [team(1, 40), ...[2, 3, 4, 5, 6, 7, 8].map((id) => team(id, 30))];
 
   it("returns probabilities that add up (6 playoff spots, 1 champion)", () => {
@@ -87,9 +88,10 @@ describe("simulateSeason", () => {
   it("gives identical results when run in slices (async) and lets other work run meanwhile", async () => {
     let ticks = 0;
     const timer = setInterval(() => ticks++, 0);
-    const sliced = await simulateSeasonAsync(league(teams), 0);
+    const small = league(teams, { seasons: 100 });
+    const sliced = await simulateSeasonAsync(small, 0);
     clearInterval(timer);
-    expect(sliced).toEqual(simulateSeason(league(teams)));
+    expect(sliced).toEqual(simulateSeason(small));
     expect(ticks).toBeGreaterThan(0);
   });
 

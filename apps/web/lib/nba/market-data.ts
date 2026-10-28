@@ -109,10 +109,11 @@ export async function collectMarketData(
           `
         : db()`insert into prop_lines ${db()(rows, ...cols)} on conflict do nothing`);
       props += rows.length;
-      if (projections) {
-        const line = board.find((b) => b.gameId === g.gameId);
-        await storeProjections(g, line, lines, projections, snapshot, now);
-      }
+    }
+    // Our projection (and ESPN's, and Vegas' where posted) for everyone playing in this game.
+    if (projections) {
+      const line = board.find((b) => b.gameId === g.gameId);
+      await storeProjections(g, line, lines, projections, snapshot, now);
     }
     const s = board.find((b) => b.gameId === g.gameId);
     if (s && (s.spread != null || s.total != null)) {
@@ -179,19 +180,21 @@ async function storeProjections(
   const byPlayer = new Map<number, PropLine[]>();
   for (const l of lines) byPlayer.set(l.playerId, [...(byPlayer.get(l.playerId) ?? []), l]);
   const rows = [];
-  for (const [id, props] of byPlayer) {
-    const p = ctx.players.get(id);
-    if (!p) continue;
+  for (const p of ctx.players.values()) {
+    if (p.proTeamId !== g.homeProTeamId && p.proTeamId !== g.awayProTeamId) continue;
     const base = perGameProjection(p, ctx.sp).fppg;
+    if (base <= 0) continue;
     const env = gameEnvironment(board, p.proTeamId === g.homeProTeamId);
+    const props = byPlayer.get(p.id) ?? [];
     rows.push({
       game_id: g.gameId,
-      player_id: id,
+      player_id: p.id,
       snapshot,
       captured_at: now,
       tip: new Date(g.date),
       model_fppg: base * env,
       vegas_fppg: vegasProjection(props, p.projection?.stats, base, ctx.scoring)?.fppg ?? null,
+      espn_fppg: p.projection?.avg ?? null,
     });
   }
   if (!rows.length) return;
@@ -203,6 +206,7 @@ async function storeProjections(
     "tip",
     "model_fppg",
     "vegas_fppg",
+    "espn_fppg",
   ] as const;
   await (snapshot === "close"
     ? db()`

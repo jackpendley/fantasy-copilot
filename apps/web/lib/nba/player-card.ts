@@ -7,6 +7,7 @@ import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 import { normalizeStatus } from "@fantasy-copilot/fantasy-core";
 import { espnConfig } from "@/lib/env";
 import { fmtTip } from "@/lib/format";
+import { bestProjection, blendSetting } from "./accuracy";
 import { absenceOf, absences, returnLabel } from "./availability";
 import { LAST_SCORING_PERIOD, dateForScoringPeriod, shortDay } from "./calendar";
 import { loadDraftPicks, nbaSchedule } from "./data";
@@ -181,7 +182,11 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
     available: p.entry.available,
     next: nextGame ? { ...asGame(nextGame), today: nextGame.scoringPeriodId === sp } : null,
     projection: {
-      best: ours * environment,
+      best: bestProjection(
+        ours * environment,
+        vegas?.fppg ?? null,
+        (await blendSetting().catch(() => null))?.weight ?? 0,
+      ),
       ours: ours * environment,
       espn: pl.projection?.avg ?? null,
       vegas: vegas?.fppg ?? null,

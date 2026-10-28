@@ -301,7 +301,10 @@ function CardBody({ card }: { card: PlayerCardData }) {
           blend passes its accuracy test. Our model blends ESPN&apos;s preseason projection with
           this season&apos;s games, minutes trend and the game&apos;s Vegas total
           {p.environment !== 1 && ` (×${p.environment.toFixed(2)} tonight)`}; Vegas posts player
-          lines a few hours before tip and already reflects late news.
+          lines a few hours before tip and already reflects late news.{" "}
+          <Link href="/nba/model" className="text-primary hover:underline">
+            Accuracy so far
+          </Link>
         </p>
       </Section>
 

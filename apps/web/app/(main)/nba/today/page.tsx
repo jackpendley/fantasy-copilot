@@ -1,5 +1,6 @@
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { IlPlanNote } from "@/components/fc/il-plan-note";
+import { bestPerGame } from "@/lib/nba/best";
 import { ilReturnPlan } from "@/lib/nba/il-plan";
 import { ApplyMoves } from "@/components/apply-moves";
 import { Callout, DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
@@ -71,7 +72,10 @@ export default async function TodayPage({
   }
 
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
+  // The props blend for players with Vegas lines, once it has passed its test (else ours).
+  const perGame = date === today ? await bestPerGame(data.me.roster, data, sp) : undefined;
   const board = buildDayBoard({
+    perGame,
     roster: data.me.roster,
     slotCounts: data.settings.slotCounts,
     games,

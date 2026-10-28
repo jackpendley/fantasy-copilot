@@ -86,6 +86,11 @@ export interface DayInputs {
   /** NBA.com daily lineups for this date (null/absent before NBA.com publishes). */
   lineups?: LineupEntry[] | null;
   now?: Date;
+  /**
+   * Per-game projections to use instead of our model's (the props blend, once it has passed
+   * its test: lib/nba/best.ts). Before play probability.
+   */
+  perGame?: Map<number, number>;
 }
 
 /** ESPN's site injury feed is more granular ("Questionable") than the fantasy status. */
@@ -162,7 +167,7 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       })(),
       playProb,
       projection,
-      value: game ? playProb * projection.fppg * env : 0,
+      value: game ? playProb * (input.perGame?.get(player.id) ?? projection.fppg * env) : 0,
       currentSlot: player.slot ?? "BE",
       recommendedSlot: player.slot ?? "BE",
       nba,

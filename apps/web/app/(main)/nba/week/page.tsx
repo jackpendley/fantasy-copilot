@@ -34,6 +34,7 @@ import { perGameProjection } from "@/lib/nba/projection";
 import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
+import { bestPerGame } from "@/lib/nba/best";
 import { matchupView } from "@/lib/nba/matchup";
 import { winChanceLabel } from "@/lib/nba/week";
 import { cn } from "@/lib/utils";
@@ -121,6 +122,8 @@ export default async function WeekPage({
     return <ErrorNotice title="Couldn't load the league" message={(e as Error).message} />;
   }
 
+  // The props blend for players with Vegas lines, once it has passed its test (else ours).
+  const perGame = await bestPerGame([...data.teams.flatMap((t) => t.roster)], data, sp);
   const {
     opp,
     myBanked,
@@ -133,7 +136,7 @@ export default async function WeekPage({
     myPending,
     oppPending,
     myWeekRoster,
-  } = matchupView(data, sp);
+  } = matchupView(data, sp, perGame);
   const [live, history] = await Promise.all([
     loadLiveRosters(sp, mp).catch(() => null),
     dbConfigured() ? matchupHistory(mp).catch(() => []) : Promise.resolve([]),

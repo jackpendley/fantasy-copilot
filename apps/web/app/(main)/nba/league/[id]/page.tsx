@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlayerCardButton } from "@/components/fc/player-card";
 import { IlPlanNote } from "@/components/fc/il-plan-note";
 import { notFound } from "next/navigation";
 import { ArrowLeftRight, ChevronLeft } from "lucide-react";
@@ -77,9 +78,9 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
 
       <div className="divide-y overflow-hidden rounded-xl border bg-card">
         {roster.map((p) => (
-          <Link
+          <PlayerCardButton
             key={p.id}
-            href={`/nba/players/${p.id}`}
+            id={p.id}
             className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-muted/50"
           >
             <div className="w-10 shrink-0 text-center">
@@ -102,7 +103,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
                 {Math.round(rawValue([p], v.ctx))} season
               </div>
             </div>
-          </Link>
+          </PlayerCardButton>
         ))}
       </div>
       <p className="px-1 text-xs text-muted-foreground">

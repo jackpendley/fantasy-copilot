@@ -1,34 +1,31 @@
-import { fmtPts, fmtTip } from "@/lib/format";
+"use client";
+
+// ESPN-style head-to-head board: one fixed-height row per lineup slot (your player left, theirs
+// right, both scores next to the slot), then the bench and IL, padded to the league's slot
+// counts so the board is the same size every day. Tap a player for his card.
+
+import { fmtPts, shortName } from "@/lib/display";
 import type { H2HCell, H2HGame, H2HRow } from "@/lib/nba/h2h";
+import { statSummary } from "@/lib/nba/live";
 import { cn } from "@/lib/utils";
-import { SlotChip } from "./bits";
-import { BoxScore, TrendMark } from "./box-score";
+import { TrendMark } from "./trend-mark";
 import { PlayerAvatar } from "./player-avatar";
+import { PlayerCardButton } from "./player-card";
 import { StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
 
-/** "J. Duren" for tight phone columns. */
-const shortName = (name: string) => {
-  const [first, ...rest] = name.split(" ");
-  return rest.length ? `${first![0]}. ${rest.join(" ")}` : name;
-};
+const ROW = "h-[76px]";
 
 function GameText({ game }: { game: H2HGame | null }) {
   if (!game) return <span>No game</span>;
-  const when =
-    game.state === "pre"
-      ? fmtTip(game.tip)
-      : game.state === "post"
-        ? "Final"
-        : game.detail || "Live";
   return (
-    <span className="inline-flex flex-wrap items-center gap-x-1">
-      <TeamLogo abbr={game.opponent} size={12} />
+    <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
       <span>
-        {game.home ? "" : "@"}
-        {game.opponent}
+        {game.home ? "vs" : "@"} {game.opponent}
       </span>
-      <span className={cn(game.state === "in" && "font-semibold text-success")}>{when}</span>
+      <span className={cn(game.state === "in" && "font-semibold text-success")}>
+        {game.when ?? (game.state === "post" ? "Final" : game.detail)}
+      </span>
       {game.score && (
         <span className="tabular-nums">
           {game.score.us}-{game.score.them}
@@ -38,20 +35,51 @@ function GameText({ game }: { game: H2HGame | null }) {
   );
 }
 
-/**
- * One player in one slot, stacked so it fits half a phone screen:
- *   name ............ points        (the projection instead of points before tip)
- *   game status ..... ▼ proj 34.0
- *   22 PTS 9 REB 1 AST ▾            (tap for the full box score)
- * The opponent's side mirrors it, so both teams' points sit next to the slot.
- */
+/** Points (or "–" before tip), and under them the projection, unlabeled, with ▲/▼. */
+function Score({ c, right }: { c: H2HCell; right: boolean }) {
+  const live = c.game?.state === "in";
+  return (
+    <div className={cn("w-11 shrink-0 sm:w-16", right ? "text-left" : "text-right")}>
+      <div
+        className={cn(
+          "text-base leading-tight font-semibold tabular-nums sm:text-lg",
+          live && "text-success",
+          c.points == null && "text-muted-foreground",
+        )}
+      >
+        {c.points != null ? fmtPts(c.points) : c.game ? "–" : ""}
+      </div>
+      {c.proj != null && (
+        <div
+          className={cn(
+            "mt-0.5 flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums",
+            right ? "justify-start" : "justify-end",
+          )}
+          title={
+            c.points == null
+              ? "Projection"
+              : live
+                ? "Projected final: points so far plus the rest of his projection"
+                : "Pregame projection"
+          }
+        >
+          {!right && <TrendMark trend={c.trend} className="size-3" />}
+          {fmtPts(c.proj)}
+          {right && <TrendMark trend={c.trend} className="size-3" />}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
   const right = side === "theirs";
   if (!c) {
     return (
       <div
         className={cn(
-          "flex min-h-14 items-center px-2 text-xs text-muted-foreground sm:px-3",
+          ROW,
+          "flex items-center px-2 text-xs text-muted-foreground sm:px-3",
           !right && "justify-end",
         )}
       >
@@ -59,150 +87,150 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       </div>
     );
   }
-  const live = c.game?.state === "in";
-  const main = c.points ?? c.proj;
-  const projLine =
-    c.points != null && c.proj != null ? (
-      <span
-        className="inline-flex shrink-0 items-center gap-0.5 text-[11px] whitespace-nowrap text-muted-foreground tabular-nums sm:text-xs"
-        title={
-          live ? "Points so far plus the rest of his pregame projection" : "Pregame projection"
-        }
-      >
-        <TrendMark trend={c.trend} />
-        proj {fmtPts(c.proj)}
-      </span>
-    ) : null;
+  const stats = c.line ? statSummary(c.line) : null;
   return (
-    <div
+    <PlayerCardButton
+      id={c.player.id}
       className={cn(
-        "min-w-0 space-y-0.5 px-2 py-2 sm:px-3",
+        ROW,
+        "flex items-center gap-1.5 px-1.5 hover:bg-muted/40 sm:gap-2 sm:px-3",
+        right && "flex-row-reverse",
         !c.game && "opacity-55",
-        live && "bg-success/5",
+        c.game?.state === "in" && "bg-success/5",
       )}
     >
-      <div className={cn("flex items-center gap-1.5", right && "flex-row-reverse")}>
-        <PlayerAvatar
-          id={c.player.id}
-          name={c.player.name}
-          size={28}
-          className="hidden shrink-0 sm:block"
-        />
-        <span className={cn("min-w-0 flex-1 truncate text-sm font-medium", right && "text-right")}>
-          <span className="sm:hidden">{shortName(c.player.name)}</span>
-          <span className="hidden sm:inline">{c.player.name}</span>
-        </span>
-        <StatusPill status={c.status} />
-        {c.back && (
-          <span className="hidden shrink-0 text-[11px] whitespace-nowrap text-muted-foreground sm:inline">
-            {c.back}
+      <PlayerAvatar
+        id={c.player.id}
+        name={c.player.name}
+        size={44}
+        className="hidden shrink-0 sm:block"
+      />
+      <PlayerAvatar
+        id={c.player.id}
+        name={c.player.name}
+        size={30}
+        className="shrink-0 sm:hidden"
+      />
+      <div className={cn("min-w-0 flex-1", right && "text-right")}>
+        <div className={cn("flex items-center gap-1", right && "flex-row-reverse")}>
+          <span className="min-w-0 truncate text-[13px] font-medium sm:text-sm">
+            <span className="sm:hidden">{shortName(c.player.name)}</span>
+            <span className="hidden sm:inline">{c.player.name}</span>
           </span>
-        )}
-        <span
-          className={cn(
-            "shrink-0 text-lg leading-tight font-semibold tabular-nums",
-            live && "text-success",
-            c.points == null && "text-muted-foreground",
-          )}
-          title={c.points == null && c.proj != null ? "Projected" : undefined}
-        >
-          {main != null ? fmtPts(main) : "—"}
-        </span>
-      </div>
-      {projLine && (
-        // Phones: the projection on its own line under the points.
-        <div className={cn("flex sm:hidden", right ? "justify-start" : "justify-end")}>
-          {projLine}
+          <span className="hidden shrink-0 sm:inline-flex">
+            <TeamLogo abbr={c.player.proTeam} size={14} />
+          </span>
+          <span className="hidden sm:inline-flex">
+            <StatusPill status={c.status} />
+          </span>
         </div>
-      )}
-      <div
-        className={cn(
-          "flex items-start gap-1.5 text-[11px] text-muted-foreground",
-          right && "flex-row-reverse",
+        <div
+          className={cn(
+            "flex items-center gap-1 text-[11px] text-muted-foreground",
+            right && "flex-row-reverse",
+          )}
+        >
+          <span className="shrink-0 sm:hidden">
+            <TeamLogo abbr={c.player.proTeam} size={12} />
+          </span>
+          <span className="sm:hidden">
+            <StatusPill status={c.status} />
+          </span>
+          <span className="min-w-0 truncate">
+            {c.back ? (
+              c.back
+            ) : (
+              <>
+                <span className="mr-1 hidden sm:inline">{c.player.positions.join("/")} ·</span>
+                <GameText game={c.game} />
+              </>
+            )}
+          </span>
+        </div>
+        {stats && (
+          <div className="truncate text-[11px] text-foreground/80 tabular-nums">{stats}</div>
         )}
-      >
-        <span className={cn("min-w-0 flex-1", right && "text-right")}>
-          <GameText game={c.game} />
-        </span>
-        {projLine && <span className="hidden sm:inline-flex">{projLine}</span>}
-        {c.points == null && c.proj != null && <span className="shrink-0">proj</span>}
       </div>
-      {c.line && <BoxScore line={c.line} className={cn("text-[11px]", right && "text-right")} />}
-    </div>
+      <Score c={c} right={right} />
+    </PlayerCardButton>
   );
 }
 
 function Row({ r }: { r: H2HRow }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_2.75rem_minmax(0,1fr)] items-stretch">
+    <div className="grid grid-cols-[minmax(0,1fr)_2.25rem_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_2.75rem_minmax(0,1fr)] items-stretch">
       <Cell c={r.mine} side="mine" />
       <div className="flex items-center justify-center border-x bg-muted/30">
-        <SlotChip slot={r.slot} />
+        <span className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground sm:text-[11px]">
+          {r.slot}
+        </span>
       </div>
       <Cell c={r.theirs} side="theirs" />
     </div>
   );
 }
 
-/** Pair two lists into rows under one label (bench, IR). */
-function listRows(slot: string, mine: H2HCell[], theirs: H2HCell[]): H2HRow[] {
-  return Array.from({ length: Math.max(mine.length, theirs.length) }, (_, i) => ({
+/** Rows under one label (bench, IL), at least `slots` of them so every day has the same size. */
+function listRows(slot: string, mine: H2HCell[], theirs: H2HCell[], slots: number): H2HRow[] {
+  return Array.from({ length: Math.max(slots, mine.length, theirs.length) }, (_, i) => ({
     slot,
     mine: mine[i] ?? null,
     theirs: theirs[i] ?? null,
   }));
 }
 
-export function H2HBoard({
-  rows,
-  bench,
-  ir,
-  totals,
-  ahead,
-}: {
+export interface BoardData {
   rows: H2HRow[];
   bench: { mine: H2HCell[]; theirs: H2HCell[] };
   ir: { mine: H2HCell[]; theirs: H2HCell[] };
   totals: { mine: number; theirs: number };
   /** A day ahead: totals are projections. */
   ahead: boolean;
+}
+
+export function H2HBoard({
+  board,
+  benchSlots,
+  irSlots,
+}: {
+  board: BoardData;
+  benchSlots: number;
+  irSlots: number;
 }) {
   const reserves = [
-    ...listRows("BE", bench.mine, bench.theirs),
-    ...listRows("IR", ir.mine, ir.theirs),
+    ...listRows("BE", board.bench.mine, board.bench.theirs, benchSlots),
+    ...listRows("IR", board.ir.mine, board.ir.theirs, irSlots),
   ];
   return (
     <div className="overflow-hidden rounded-xl border bg-card">
-      <div className="grid grid-cols-[minmax(0,1fr)_2.75rem_minmax(0,1fr)] border-b bg-muted/40 text-xs font-medium text-muted-foreground">
+      <div className="grid grid-cols-[minmax(0,1fr)_2.25rem_minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_2.75rem_minmax(0,1fr)] border-b bg-muted/40 text-xs font-medium text-muted-foreground">
         <div className="px-2 py-2 text-right tabular-nums sm:px-3">
-          <span className="text-base font-semibold text-foreground">{fmtPts(totals.mine)}</span>
-          {ahead && " proj"}
+          <span className="text-base font-semibold text-foreground">
+            {fmtPts(board.totals.mine)}
+          </span>
+          {board.ahead && " proj"}
         </div>
         <div className="flex items-center justify-center border-x">Slot</div>
         <div className="px-2 py-2 tabular-nums sm:px-3">
-          <span className="text-base font-semibold text-foreground">{fmtPts(totals.theirs)}</span>
-          {ahead && " proj"}
+          <span className="text-base font-semibold text-foreground">
+            {fmtPts(board.totals.theirs)}
+          </span>
+          {board.ahead && " proj"}
         </div>
       </div>
       <div className="divide-y">
-        {rows.map((r, i) => (
+        {board.rows.map((r, i) => (
           <Row key={`${r.slot}-${i}`} r={r} />
         ))}
       </div>
-      {reserves.length > 0 && (
-        <details className="group border-t">
-          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-            Bench and IL ({bench.mine.length + ir.mine.length} /{" "}
-            {bench.theirs.length + ir.theirs.length})
-            <span className="ml-1 inline-block transition-transform group-open:rotate-180">▾</span>
-          </summary>
-          <div className="divide-y border-t">
-            {reserves.map((r, i) => (
-              <Row key={`${r.slot}-${i}`} r={r} />
-            ))}
-          </div>
-        </details>
-      )}
+      <div className="border-t bg-muted/30 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+        Bench and IL
+      </div>
+      <div className="divide-y border-t">
+        {reserves.map((r, i) => (
+          <Row key={`${r.slot}-${i}`} r={r} />
+        ))}
+      </div>
     </div>
   );
 }

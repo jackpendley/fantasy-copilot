@@ -114,15 +114,3 @@ export function statSummary(line: Record<string, number> | null): string | null 
     .map(([k, label]) => `${line[k]} ${label}`);
   return parts.length ? parts.join(" ") : "0 PTS";
 }
-
-/** The rest of the box score (shooting, turnovers, minutes): "8-13 FG · 6-7 FT · 1 TO · 28 MIN". */
-export function statDetail(line: Record<string, number> | null): string | null {
-  if (!line) return null;
-  const n = (k: string) => line[k] ?? 0;
-  const parts = [`${n("FGM")}-${n("FGA")} FG`];
-  if (n("3PA")) parts.push(`${n("3PM")}-${n("3PA")} 3PT`);
-  if (n("FTA")) parts.push(`${n("FTM")}-${n("FTA")} FT`);
-  if (n("TO")) parts.push(`${n("TO")} TO`);
-  parts.push(`${n("MIN")} MIN`);
-  return parts.join(" · ");
-}

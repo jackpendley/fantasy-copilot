@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PlayerCardButton } from "@/components/fc/player-card";
 import { Search } from "lucide-react";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { normalizeName } from "@fantasy-copilot/nba-data";
@@ -33,8 +34,8 @@ function PlayerLink({
   sub?: React.ReactNode;
 }) {
   return (
-    <Link
-      href={`/nba/players/${player.id}`}
+    <PlayerCardButton
+      id={player.id}
       className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-muted/50"
     >
       <PlayerAvatar id={player.id} name={player.name} size={36} />
@@ -60,7 +61,7 @@ function PlayerLink({
         </div>
       </div>
       {right && <div className="shrink-0 text-right tabular-nums">{right}</div>}
-    </Link>
+    </PlayerCardButton>
   );
 }
 

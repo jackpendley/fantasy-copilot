@@ -319,3 +319,27 @@
 - **Changed:** `winChanceLabel` shows ">99%" / "<1%" until nothing is left to play (Matchup scoreboard, Waivers).
 - **Logging:** the nightly job logs every league matchup's state (`matchup_states`, migration 0008) for a pre-registered recalibration on this season's data (fit weeks 2–7, test 8–13).
 - **Script:** `scripts/calibrate-win-prob.ts` reproduces the 2025-26 test.
+
+## ADR-029: Today & Matchup in the ESPN-mobile style, with player cards (2026-10-27)
+
+- **Rows** (Today `PlayerRow`, Matchup `H2HBoard`):
+  - fixed height (76 px);
+  - 44 px photo (30 px on phones in the two-team board);
+  - name with team logo; position and game state; a one-line stat summary once he plays.
+  - Under the points: one unlabeled number, the most accurate projection source (our model until the Vegas blend passes; see the plan's PR 5). Before tip and after the final it's the pregame number; while live, points so far plus the rest of it. ▲/▼ as before.
+  - A ruled-out player whose team plays shows nothing (was "0.0").
+- **Matchup days:**
+  - All days of the week are rendered with the page (past days from ESPN finals, loaded in parallel; today live; days ahead projected). A client component switches days instantly and keeps `?day=` in the URL with `history.replaceState`.
+  - Days ahead fill empty starting slots with idle players, as ESPN does.
+  - Bench and IL rows are padded to the week's largest count (this league's bench is unlimited), so the board is the same height every day.
+- **Player card:** tap any player on Today, Matchup, Waivers, Players or team pages.
+  - Display: a dialog on desktop, a bottom sheet on phones. Data loads from `/api/players/[id]/card` (`lib/nba/player-card.ts`), prefetched on hover and cached for the visit.
+  - Sections:
+    - next-game projection: ours, Vegas and ESPN, plus tonight's prop lines;
+    - key numbers;
+    - last 10 games with a sparkline;
+    - per-stat contributions in this league's scoring;
+    - rest of season: games left (injury-aware), points, starts on the owner's lineup, market value, ownership;
+    - schedule.
+  - It replaces the tap-to-expand box score. The Trades page keeps its checkboxes (a tap there toggles the pick).
+- **Client-safe helpers:** `fmtPts`, `slotRank` and `shortName` moved to `lib/display.ts`. `lib/format.ts`, which needs the server-only env, re-exports them. Game-time labels are formatted on the server.

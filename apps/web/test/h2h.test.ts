@@ -118,6 +118,28 @@ describe("cells for other days", () => {
     expect(idle.cell).toMatchObject({ points: null, proj: null, trend: null });
   });
 
+  it("fills starting slots nobody plays in with idle players, as ESPN shows a full lineup", () => {
+    const placed = cellsAhead(
+      [player(1, 1), player(2, 2), player(3, 9), player(5, 9), player(4, 1, "IR")],
+      new Map([[1, "PG"]]),
+      games,
+      3,
+      () => 25,
+      () => "ACTIVE",
+      () => null,
+      ["PG", "UTIL"],
+    );
+    // Player 2 has a game but no slot was picked for him (bench); 3 fills the open UTIL; 5
+    // stays on the bench (no slot left); the IR player stays on IR.
+    expect(placed.map((p) => [p.cell.player.id, p.slot])).toEqual([
+      [1, "PG"],
+      [2, "BE"],
+      [3, "UTIL"],
+      [5, "BE"],
+      [4, "IR"],
+    ]);
+  });
+
   it("projects a day ahead: starters in their slots, others with a game on the bench", () => {
     const placed = cellsAhead(
       [player(1, 1), player(2, 2), player(3, 9), player(4, 1, "IR")],

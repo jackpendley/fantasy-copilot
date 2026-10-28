@@ -24,6 +24,8 @@ const PAGES = [
     (s) => `/nba/league/trades?size=${s}`,
   ),
   "/settings",
+  // The player card's data (Tatum).
+  "/api/players/4065648/card",
 ];
 // Text the app renders when a page fails (ErrorNotice titles, Next's error page).
 const FAILURE = [/Couldn&#x27;t load|Couldn't load/, /Application error/, /needs the database/];

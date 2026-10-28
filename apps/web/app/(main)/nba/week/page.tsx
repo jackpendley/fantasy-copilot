@@ -1,6 +1,5 @@
-import Link from "next/link";
 import { PageHeader, SectionTitle } from "@/components/fc/bits";
-import { H2HBoard } from "@/components/fc/h2h-board";
+import { MatchupDays, type MatchupDay } from "@/components/fc/matchup-days";
 import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
 import { WinChart } from "@/components/win-chart";
@@ -34,7 +33,7 @@ import { absences, returnLabel } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
 import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
-import { fmtPts } from "@/lib/format";
+import { fmtPts, fmtTip } from "@/lib/format";
 import { matchupView } from "@/lib/nba/matchup";
 import { winChanceLabel } from "@/lib/nba/week";
 import { cn } from "@/lib/utils";
@@ -156,93 +155,117 @@ export default async function WeekPage({
 
   const days = periods.map((p) => ({ sp: p, date: dateForScoringPeriod(p) }));
 
-  // The day shown head to head: today by default; any day of this week via ?day=.
+  // Every day of the week head to head, rendered together so switching days is instant:
+  // past days from ESPN's finals, today live, days ahead projected. ?day= picks the first one.
   const { day: dayParam } = await searchParams;
-  const day = periods.includes(Number(dayParam)) ? Number(dayParam) : sp;
+  const initialDay = periods.includes(Number(dayParam)) ? Number(dayParam) : sp;
   const statusOf = new Map(data.injuries.map((i) => [i.playerId, i]));
   const statusFor = (p: { id: number; injuryStatus?: string | null }) =>
     statusOf.get(p.id)?.status ?? p.injuryStatus ?? "ACTIVE";
   const oppAhead = opp ? data.ahead.teams.find((t) => t.id === opp.id) : undefined;
-  let minePlaced: Placed[] = [];
-  let theirsPlaced: Placed[] = [];
-  if (day === sp) {
-    minePlaced = myLive.map(cellFromLive);
-    theirsPlaced = (oppLive ?? []).map(cellFromLive);
-  } else if (day < sp) {
-    // A past day: ESPN's final points per player, in the slots they were in.
-    const past = await loadLiveRosters(day, mp).catch(() => null);
-    const people = new Map(
-      [...data.teams, ...data.ahead.teams].flatMap((t) => t.roster).map((p) => [p.id, p]),
+  const people = new Map(
+    [...data.teams, ...data.ahead.teams].flatMap((t) => t.roster).map((p) => [p.id, p]),
+  );
+  const pastFinals = new Map(
+    await Promise.all(
+      periods
+        .filter((d) => d < sp)
+        .map(async (d) => [d, await loadLiveRosters(d, mp).catch(() => null)] as const),
+    ),
+  );
+  // Ruled-out players: out until ESPN's estimated return, then back.
+  const out = absences([...data.ahead.me.roster, ...(oppAhead?.roster ?? [])], data.injuries, sp);
+  const slots = startingSlots(data.settings.slotCounts);
+  const labeled = (placed: Placed[]): Placed[] =>
+    placed.map((x) =>
+      x.cell.game
+        ? {
+            ...x,
+            cell: {
+              ...x.cell,
+              game: {
+                ...x.cell.game,
+                when:
+                  x.cell.game.state === "pre"
+                    ? fmtTip(x.cell.game.tip)
+                    : x.cell.game.state === "post"
+                      ? "Final"
+                      : x.cell.game.detail || "Live",
+              },
+            },
+          }
+        : x,
     );
-    const final = (teamId: number) =>
-      (past?.get(teamId) ?? []).map((e) => {
-        const p = people.get(e.playerId);
-        return cellFromFinal(
-          e,
-          p,
-          p ? gameOn(data.games, p.proTeamId, day, "post") : null,
-          p ? perGameProjection(p, day).fppg : 0,
-        );
-      });
-    minePlaced = final(data.me.id);
-    theirsPlaced = opp ? final(opp.id) : [];
-  } else {
-    // A day ahead: projected lineups from tomorrow's rosters.
-    const proj = (p: Parameters<typeof perGameProjection>[0]) => perGameProjection(p, sp).fppg;
-    // Ruled-out players: out until ESPN's estimated return, then back.
-    const out = absences([...data.ahead.me.roster, ...(oppAhead?.roster ?? [])], data.injuries, sp);
+  const placedFor = (day: number): [Placed[], Placed[]] => {
+    if (day === sp) return [myLive.map(cellFromLive), (oppLive ?? []).map(cellFromLive)];
+    if (day < sp) {
+      const past = pastFinals.get(day);
+      const final = (teamId: number) =>
+        (past?.get(teamId) ?? []).map((e) => {
+          const p = people.get(e.playerId);
+          return cellFromFinal(
+            e,
+            p,
+            p ? gameOn(data.games, p.proTeamId, day, "post") : null,
+            p ? perGameProjection(p, day).fppg : 0,
+          );
+        });
+      return [final(data.me.id), opp ? final(opp.id) : []];
+    }
     const outThatDay = (p: { id: number }) => (out.get(p.id)?.outUntil ?? 0) > day;
-    const projAhead = (p: Parameters<typeof perGameProjection>[0]) => (outThatDay(p) ? 0 : proj(p));
+    const projAhead = (p: Parameters<typeof perGameProjection>[0]) =>
+      outThatDay(p) ? 0 : perGameProjection(p, sp).fppg;
     const statusAhead = (p: Parameters<typeof perGameProjection>[0]) =>
       outThatDay(p) ? "OUT" : out.has(p.id) ? "ACTIVE" : statusFor(p);
     const backAhead = (p: { id: number }) => {
       const a = out.get(p.id);
       return a && outThatDay(p) ? returnLabel(a) : null;
     };
-    minePlaced = cellsAhead(
-      data.ahead.me.roster,
-      mine.slotsByDay.get(day),
-      data.games,
-      day,
-      projAhead,
-      statusAhead,
-      backAhead,
-    );
-    theirsPlaced =
-      oppAhead && theirs
-        ? cellsAhead(
-            oppAhead.roster,
-            theirs.slotsByDay.get(day),
-            data.games,
-            day,
-            projAhead,
-            statusAhead,
-            backAhead,
-          )
-        : [];
-  }
-  const board = pairBySlot(startingSlots(data.settings.slotCounts), minePlaced, theirsPlaced);
-  const ahead = day > sp;
-  const totals = {
-    mine: dayTotal(board.rows, "mine", ahead),
-    theirs: dayTotal(board.rows, "theirs", ahead),
+    const ahead = (roster: typeof data.me.roster, slotOf: Map<number, string> | undefined) =>
+      cellsAhead(roster, slotOf, data.games, day, projAhead, statusAhead, backAhead, slots);
+    return [
+      ahead(data.ahead.me.roster, mine.slotsByDay.get(day)),
+      oppAhead && theirs ? ahead(oppAhead.roster, theirs.slotsByDay.get(day)) : [],
+    ];
   };
-  // Each day's score for the tabs: ESPN's per-day totals, live today, projected ahead.
   const matchup = data.matchups.find(
     (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
   );
   const iAmHome = matchup?.homeTeamId === data.me.id;
-  const dayScore = (d: number) => {
-    if (d > sp) {
-      return {
-        mine: mine.projectedByDay.get(d) ?? 0,
-        theirs: theirs?.projectedByDay.get(d) ?? 0,
-      };
-    }
-    if (d === sp && day === sp) return totals;
-    const by = (home: boolean) => (home ? matchup?.homeByPeriod : matchup?.awayByPeriod)?.[d] ?? 0;
-    return { mine: by(iAmHome), theirs: by(!iAmHome) };
-  };
+  const dayBoards: MatchupDay[] = days.map((d) => {
+    const [minePlaced, theirsPlaced] = placedFor(d.sp);
+    const b = pairBySlot(slots, labeled(minePlaced), labeled(theirsPlaced));
+    const ahead = d.sp > sp;
+    const totals = {
+      mine: dayTotal(b.rows, "mine", ahead),
+      theirs: dayTotal(b.rows, "theirs", ahead),
+    };
+    // Tab scores: ESPN's per-day totals for past days, live today, projected ahead.
+    const by = (home: boolean) =>
+      (home ? matchup?.homeByPeriod : matchup?.awayByPeriod)?.[d.sp] ?? 0;
+    const score =
+      d.sp > sp
+        ? {
+            mine: mine.projectedByDay.get(d.sp) ?? 0,
+            theirs: theirs?.projectedByDay.get(d.sp) ?? 0,
+          }
+        : d.sp === sp
+          ? totals
+          : { mine: by(iAmHome), theirs: by(!iAmHome) };
+    return {
+      sp: d.sp,
+      label: d.sp === sp ? "Today" : shortDay(d.date).split(" ")[0]!,
+      today: d.sp === sp,
+      score,
+      board: { ...b, totals, ahead },
+      note:
+        d.sp < sp
+          ? "Final ESPN fantasy points in each slot. Under the points: his pregame projection, with ▲/▼ when he finished well above or below it."
+          : d.sp > sp
+            ? "Projected lineups (the best lineup each team can set that day), from rosters after pending moves. The number in each slot is his projection."
+            : "ESPN fantasy points in each slot. Under the points: his projection (live: points so far plus the rest of his projection). ▲/▼ = 5+ points and 20%+ off. Tap a player for his card.",
+    };
+  });
   const opponentOf = (proTeamId: number, p: number) => {
     const g = data.games.find(
       (x) =>
@@ -283,55 +306,12 @@ export default async function WeekPage({
       <LiveRefresh active={gamesLive} />
 
       {opp && (
-        <section className="space-y-2">
-          <nav
-            className="grid gap-1.5"
-            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
-            aria-label="Day of the matchup"
-          >
-            {days.map((d) => {
-              const score = dayScore(d.sp);
-              return (
-                <Link
-                  key={d.sp}
-                  href={d.sp === sp ? "/nba/week" : `/nba/week?day=${d.sp}`}
-                  scroll={false}
-                  className={cn(
-                    "rounded-lg border bg-card px-1 py-1.5 text-center",
-                    d.sp === day ? "border-primary ring-1 ring-primary" : "hover:bg-muted/50",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "text-xs font-semibold",
-                      d.sp === sp ? "text-primary" : "text-muted-foreground",
-                    )}
-                  >
-                    {d.sp === sp ? "Today" : shortDay(d.date).split(" ")[0]}
-                  </div>
-                  <div className="text-[11px] leading-tight tabular-nums">
-                    <div className="font-medium">{fmtPts(score.mine)}</div>
-                    <div className="text-muted-foreground">{fmtPts(score.theirs)}</div>
-                  </div>
-                </Link>
-              );
-            })}
-          </nav>
-          <H2HBoard
-            rows={board.rows}
-            bench={board.bench}
-            ir={board.ir}
-            totals={totals}
-            ahead={ahead}
-          />
-          <p className="px-1 text-xs text-muted-foreground">
-            {day < sp
-              ? "Final ESPN fantasy points in each slot, with the pregame projection and ▲/▼ when a player finished well above or below it."
-              : day > sp
-                ? "Projected lineups (best lineup each team can set that day), from rosters as they stand after pending moves."
-                : "ESPN fantasy points in each slot. Under the points: the projection (live: points so far plus the rest of his pregame projection). ▲/▼ = 5+ points and 20%+ off. Tap a stat line for the full box score."}
-          </p>
-        </section>
+        <MatchupDays
+          days={dayBoards}
+          initial={initialDay}
+          benchSlots={data.settings.slotCounts.BE ?? 0}
+          irSlots={data.settings.slotCounts.IR ?? 0}
+        />
       )}
 
       {winPoints.length > 1 && (

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import type { DayRow } from "@/lib/nba/day";
-import { gameElapsed, liveRows, sortLive, statDetail, statSummary, trendOf } from "@/lib/nba/live";
+import { gameElapsed, liveRows, sortLive, statSummary, trendOf } from "@/lib/nba/live";
 
 describe("gameElapsed", () => {
   const g = (state: ScoreboardGame["state"], period: number, clock: string) => ({
@@ -161,12 +161,5 @@ describe("box score lines", () => {
     expect(statSummary({ ...line, "3PM": 2, BLK: 3 })).toBe("22 PTS 9 REB 1 AST 1 STL 3 BLK 2 3PM");
     expect(statSummary({ MIN: 3 })).toBe("0 PTS");
     expect(statSummary(null)).toBeNull();
-  });
-  it("keeps shooting, turnovers and minutes for the full box score", () => {
-    expect(statDetail(line)).toBe("8-13 FG · 6-7 FT · 1 TO · 28 MIN");
-    expect(statDetail({ ...line, "3PM": 1, "3PA": 4, TO: 0 })).toBe(
-      "8-13 FG · 1-4 3PT · 6-7 FT · 28 MIN",
-    );
-    expect(statDetail(null)).toBeNull();
   });
 });

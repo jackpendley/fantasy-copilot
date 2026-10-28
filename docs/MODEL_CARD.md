@@ -131,3 +131,9 @@ Several variants were tried on this season, so it is **not** a clean test.
 - **Ships if** w > 0 and the blend's per-player mean error difference vs our model has a 95% interval entirely below 0.
   - Then today's lineups, live projections and this week's odds use the blend for players with props.
   - The weight is refit as data grows, re-checked on the most recent half each time.
+
+## Fallback fix: players without an ESPN projection (2026-10-27)
+
+- **Problem:** ESPN doesn't project some players (deep free agents, late signings). Before, they were projected at their raw season average, so after one game Mo Bamba was "38.5 FP/G".
+- **Fix:** they now blend toward 15 FP/G with the same 15-game prior weight as everyone else. 15 FP/G is the median ESPN projection among the 180 projected free agents on Oct 27.
+- **Scope:** this is a fallback, not a model change. It only affects players with no ESPN projection, which the walk-forward backtest (built on rostered players' priors) doesn't cover. Revisit if logged accuracy (PR 5) shows a bias for these players.

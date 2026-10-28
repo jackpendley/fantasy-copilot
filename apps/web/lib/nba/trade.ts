@@ -90,6 +90,8 @@ export interface TeamValue {
   playoffs: number;
   /** Players coming back from the IR slot, and whom the team drops to make room. */
   activations: Activation[];
+  /** Per player id: games he's available for and how many he'd start, rest of season. */
+  usage: Map<number, { games: number; starts: number }>;
 }
 
 export interface Activation {
@@ -172,14 +174,23 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
 
   let regular = 0;
   let playoffs = 0;
+  const games = new Array<number>(players.length).fill(0);
+  const starts = new Array<number>(players.length).fill(0);
   for (let day = ctx.fromDay; day <= ctx.lastDay; day++) {
     if (!mask[day]) continue;
+    for (let k = 0; k < players.length; k++) if (mask[day]! & (1 << k)) games[k]!++;
     let pts = 0;
-    for (const k of starters(mask[day]!)) pts += players[k]!.v;
+    for (const k of starters(mask[day]!)) {
+      pts += players[k]!.v;
+      starts[k]!++;
+    }
     if (playoffDay(day)) playoffs += pts;
     else regular += pts;
   }
-  return { regular, playoffs, activations };
+  const usage = new Map(
+    players.map(({ p }, k) => [p.id, { games: games[k]!, starts: starts[k]! }]),
+  );
+  return { regular, playoffs, activations, usage };
 }
 
 /** Raw rest-of-season points (no lineup limits): how most managers size up a deal. */

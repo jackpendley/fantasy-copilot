@@ -7,6 +7,7 @@ import {
   type ProGame,
   type RosterPlayer,
 } from "@fantasy-copilot/espn";
+import { valueContext } from "@/lib/nba/trade";
 import { waiverAnalysis } from "@/lib/nba/waivers";
 
 // Anonymized league fixture (team 13's roster); free agents and games are synthetic.
@@ -194,5 +195,67 @@ describe("waiverAnalysis after the roster lock and with the IL", () => {
     });
     expect(res.thisWeek.length).toBeGreaterThan(0);
     expect(res.thisWeek.every((o) => o.drop?.id !== 500)).toBe(true);
+  });
+});
+
+describe("waiverAnalysis by lineup fit", () => {
+  // Synthetic: slots PG, C, UTIL + 2 bench; everyone plays days 1-20 (week 1 = days 1-6).
+  const slots = { PG: 1, C: 1, UTIL: 1, BE: 2 };
+  const daily: ProGame[] = [];
+  for (let d = 1; d <= 20; d++)
+    daily.push({
+      gameId: 5000 + d,
+      scoringPeriodId: d,
+      date: 0,
+      homeProTeamId: 99,
+      awayProTeamId: 97,
+    });
+  const guy = (id: number, pos: string, fppg: number): RosterPlayer => ({
+    ...fa(id, `${pos}${id}`, 99, fppg, [pos]).player,
+    slot: "BE",
+  });
+  const roster = [
+    guy(1, "C", 30),
+    guy(2, "C", 28),
+    guy(3, "C", 26),
+    guy(4, "PG", 12),
+    guy(5, "PG", 8),
+  ];
+  const season = valueContext(daily, slots, 1, 20, 2);
+  const run = (free: FreeAgent[]) =>
+    waiverAnalysis({
+      ...base,
+      roster,
+      freeAgents: free,
+      week: {
+        periods: [1, 2, 3, 4, 5, 6],
+        fromPeriod: 1,
+        games: daily,
+        slotCounts: slots,
+        injuries: [],
+      },
+      rosterLimit: 5,
+      lastDay: 20,
+      season,
+    });
+
+  it("values a center who'd sit behind three others at the starts he'd actually get", () => {
+    const res = run([fa(30, "Center", 99, 27, ["C"])]);
+    // Raw points say +19 a game over the worst guard; on this roster he'd start only as the
+    // second-best center (UTIL), pushing out the 26 and gaining ~1 point a day.
+    const o = res.longTerm[0] ?? res.thisWeek[0];
+    if (o) expect(o.rosDelta).toBeLessThan(0.2 * (o.add.ros - o.dropRos));
+    expect(res.best.every((b) => b.add.player.id !== 30 || b.netWins < 0.05)).toBe(true);
+  });
+
+  it("prefers the guard who starts over the better-on-paper center, and drops by fit", () => {
+    const res = run([fa(30, "Center", 99, 27, ["C"]), fa(31, "Guard", 99, 22, ["PG"])]);
+    const top = res.best[0]!;
+    expect(top.add.player.id).toBe(31);
+    // He replaces the 8-point guard, who never starts; the guard starts every game.
+    expect(top.drop?.id).toBe(5);
+    expect(top.addUsage).toEqual({ games: 20, starts: 20 });
+    expect(top.dropStarts).toBe(0);
+    expect(top.netWins).toBeCloseTo((top.deltaWin ?? 0) + top.laterWins, 10);
   });
 });

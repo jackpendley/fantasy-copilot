@@ -79,13 +79,15 @@
 
 - **Waivers by lineup fit (branch `waivers-lineup-fit`):** every add against every drop, season value from rest-of-season lineups, ranked in expected wins (ADR-027). Unprojected players are no longer taken at their raw average.
 
+- **Win probability (branch `win-prob-calibration`):** the pre-registered variance model lost to the current one on held-out weeks (ADR-028). Shipped instead: no 100% or 0% until decided, and daily logging of every matchup for a recalibration test on weeks 8–13.
+
 ## Plan in progress (approved 2026-10-27, third plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
 
 1. Injury timelines and IL returns (merged, #23).
-2. Waivers by lineup fit (this branch).
-3. Calibrated win probability (fitted on this league's 2025-26 days).
+2. Waivers by lineup fit (merged, #24).
+3. Win probability (this branch; recalibration test after week 13).
 4. ESPN-mobile-style Today/Matchup with player cards; the week preloads and day switching is instant.
 5. The most accurate projection: the props blend test (~Oct 29), nightly refit, accuracy tracking.
 6. Teammate role boost, backtest-gated.

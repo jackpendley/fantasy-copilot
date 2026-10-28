@@ -12,7 +12,7 @@ import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
-import { recordMatchupSnapshot } from "./nba/matchup-snapshots";
+import { recordMatchupSnapshot, recordMatchupStates } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
@@ -115,6 +115,11 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       await log("matchup-snapshot", "error", e.message);
       return null;
     });
+    // Every league matchup's state, for calibrating the weekly win probability.
+    const states = await recordMatchupStates().catch(async (e: Error) => {
+      await log("matchup-states", "error", e.message);
+      return null;
+    });
     const { scoringPeriod, teams } = await runOutlook();
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
     const market = await collectToday("morning", true).catch(async (e: Error) => {
@@ -127,6 +132,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       title: me?.champ,
       playoffs: me?.playoffs,
       weekWin: matchup?.p_win,
+      ...states,
       ...market,
     };
     await log("nightly", "ok", JSON.stringify(result));

@@ -16,7 +16,7 @@ import {
   gameEnvironment,
   LEAGUE_TEAM_TOTAL,
 } from "@/lib/nba/projection";
-import { projectTeamWeek, winProbability } from "@/lib/nba/week";
+import { projectTeamWeek, winChanceLabel, winProbability } from "@/lib/nba/week";
 
 // Anonymized 2026-27 league fixture (packages/espn): team 13's real draft-day roster.
 const league = JSON.parse(
@@ -307,5 +307,15 @@ describe("perGameProjection without an ESPN projection", () => {
     const v = perGameProjection(p);
     expect(v.source).toBe("season");
     expect(v.fppg).toBeCloseTo((38.5 + 15 * 15) / 16, 6);
+  });
+});
+
+describe("winChanceLabel", () => {
+  it("never shows 100% or 0% while points are still to come", () => {
+    expect(winChanceLabel(0.999, false)).toBe(">99%");
+    expect(winChanceLabel(0.001, false)).toBe("<1%");
+    expect(winChanceLabel(0.62, false)).toBe("62%");
+    expect(winChanceLabel(1, true)).toBe("100%");
+    expect(winChanceLabel(0, true)).toBe("0%");
   });
 });

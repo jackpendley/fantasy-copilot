@@ -10,6 +10,7 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
+import { winChanceLabel } from "@/lib/nba/week";
 import type { StreamOption, WaiverCandidate } from "@/lib/nba/waivers";
 import { cn } from "@/lib/utils";
 
@@ -170,7 +171,7 @@ export default async function WaiversPage({
       <PageHeader
         title="Waivers & streaming"
         subtitle={`Week ${view.mp} · ${addsLeft} of ${addsCap} adds left${
-          analysis.baseWin != null ? ` · ${Math.round(analysis.baseWin * 100)}% to win now` : ""
+          analysis.baseWin != null ? ` · ${winChanceLabel(analysis.baseWin, false)} to win now` : ""
         }`}
       />
 

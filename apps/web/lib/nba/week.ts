@@ -128,3 +128,14 @@ function normalCdf(x: number): number {
       Math.exp(-z * z);
   return x >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y);
 }
+
+/**
+ * A win chance for display: never 100% or 0% while points are still to come (the model can't
+ * rule out a big night or a late scratch), only once nothing is left to play.
+ */
+export function winChanceLabel(p: number, decided: boolean): string {
+  if (decided) return `${Math.round(p * 100)}%`;
+  if (p >= 0.995) return ">99%";
+  if (p <= 0.005) return "<1%";
+  return `${Math.round(p * 100)}%`;
+}

@@ -36,6 +36,7 @@ import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
 import { matchupView } from "@/lib/nba/matchup";
+import { winChanceLabel } from "@/lib/nba/week";
 import { cn } from "@/lib/utils";
 import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
@@ -51,6 +52,7 @@ function Scoreboard({
   oppFinal,
   pWin,
   live,
+  decided,
 }: {
   me: string;
   opp: string;
@@ -60,6 +62,8 @@ function Scoreboard({
   oppFinal: number;
   pWin: number;
   live: boolean;
+  /** Nothing left to play this week. */
+  decided: boolean;
 }) {
   const side = (name: string, pts: number, final: number, right: boolean) => (
     <div className={cn("min-w-0", right && "text-right")}>
@@ -84,8 +88,8 @@ function Scoreboard({
       </div>
       <div className="mt-4">
         <div className="mb-1.5 flex justify-between text-xs font-semibold tabular-nums sm:text-sm">
-          <span className="text-primary">{Math.round(pWin * 100)}% to win</span>
-          <span className="text-muted-foreground">{Math.round((1 - pWin) * 100)}%</span>
+          <span className="text-primary">{winChanceLabel(pWin, decided)} to win</span>
+          <span className="text-muted-foreground">{winChanceLabel(1 - pWin, decided)}</span>
         </div>
         <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
           <div className="bg-primary" style={{ width: `${pWin * 100}%` }} />
@@ -270,6 +274,7 @@ export default async function WeekPage({
           oppFinal={oppBanked + theirs.remaining}
           pWin={pWin}
           live={gamesLive}
+          decided={mine.remaining + theirs.remaining < 0.5}
         />
       )}
 

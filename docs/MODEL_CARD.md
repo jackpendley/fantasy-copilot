@@ -153,3 +153,41 @@ Several variants were tried on this season, so it is **not** a clean test.
   - Brier score of P(win) for the candidate vs the current model, plus a reliability table.
   - The same comparison restricted to the last two days of a week.
 - **Ships if** the candidate's Brier score is lower on weeks 11–19. Separately, the app never shows 100% or 0% until no games are left.
+
+### Result (2026-10-27): the candidate did not ship
+
+Fitted on weeks 2–10: a = 19, b = 0.012. Tested on weeks 11–19 (420 matchup-days):
+
+| Model                        | Brier (test) | Brier, last 2 days |
+| ---------------------------- | -----------: | -----------------: |
+| **current (0.14 × to come)** |   **0.0778** |         **0.0461** |
+| candidate (a·E + b·E²)       |       0.0831 |             0.0490 |
+
+Reliability on the test weeks, P(home wins) bucket → actual:
+
+| Predicted | current: n, actual | candidate: n, actual |
+| --------- | -----------------: | -------------------: |
+| 0–5%      |            125, 0% |              101, 0% |
+| 5–20%     |             34, 0% |               45, 0% |
+| 20–40%    |            30, 23% |              38, 16% |
+| 40–60%    |            33, 64% |              46, 57% |
+| 60–80%    |            47, 77% |              51, 82% |
+| 80–95%    |            23, 87% |              56, 89% |
+| 95–100%   |           128, 93% |              83, 95% |
+
+**Reading:**
+
+- The current model is mildly overconfident at the top: "95–100%" won 93% of the time.
+- The candidate overcorrects. Its stand-in for points still to come (a team's points per NBA game × games left) is noisier than the app's lineup projection, and the fit absorbed that noise as extra variance.
+- The rule said ship only on a lower Brier score, so it doesn't ship.
+- What did change: the app never shows 100% or 0% while points are still to come (">99%" / "<1%"), and every matchup's state is now logged each morning with the app's own projections (`matchup_states`, migration 0008).
+- The league's earlier seasons aren't accessible (ESPN 401), so a fresh test has to come from this season.
+
+### Pre-registration 2 (2026-10-27): recalibrate on this season's logged states
+
+- **Data:** `matchup_states` (every matchup, each morning, with the app's own remaining projections and P(win)); finals from ESPN.
+- **Candidates**, fitted on weeks 2–7:
+  - (A) logistic recalibration of the current probability: σ(α + β·logit p);
+  - (B) the variance form a·E + b·E², refit on these states.
+- **Test:** weeks 8–13.
+- **Ships:** whichever candidate has the lower Brier score than the current model on the test weeks (if both, the lower). Report its reliability table.

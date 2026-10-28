@@ -311,3 +311,11 @@
   - Streams that help now but cost more later sit in a folded "this-week-only" list, with the cost shown.
 - **Explanations** come from the same lineups: "Starts ~59 of his 68 games left for you · Robinson would have started 59".
 - **Also fixed:** a player ESPN didn't project (deep free agents) was projected at his raw season average. After one game, Mo Bamba was "38.5 FP/G" and the top suggestion. Such players now blend toward 15 FP/G (the median ESPN projection among projected free agents), with the same 15-game weight as everyone else.
+
+## ADR-028: win probability: keep the model, never show certainty early, log every matchup (2026-10-27)
+
+- **Why:** week 1 showed 99% on Thursday and 100% before Sunday's games.
+- **Test** (pre-registered, MODEL_CARD.md): a variance model a·E + b·E², fitted on this league's 2025-26 weeks 2–10 and tested on weeks 11–19. Brier 0.0831 vs the current 0.0778, so it didn't ship. The current model is mildly overconfident at the top (95–100% → 93% actual).
+- **Changed:** `winChanceLabel` shows ">99%" / "<1%" until nothing is left to play (Matchup scoreboard, Waivers).
+- **Logging:** the nightly job logs every league matchup's state (`matchup_states`, migration 0008) for a pre-registered recalibration on this season's data (fit weeks 2–7, test 8–13).
+- **Script:** `scripts/calibrate-win-prob.ts` reproduces the 2025-26 test.

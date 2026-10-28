@@ -11,7 +11,7 @@ import { loadFreeAgents, loadLeague } from "./nba/data";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
-import { statusEventsFrom } from "./nba/news";
+import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { recordMatchupSnapshot } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
 
@@ -64,29 +64,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     return { ...watch, skipped: "outside game window" };
   }
 
-  const events = statusEventsFrom({
-    rostered: data.teams.flatMap((team) => team.roster),
-    injuries: data.injuries,
-    lineups: data.lineups,
-    gameDate: date,
-  });
-  let newEvents = 0;
-  if (events.length) {
-    const rows = events.map((e) => ({
-      player_id: e.playerId,
-      source: e.source,
-      status: e.status,
-      detail: e.detail,
-      published_at: e.publishedAt,
-      game_date: e.gameDate,
-    }));
-    const inserted = await db()`
-      insert into status_events ${db()(rows, "player_id", "source", "status", "detail", "published_at", "game_date")}
-      on conflict do nothing
-      returning id
-    `;
-    newEvents = inserted.length;
-  }
+  const { events, newEvents } = await logStatusEvents(data, date);
 
   // Closing lines: re-captured every 5 minutes until tip for games starting soon.
   const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
@@ -174,6 +152,8 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
     sp,
   });
   const snap = darko ? await snapshotDarko(players) : {};
+  // Injury statuses and estimated returns, twice a day even without the 5-minute job.
+  const status = await logStatusEvents(data, date);
   // Yesterday's box scores, to score those projections against.
   const results =
     snapshot === "morning" && sp > 1
@@ -182,7 +162,13 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
           data.settings.scoring,
         )
       : {};
-  return { [`${snapshot}Props`]: lines.props, gamesWithLines: lines.games, ...snap, ...results };
+  return {
+    [`${snapshot}Props`]: lines.props,
+    gamesWithLines: lines.games,
+    newStatusEvents: status.newEvents,
+    ...snap,
+    ...results,
+  };
 }
 
 /** Early evening, before most tips: the pregame snapshot of props and game lines. */
@@ -195,4 +181,42 @@ export async function pregameJob(): Promise<Record<string, unknown>> {
     await log("pregame", "error", (e as Error).message);
     throw e;
   }
+}
+
+/** Record status changes (injury feed, NBA.com lineups, ESPN fantasy) for every rostered player. */
+async function logStatusEvents(
+  data: Awaited<ReturnType<typeof loadLeague>>,
+  date: string,
+): Promise<{ events: StatusEvent[]; newEvents: number }> {
+  const events = statusEventsFrom({
+    rostered: data.teams.flatMap((team) => team.roster),
+    injuries: data.injuries,
+    lineups: data.lineups,
+    gameDate: date,
+  });
+  if (!events.length) return { events, newEvents: 0 };
+  const rows = events.map((e) => ({
+    player_id: e.playerId,
+    source: e.source,
+    status: e.status,
+    detail: e.detail,
+    published_at: e.publishedAt,
+    game_date: e.gameDate,
+    return_date: e.returnDate ?? null,
+  }));
+  const inserted = await db()`
+    insert into status_events ${db()(
+      rows,
+      "player_id",
+      "source",
+      "status",
+      "detail",
+      "published_at",
+      "game_date",
+      "return_date",
+    )}
+    on conflict do nothing
+    returning id
+  `;
+  return { events, newEvents: inserted.length };
 }

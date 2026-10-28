@@ -275,3 +275,24 @@
   - Each pregame snapshot stores our projection and the props-implied one per player. Next morning's box scores are stored to score them (migration 0006).
   - The pre-registered test runs at `/api/model/props` once there are 7 game days and 800 games. A blend ships only if it beats our model on the later half of the days.
 - **Box scores:** ESPN summary per finished game (`parseBoxScore`), one request per game per day.
+
+## ADR-026: injury timelines and IL returns in every season-long number (2026-10-27)
+
+- **Why:** ESPN's season projection never changes after the preseason (Jalen Williams is still at 70 games), so trades, league strength, waivers and the Outlook ignored injuries. Jack's Duren is on IL with a ~2-week timeline.
+- **Data:** ESPN's injury feed estimates a return date for nearly every ruled-out player (`details.returnDate`: Duren Nov 9, Edwards Dec 21, Jalen Williams Mar 2). It is parsed in `parseInjuries`, and logged with each status (`status_events.return_date`, migration 0007) so the estimates can be checked later.
+  - Status logging now also runs in the morning and pregame jobs, since the 5-minute job has no scheduler yet.
+- **Availability** (`lib/nba/availability.ts`):
+  - A ruled-out player is out until his estimated return; day-to-day players are handled by the daily play chances.
+  - No date: assume a week (re-read daily). A passed date while still out: tomorrow.
+  - A return after the fantasy season counts as out for the season.
+- **teamValue:** each player counts from his return day.
+  - A player returning from the IR slot to a full roster costs the player who'd add the fewest lineup points from that day on. Someone out for the season is the natural cut.
+  - Every team follows the same rule. The resulting `activations` are shown as an "IL return plan" on Today, Waivers and team pages.
+- **Week projection:** a ruled-out player is out until his date, then back (no longer "OUT for the whole week").
+- **Simulator:**
+  - `outUntil` sets a known injury's length in team games; `reserve` starts a player in the IR slot, coming back in place of the roster's weakest player.
+  - **Bug fixed:** players moved to the IR slot never healed (their injury only counted down while on the active roster), so they never came back.
+- **Effect** (Oct 27, 1,000 seasons): the team with the longest injuries went from 18.0% to 10.5% for the title. Jack went from 16.3% to 17.1%.
+- **Speed:**
+  - `teamValue` now uses per-day bitmasks and cached per-game values.
+  - The trade search evaluates the top 20 candidates per size and partner instead of 40: the same top 20 ideas on the live league, in about 2.4 s.

@@ -23,6 +23,13 @@ export interface SimPlayer {
   gp: number;
   /** Projection error sd as a share of fppg (season-level). */
   sd: number;
+  /**
+   * A known injury: the first day he can play again (ESPN's estimated return). Until then he
+   * sits out; after it, the usual random injury chain applies.
+   */
+  outUntil?: number;
+  /** He's in the IR slot now: activating him later costs the roster its weakest player. */
+  reserve?: boolean;
 }
 
 export interface SimTeam {
@@ -207,7 +214,11 @@ function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
           out: 0,
           loadMgd: p.gp < 72,
         };
-        if (rnd(s, p.id, 0, DRAW.miss) < miss) h.out = spellLength(s, p.id, 0);
+        if (p.outUntil != null && p.outUntil > input.fromDay) {
+          // A known injury: out for his team's games before the estimated return.
+          for (let k = input.fromDay; k < Math.min(p.outUntil, input.lastDay + 1); k++)
+            if (plays(p.proTeamId, k)) h.out++;
+        } else if (rnd(s, p.id, 0, DRAW.miss) < miss) h.out = spellLength(s, p.id, 0);
         health.set(p.id, h);
       }
       return h;
@@ -228,13 +239,19 @@ function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
 
     const faOwner = new Map<number, number>();
     const freeAgents = [...input.freeAgents];
-    const st = teams.map((t) => ({
-      roster: [...t.roster],
-      ir: null as { player: SimPlayer; fill: SimPlayer } | null,
-      standing: [] as SimPlayer[],
-      budget: 0,
-      streamer: t.addsPerWeek >= 0.25,
-    }));
+    const st = teams.map((t) => {
+      // A player already in the IR slot comes back in place of the roster's weakest player.
+      const reserve = t.roster.find((r) => r.reserve);
+      const active = t.roster.filter((r) => r !== reserve);
+      const weakest = [...active].sort((a, b) => a.fppg - b.fppg)[0];
+      return {
+        roster: active,
+        ir: reserve && weakest ? { player: reserve, fill: weakest } : null,
+        standing: [] as SimPlayer[],
+        budget: 0,
+        streamer: t.addsPerWeek >= 0.25,
+      };
+    });
     const weekPts = banked.map((b) => [...b]);
     let curP = 0;
 
@@ -258,6 +275,8 @@ function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
         return healthy.get(pl.id)!;
       };
       for (const f of input.freeAgents) if (!faOwner.has(f.id)) isHealthy(f);
+      // Players in the IR slot keep healing (their injury counts down on their team's games).
+      for (const x of st) if (x.ir) isHealthy(x.ir.player);
       const remainingGames = (pl: SimPlayer) => {
         let g = 0;
         for (let k = d; k <= input.lastDay && input.periodOf(k) === p; k++)

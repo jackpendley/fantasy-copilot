@@ -93,6 +93,11 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
           <span className="hidden sm:inline">{c.player.name}</span>
         </span>
         <StatusPill status={c.status} />
+        {c.back && (
+          <span className="hidden shrink-0 text-[11px] whitespace-nowrap text-muted-foreground sm:inline">
+            {c.back}
+          </span>
+        )}
         <span
           className={cn(
             "shrink-0 text-lg leading-tight font-semibold tabular-nums",

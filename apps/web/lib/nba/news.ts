@@ -20,6 +20,8 @@ export interface StatusEvent {
   publishedAt: string | null;
   /** US/Eastern game date the observation was made for. */
   gameDate: string;
+  /** ESPN's estimated return date (injury feed), when it gives one. */
+  returnDate?: string | null;
 }
 
 export function statusEventsFrom(input: {
@@ -41,6 +43,7 @@ export function statusEventsFrom(input: {
       detail: i.short || null,
       publishedAt: i.date || null,
       gameDate: input.gameDate,
+      returnDate: i.returnDate ?? null,
     });
   }
 

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { IlPlanNote } from "@/components/fc/il-plan-note";
+import { ilReturnPlan } from "@/lib/nba/il-plan";
 import { AddDropButton } from "@/components/add-drop-button";
 import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
@@ -159,6 +161,8 @@ export default async function WaiversPage({
           analysis.baseWin != null ? ` · ${Math.round(analysis.baseWin * 100)}% to win now` : ""
         }`}
       />
+
+      <IlPlanNote plan={ilReturnPlan(v.data.ahead.me, v.data, v.sp)} />
 
       {onWaivers.length > 0 && nextClear && (
         <Callout tone="info">

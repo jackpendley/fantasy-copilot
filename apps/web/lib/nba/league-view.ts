@@ -5,6 +5,7 @@ import "server-only";
 import { dbConfigured } from "@/lib/db";
 import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
 import { loadDraftPicks, loadFreeAgents, loadLeague } from "./data";
+import { absences } from "./availability";
 import { marketContext } from "./market";
 import { latestOutlook } from "./outlook-run";
 import { teamValue, valueContext, type TeamValue } from "./trade";
@@ -23,12 +24,15 @@ export async function loadLeagueView(now = new Date()) {
   const data = { ...league, teams: league.ahead.teams, me: league.ahead.me };
   const free = freeAgents.map((f) => f.player);
   const market = marketContext([...data.teams.flatMap((t) => t.roster), ...free], draftPicks);
+  // Injured players count from their estimated return (ESPN's injury feed).
+  const injured = absences([...data.teams.flatMap((t) => t.roster), ...free], data.injuries, sp);
   const ctx = valueContext(
     data.games,
     data.settings.slotCounts,
     sp,
     LAST_SCORING_PERIOD,
     data.settings.regularSeasonWeeks,
+    injured,
   );
   const weeksLeft = Math.max(1, data.settings.regularSeasonWeeks - matchupPeriodOf(sp) + 1);
   const odds = new Map((outlook?.results ?? []).map((r) => [r.teamId, r]));
@@ -53,6 +57,7 @@ export async function loadLeagueView(now = new Date()) {
     power,
     market,
     freeAgents: free,
+    injured,
     outlookAt: outlook?.run_at ?? null,
   };
 }

@@ -41,7 +41,7 @@ export function managerActivity(current: Counts, prior: Counts, daysPlayed: numb
   };
 }
 
-export function toSimPlayer(p: RosterPlayer): SimPlayer {
+export function toSimPlayer(p: RosterPlayer, outUntil?: number): SimPlayer {
   const proj = perGameProjection(p);
   const projectedGames =
     p.projection?.avg && p.projection.total ? p.projection.total / p.projection.avg : 70;
@@ -53,6 +53,10 @@ export function toSimPlayer(p: RosterPlayer): SimPlayer {
     gp: Math.min(82, projectedGames),
     // Projection error shrinks as real games accumulate.
     sd: 0.13 * Math.sqrt(15 / (15 + proj.gamesPlayed)),
+    // A known injury keeps him out until his estimated return; one in the IR slot comes back
+    // in place of the roster's weakest player.
+    ...(outUntil != null ? { outUntil } : {}),
+    ...(p.slot === "IR" ? { reserve: true } : {}),
   };
 }
 
@@ -68,6 +72,8 @@ export interface OutlookArgs {
   regularWeeks: number;
   /** First scoring period still to be played (today, when run before the day's games). */
   fromDay: number;
+  /** Known injuries: first day each player can play again. */
+  injured?: Map<number, { outUntil: number }>;
   /**
    * A run during the day starts from tomorrow: today's week banks each team's live points plus
    * the expected rest of today, in place of ESPN's settled totals.
@@ -89,7 +95,8 @@ export function buildOutlookInput(a: OutlookArgs): {
     const sameOwner = prev && prev.ownerId && prev.ownerId === t.ownerId ? prev.activity : null;
     const act = managerActivity(t.activity, sameOwner, a.fromDay - 1);
     activity.set(t.id, act);
-    return { id: t.id, roster: t.roster.map(toSimPlayer), ...act };
+    const sim = (p: RosterPlayer) => toSimPlayer(p, a.injured?.get(p.id)?.outUntil);
+    return { id: t.id, roster: t.roster.map(sim), ...act };
   });
 
   const gameDays = new Map<number, Set<number>>();
@@ -123,7 +130,7 @@ export function buildOutlookInput(a: OutlookArgs): {
   }
 
   const freeAgents = a.freeAgents
-    .map(toSimPlayer)
+    .map((p) => toSimPlayer(p, a.injured?.get(p.id)?.outUntil))
     .filter((p) => p.gp >= 35 && p.fppg > 0)
     .sort((x, y) => y.fppg - x.fppg)
     .slice(0, 80);

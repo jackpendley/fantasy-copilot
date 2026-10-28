@@ -26,6 +26,8 @@ export interface H2HGame {
 export interface H2HCell {
   player: Pick<RosterPlayer, "id" | "name" | "proTeam" | "positions">;
   status: string;
+  /** "back ~Nov 9" for a ruled-out player. */
+  back?: string | null;
   game: H2HGame | null;
   /** Fantasy points scored; null before his game starts. */
   points: number | null;
@@ -89,6 +91,7 @@ export function cellFromLive(r: LiveRow): Placed {
     cell: {
       player: r.row.player,
       status: r.row.status,
+      back: r.row.back,
       game: g
         ? {
             opponent: g.opponent,
@@ -164,6 +167,7 @@ export function cellsAhead(
   sp: number,
   projOf: (p: RosterPlayer) => number,
   statusOf: (p: RosterPlayer) => string,
+  backOf: (p: RosterPlayer) => string | null = () => null,
 ): Placed[] {
   return roster.map((p) => {
     const game = gameOn(games, p.proTeamId, sp, "pre");
@@ -172,9 +176,11 @@ export function cellsAhead(
       cell: {
         player: p,
         status: statusOf(p),
+        back: backOf(p),
         game,
         points: null,
-        proj: game ? projOf(p) : null,
+        // Out that day (or no projection): nothing to show.
+        proj: game && projOf(p) > 0 ? projOf(p) : null,
         trend: null,
         line: null,
       },

@@ -161,3 +161,33 @@ describe("common random numbers", () => {
     expect(simulateSeason(league(changed))).toEqual(base);
   });
 });
+
+describe("known injuries", { timeout: 30_000 }, () => {
+  const base = () => [team(1, 40), ...[2, 3, 4, 5, 6, 7, 8].map((id) => team(id, 30))];
+  // Fewer seasons than the other tests: three full simulations per test on slow CI machines.
+  const pointsOf = (input: SimInput, id = 1) =>
+    simulateSeason({ ...input, seasons: 150 }).find((r) => r.teamId === id)!.expPointsFor;
+
+  it("a star out for the season scores less than one back mid-season, who scores less than healthy", () => {
+    const healthy = pointsOf(league(base()));
+    const hurt = (outUntil: number) => {
+      const teams = base();
+      teams[0]!.roster = teams[0]!.roster.map((p, i) => (i < 3 ? { ...p, outUntil } : p));
+      return pointsOf(league(teams));
+    };
+    const back = hurt(25);
+    const season = hurt(LAST_DAY + 1);
+    expect(back).toBeLessThan(healthy);
+    expect(season).toBeLessThan(back);
+  });
+
+  it("an IR-slot player returns when healthy (instead of staying on IR forever)", () => {
+    // Team 1's best player sits in the IR slot until day 10 vs being gone entirely.
+    const withReserve = base();
+    const star = { ...withReserve[0]!.roster[0]!, outUntil: 10, reserve: true };
+    withReserve[0]!.roster = [star, ...withReserve[0]!.roster.slice(1)];
+    const without = base();
+    without[0]!.roster = without[0]!.roster.slice(1);
+    expect(pointsOf(league(withReserve))).toBeGreaterThan(pointsOf(league(without)) + 50);
+  });
+});

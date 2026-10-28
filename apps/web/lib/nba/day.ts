@@ -20,6 +20,7 @@ import {
   type LineupEntry,
   type ScoreboardGame,
 } from "@fantasy-copilot/nba-data";
+import { absenceOf, returnLabel } from "./availability";
 import { gameEnvironment, perGameProjection, type PerGame } from "./projection";
 
 export interface DayGame {
@@ -38,6 +39,8 @@ export interface DayRow {
   locked: boolean;
   status: string;
   injuryNote: string | null;
+  /** "back ~Nov 9" / "out for the season" for a ruled-out player (ESPN's estimate). */
+  back: string | null;
   playProb: number;
   projection: PerGame;
   /** Expected points if started: playProb x fppg (0 without a game). */
@@ -91,6 +94,7 @@ function statusOf(p: RosterPlayer, injuries: Map<number, InjuryReport>) {
   return {
     status: site?.status || p.injuryStatus || "ACTIVE",
     note: site?.short || null,
+    report: site,
   };
 }
 
@@ -152,6 +156,10 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       locked: Boolean(game && game.state !== "pre"),
       status,
       injuryNote: note,
+      back: (() => {
+        const a = absenceOf(player, injury.report, input.games[0]?.scoringPeriodId ?? 0);
+        return a ? returnLabel(a) : null;
+      })(),
       playProb,
       projection,
       value: game ? playProb * projection.fppg * env : 0,

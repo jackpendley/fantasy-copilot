@@ -31,6 +31,11 @@ export interface WeekInputs {
   availableUntil?: Map<number, number>;
   /** Posted lines by game id (today's scoreboard): the game-environment factor where known. */
   lines?: Map<number, GameLine>;
+  /**
+   * Ruled-out players: the first day each can play again (ESPN's estimated return). Before it
+   * he's out; from it on he's back, whatever today's status says.
+   */
+  outUntil?: Map<number, number>;
 }
 
 /** Rest-of-week chance a listed player plays: today's status applies to the next two days; OUT holds all week. */
@@ -47,6 +52,11 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   const gamesByDay = new Map<number, Set<number>>();
   const projectedByDay = new Map<number, number>();
   const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, input.fromPeriod).fppg]));
+  const chance = (p: RosterPlayer, sp: number, ahead: number) => {
+    const back = input.outUntil?.get(p.id);
+    if (back != null) return sp < back ? 0 : 1;
+    return playChance(injuries.get(p.id) ?? p.injuryStatus ?? "ACTIVE", ahead);
+  };
   let remaining = 0;
   for (const sp of input.periods) {
     const dayGames = input.games.filter((g) => g.scoringPeriodId === sp);
@@ -68,9 +78,7 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
         teams.has(p.proTeamId) &&
         (input.availableFrom?.get(p.id) ?? 0) <= sp &&
         sp <= (input.availableUntil?.get(p.id) ?? Infinity)
-          ? playChance(injuries.get(p.id) ?? p.injuryStatus ?? "ACTIVE", ahead) *
-            (fppg.get(p.id) ?? 0) *
-            env(p.proTeamId)
+          ? chance(p, sp, ahead) * (fppg.get(p.id) ?? 0) * env(p.proTeamId)
           : 0,
       currentSlot: "BE",
     }));

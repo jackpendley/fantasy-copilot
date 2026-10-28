@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { IlPlanNote } from "@/components/fc/il-plan-note";
 import { notFound } from "next/navigation";
 import { ArrowLeftRight, ChevronLeft } from "lucide-react";
 import { PageHeader, SlotChip, StatTile } from "@/components/fc/bits";
@@ -51,6 +52,13 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
           </Button>
         )}
       </PageHeader>
+
+      <IlPlanNote
+        who={t.mine ? "you'd" : "they'd"}
+        plan={t.value.activations
+          .filter((a) => v.injured.has(a.player.id))
+          .map((a) => ({ ...a, absence: v.injured.get(a.player.id)! }))}
+      />
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatTile

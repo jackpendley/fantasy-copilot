@@ -58,6 +58,64 @@ describe("teamValue", () => {
   });
 });
 
+describe("teamValue with injuries", () => {
+  it("counts an injured player only from his estimated return", () => {
+    const hurt = valueContext(games, SLOTS, 1, 10, 1, new Map([[1, { outUntil: 3 }]]));
+    const v = teamValue(mine, hurt);
+    // Days 1-2 without the 30-point center: C28, UTIL C26, PG10 = 64; then 68 again.
+    expect(v.regular).toBeCloseTo((2 * 64 + 4 * 68) * k, 6);
+    expect(v.playoffs).toBeCloseTo(4 * 68 * k, 6);
+  });
+
+  it("activates an IR player on return and cuts whoever adds least from then on", () => {
+    const ctxIR = valueContext(
+      games,
+      { ...SLOTS, IR: 1 },
+      1,
+      10,
+      1,
+      new Map([[9, { outUntil: 5 }]]),
+    );
+    const star = { ...p(9, "C", 35), slot: "IR" };
+    const v = teamValue([...mine, star], ctxIR);
+    // Full roster (4 active): the third center (26, never starting next to 35 and 30) goes.
+    expect(v.activations.map((a) => [a.player.id, a.day, a.drop?.id])).toEqual([[9, 5, 3]]);
+    // Days 1-4: C30, UTIL C28, PG10 = 68. From day 5: C35, UTIL C30, PG10 = 75.
+    expect(v.regular).toBeCloseTo((4 * 68 + 2 * 75) * k, 6);
+    expect(v.playoffs).toBeCloseTo(4 * 75 * k, 6);
+  });
+
+  it("cuts a player who's out for the season before anyone useful", () => {
+    const ctxIR = valueContext(
+      games,
+      { ...SLOTS, IR: 1 },
+      1,
+      10,
+      1,
+      new Map([
+        [9, { outUntil: 5 }],
+        [4, { outUntil: 99 }],
+      ]),
+    );
+    const v = teamValue([...mine, { ...p(9, "C", 35), slot: "IR" }], ctxIR);
+    expect(v.activations[0]!.drop?.id).toBe(4);
+  });
+
+  it("a player who never returns this season needs no roster spot", () => {
+    const ctxIR = valueContext(
+      games,
+      { ...SLOTS, IR: 1 },
+      1,
+      10,
+      1,
+      new Map([[9, { outUntil: 99 }]]),
+    );
+    const v = teamValue([...mine, { ...p(9, "C", 35), slot: "IR" }], ctxIR);
+    expect(v.activations).toEqual([]);
+    expect(v.regular).toBeCloseTo(teamValue(mine, ctx).regular, 6);
+  });
+});
+
 describe("evaluateTrade", () => {
   it("finds a positional swap that helps both lineups even at equal value", () => {
     const e = evaluateTrade(

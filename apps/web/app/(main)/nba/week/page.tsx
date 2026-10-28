@@ -30,6 +30,7 @@ import {
   type Placed,
 } from "@/lib/nba/h2h";
 import { liveRows } from "@/lib/nba/live";
+import { absences, returnLabel } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
 import { matchupHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
@@ -184,17 +185,36 @@ export default async function WeekPage({
   } else {
     // A day ahead: projected lineups from tomorrow's rosters.
     const proj = (p: Parameters<typeof perGameProjection>[0]) => perGameProjection(p, sp).fppg;
+    // Ruled-out players: out until ESPN's estimated return, then back.
+    const out = absences([...data.ahead.me.roster, ...(oppAhead?.roster ?? [])], data.injuries, sp);
+    const outThatDay = (p: { id: number }) => (out.get(p.id)?.outUntil ?? 0) > day;
+    const projAhead = (p: Parameters<typeof perGameProjection>[0]) => (outThatDay(p) ? 0 : proj(p));
+    const statusAhead = (p: Parameters<typeof perGameProjection>[0]) =>
+      outThatDay(p) ? "OUT" : out.has(p.id) ? "ACTIVE" : statusFor(p);
+    const backAhead = (p: { id: number }) => {
+      const a = out.get(p.id);
+      return a && outThatDay(p) ? returnLabel(a) : null;
+    };
     minePlaced = cellsAhead(
       data.ahead.me.roster,
       mine.slotsByDay.get(day),
       data.games,
       day,
-      proj,
-      statusFor,
+      projAhead,
+      statusAhead,
+      backAhead,
     );
     theirsPlaced =
       oppAhead && theirs
-        ? cellsAhead(oppAhead.roster, theirs.slotsByDay.get(day), data.games, day, proj, statusFor)
+        ? cellsAhead(
+            oppAhead.roster,
+            theirs.slotsByDay.get(day),
+            data.games,
+            day,
+            projAhead,
+            statusAhead,
+            backAhead,
+          )
         : [];
   }
   const board = pairBySlot(startingSlots(data.settings.slotCounts), minePlaced, theirsPlaced);

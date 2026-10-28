@@ -102,6 +102,11 @@ export function PlayerRow({
         <div className="flex items-center gap-1.5">
           <span className="truncate font-medium">{row.player.name}</span>
           <StatusPill status={row.status} note={row.injuryNote} />
+          {row.back && (
+            <span className="shrink-0 text-[11px] whitespace-nowrap text-muted-foreground">
+              {row.back}
+            </span>
+          )}
           {!started && row.nba?.starter && (
             <Pill
               tone="success"

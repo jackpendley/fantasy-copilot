@@ -32,6 +32,8 @@ export interface ValueContext {
   rosterLimit: number;
   /** IR slots: ruled-out players there don't take an active spot. */
   irSlots: number;
+  /** Injured players: the first day each can play again (lib/nba/availability.ts). */
+  outUntil: Map<number, number>;
 }
 
 export function valueContext(
@@ -40,6 +42,8 @@ export function valueContext(
   fromDay: number,
   lastDay: number,
   regularWeeks: number,
+  /** Current absences (absences() in availability.ts); none if omitted. */
+  injured: Map<number, { outUntil: number }> = new Map(),
 ): ValueContext {
   const gameDays = new Map<number, Set<number>>();
   for (const g of games) {
@@ -62,47 +66,120 @@ export function valueContext(
     openSlots,
     rosterLimit,
     irSlots: slotCounts.IR ?? 0,
+    outUntil: new Map([...injured].map(([id, a]) => [id, a.outUntil])),
   };
 }
 
+// Copies of a player ({ ...p, slot }) share his stat objects, so cache on those.
+const perGameCache = new WeakMap<object, number>();
+
 /** Expected points per game he plays, discounted for the games he's projected to miss. */
 export function perGameValue(p: RosterPlayer): number {
+  const key = p.games ?? p.season ?? p.projection;
+  const hit = key && perGameCache.get(key);
+  if (hit !== undefined && hit !== null) return hit;
   const proj = p.projection;
   const gp = proj?.avg && proj.total ? proj.total / proj.avg : 70;
-  return perGameProjection(p).fppg * Math.min(1, gp / 82);
+  const v = perGameProjection(p).fppg * Math.min(1, gp / 82);
+  if (key) perGameCache.set(key, v);
+  return v;
 }
 
 export interface TeamValue {
   regular: number;
   playoffs: number;
+  /** Players coming back from the IR slot, and whom the team drops to make room. */
+  activations: Activation[];
 }
 
+export interface Activation {
+  player: RosterPlayer;
+  /** First day he plays again. */
+  day: number;
+  /** Cut to make room (null when there was an open spot). */
+  drop: RosterPlayer | null;
+}
+
+/**
+ * Projected starting-lineup points for the rest of the season. Injured players count from
+ * their estimated return (`ctx.outUntil`). A player returning from the IR slot needs an
+ * active spot: when the roster is full, the team drops whoever would add the fewest lineup
+ * points from that day on (the same rule for every team).
+ */
 export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue {
   const players = roster
-    .filter((p) => p.slot !== "IR" || perGameValue(p) > 0)
-    .map((p) => ({ p, v: perGameValue(p) }));
-  // Many days have the same set of players playing: solve each set once.
-  const memo = new Map<string, number>();
+    .map((p) => ({ p, v: perGameValue(p) }))
+    .filter((x) => x.v > 0 || x.p.slot !== "IR");
+  const first = players.map(({ p }) =>
+    Math.max(ctx.fromDay, ctx.outUntil.get(p.id) ?? ctx.fromDay),
+  );
+  const last = players.map(() => ctx.lastDay);
+  // Who's available each day, as a bitmask over roster indices (rosters stay well under 31).
+  const mask = new Array<number>(ctx.lastDay + 1).fill(0);
+  players.forEach(({ p }, i) => {
+    for (const d of ctx.gameDays.get(p.proTeamId) ?? []) if (d >= first[i]!) mask[d]! |= 1 << i;
+  });
+  // The day's starters (exact greedy), solved once per set of players.
+  const memo = new Map<number, number[]>();
+  const starters = (mask: number) => {
+    let s = memo.get(mask);
+    if (!s) {
+      const playing: number[] = [];
+      for (let i = 0; i < players.length; i++) if (mask & (1 << i)) playing.push(i);
+      s = greedyStarters(
+        playing,
+        (i) => players[i]!.v,
+        (i) => players[i]!.p.positions as Position[],
+        ctx.openSlots,
+      );
+      memo.set(mask, s);
+    }
+    return s;
+  };
+  const playoffDay = (day: number) => matchupPeriodOf(day) > ctx.regularWeeks;
+
+  const activations: Activation[] = [];
+  let active = roster.filter((p) => p.slot !== "IR").length;
+  const returning = players
+    .map((x, i) => ({ ...x, i }))
+    .filter(({ p, i }) => p.slot === "IR" && first[i]! <= ctx.lastDay)
+    .sort((a, b) => first[a.i]! - first[b.i]!);
+  for (const { p, i } of returning) {
+    const day = first[i]!;
+    if (++active <= ctx.rosterLimit) {
+      activations.push({ player: p, day, drop: null });
+      continue;
+    }
+    // Lineup points each player would add from his return on; the fewest goes. A player out
+    // for the rest of the season adds nothing: he's the natural cut.
+    const pts = new Array<number>(players.length).fill(0);
+    for (let d = day; d <= ctx.lastDay; d++) {
+      if (!mask[d]) continue;
+      const w = playoffDay(d) ? PLAYOFF_WEIGHT : 1;
+      for (const k of starters(mask[d]!)) pts[k]! += w * players[k]!.v;
+    }
+    const pool = players
+      .map((x, k) => ({ ...x, k }))
+      .filter(({ p: x, k }) => x.slot !== "IR" && last[k] === ctx.lastDay);
+    const drop = pool.sort((a, b) => pts[a.k]! - pts[b.k]! || a.v - b.v)[0];
+    if (drop) {
+      last[drop.k] = day - 1;
+      for (let d = day; d <= ctx.lastDay; d++) mask[d]! &= ~(1 << drop.k);
+      active--;
+    }
+    activations.push({ player: p, day, drop: drop?.p ?? null });
+  }
+
   let regular = 0;
   let playoffs = 0;
   for (let day = ctx.fromDay; day <= ctx.lastDay; day++) {
-    const playing = players.filter(({ p }) => ctx.gameDays.get(p.proTeamId)?.has(day));
-    if (!playing.length) continue;
-    const key = playing.map(({ p }) => p.id).join(",");
-    let pts = memo.get(key);
-    if (pts === undefined) {
-      pts = greedyStarters(
-        playing,
-        (x) => x.v,
-        (x) => x.p.positions as Position[],
-        ctx.openSlots,
-      ).reduce((a, x) => a + x.v, 0);
-      memo.set(key, pts);
-    }
-    if (matchupPeriodOf(day) > ctx.regularWeeks) playoffs += pts;
+    if (!mask[day]) continue;
+    let pts = 0;
+    for (const k of starters(mask[day]!)) pts += players[k]!.v;
+    if (playoffDay(day)) playoffs += pts;
     else regular += pts;
   }
-  return { regular, playoffs };
+  return { regular, playoffs, activations };
 }
 
 /** Raw rest-of-season points (no lineup limits): how most managers size up a deal. */
@@ -335,7 +412,7 @@ const PER_STAR = 2;
  * Search: the top `pool` players on each roster by market value; every pair of subsets whose
  * market values could pass the partner's check; ranked by a quick estimate (each player's
  * marginal lineup value to the team he'd join or leave, plus the free agents Jack would pick
- * up or minus the players he'd cut when the counts differ); the best `exactPerSize` per size
+ * up or minus the players he'd cut when the counts differ); the best `exactPerSize` (20: the same top 20 ideas as 40 on the live league, in two-thirds the time) per size
  * and partner get the exact evaluation with roster balancing.
  */
 export function findTradeTargets(
@@ -344,7 +421,7 @@ export function findTradeTargets(
   ctx: ValueContext,
   market: MarketContext,
   freeAgents: RosterPlayer[] = [],
-  { perSize = 8, maxSize = 3, pool = 10, exactPerSize = 40 }: TargetOptions = {},
+  { perSize = 8, maxSize = 3, pool = 10, exactPerSize = 20 }: TargetOptions = {},
 ): TradeIdea[] {
   const $ = new Map<number, number>();
   const dollars = (p: RosterPlayer) => {

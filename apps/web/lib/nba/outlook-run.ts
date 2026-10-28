@@ -15,6 +15,7 @@ import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } fr
 import { loadLeague } from "./data";
 import { weekPointsThroughToday } from "./matchup";
 import { buildOutlookInput } from "./outlook";
+import { absences } from "./availability";
 import { dayStarted } from "./roster";
 import { applyTrade, marginalValues, valueContext } from "./trade";
 
@@ -66,10 +67,17 @@ export async function outlookSetup(now = new Date()) {
   ]);
   const tips = league.games.filter((g) => g.scoringPeriodId === today).map((g) => g.date);
   const midDay = today < LAST_SCORING_PERIOD && dayStarted(tips, league.scoreboard, now);
+  const freeAgents = parsePlayerPool(faRaw, cfg.season);
   return {
     data: { ...league, teams: league.ahead.teams, me: league.ahead.me },
     previousTeams,
-    freeAgents: parsePlayerPool(faRaw, cfg.season),
+    freeAgents,
+    // Known injuries, from ESPN's estimated return dates.
+    injured: absences(
+      [...league.ahead.teams.flatMap((t) => t.roster), ...freeAgents],
+      league.injuries,
+      today,
+    ),
     fromDay: midDay ? today + 1 : today,
     bankedNow: midDay
       ? { period: matchupPeriodOf(today), points: weekPointsThroughToday(league, today) }
@@ -84,7 +92,8 @@ export async function runOutlook(
 ): Promise<{ scoringPeriod: number; teams: OutlookTeam[] }> {
   // Stamped with when its data was read, so a move made while it simulates still counts as newer.
   const readAt = new Date();
-  const { data, previousTeams, freeAgents, fromDay, bankedNow } = await outlookSetup(readAt);
+  const { data, previousTeams, freeAgents, fromDay, bankedNow, injured } =
+    await outlookSetup(readAt);
   const { input, activity } = buildOutlookInput({
     teams: data.teams,
     previousTeams,
@@ -96,6 +105,7 @@ export async function runOutlook(
     regularWeeks: data.settings.regularSeasonWeeks,
     fromDay,
     bankedNow,
+    injured,
     seasons,
   });
   // Runs in slices so the server keeps serving pages while it simulates.
@@ -176,7 +186,7 @@ export async function simulateTrade(
   getIds: number[],
   seasons = 500,
 ) {
-  const { data, previousTeams, freeAgents, fromDay, bankedNow } = await outlookSetup();
+  const { data, previousTeams, freeAgents, fromDay, bankedNow, injured } = await outlookSetup();
   const partner = data.teams.find((t) => t.id === partnerId);
   if (!partner) throw new Error("unknown team");
   const give = data.me.roster.filter((p) => giveIds.includes(p.id));
@@ -191,6 +201,7 @@ export async function simulateTrade(
     fromDay,
     LAST_SCORING_PERIOD,
     data.settings.regularSeasonWeeks,
+    injured,
   );
   const taken = new Set<number>();
   const mine = applyTrade(
@@ -231,6 +242,7 @@ export async function simulateTrade(
         regularWeeks: data.settings.regularSeasonWeeks,
         fromDay,
         bankedNow,
+        injured,
         seasons,
       }).input,
     );

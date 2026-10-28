@@ -1,4 +1,6 @@
 import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { IlPlanNote } from "@/components/fc/il-plan-note";
+import { ilReturnPlan } from "@/lib/nba/il-plan";
 import { ApplyMoves } from "@/components/apply-moves";
 import { Callout, DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerRow } from "@/components/fc/player-row";
@@ -148,6 +150,7 @@ export default async function TodayPage({
       {date === today && (
         <PendingMovesNote mine={pendingMoves(data.me.roster, data.ahead.me.roster)} />
       )}
+      {date === today && <IlPlanNote plan={ilReturnPlan(data.ahead.me, data, sp)} />}
 
       {data.warnings.map((w) => (
         <Callout key={w} tone="warning">

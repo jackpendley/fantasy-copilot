@@ -73,6 +73,13 @@ export interface InjuryReport {
   long: string;
   /** When ESPN posted this note, ISO. */
   date: string;
+  /**
+   * ESPN's estimated return date ("2026-11-09"), when it gives one: a projection from the
+   * reported timeline (re-evaluated in two weeks, out 6-8 weeks, out for the season).
+   */
+  returnDate?: string | null;
+  /** Injury type and detail, e.g. "Hamstring" / "Strain". */
+  injury?: string | null;
 }
 
 const idFromLinks = (links: Json[] | undefined): number | null => {
@@ -97,6 +104,10 @@ export function parseInjuries(data: Json): InjuryReport[] {
         short: i.shortComment ?? "",
         long: i.longComment ?? "",
         date: i.date ?? "",
+        returnDate: /^\d{4}-\d{2}-\d{2}/.test(i.details?.returnDate ?? "")
+          ? i.details.returnDate.slice(0, 10)
+          : null,
+        injury: [i.details?.type, i.details?.detail].filter(Boolean).join(" / ") || null,
       });
     }
   }

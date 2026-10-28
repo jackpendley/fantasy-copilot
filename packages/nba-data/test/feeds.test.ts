@@ -35,6 +35,29 @@ describe("parseScoreboard", () => {
 });
 
 describe("parseInjuries", () => {
+  it("keeps ESPN's estimated return date and injury type (synthetic entry)", () => {
+    const [r] = parseInjuries({
+      injuries: [
+        {
+          id: "8",
+          injuries: [
+            {
+              athlete: { id: "11", displayName: "A" },
+              status: "Out",
+              shortComment: "Re-evaluated in two weeks.",
+              date: "2026-10-25T14:56Z",
+              details: { type: "Hamstring", detail: "Strain", returnDate: "2026-11-09" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(r).toMatchObject({
+      playerId: 11,
+      returnDate: "2026-11-09",
+      injury: "Hamstring / Strain",
+    });
+  });
   it("extracts ESPN player ids, status and notes", () => {
     const rows = parseInjuries(fixture("injuries.json"));
     expect(rows.length).toBeGreaterThan(0);

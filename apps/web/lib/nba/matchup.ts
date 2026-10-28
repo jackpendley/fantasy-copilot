@@ -6,6 +6,7 @@ import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import { matchupPeriodOf, scoringPeriodsOf } from "./calendar";
 import type { loadLeague } from "./data";
 import { buildDayBoard, type DayRow } from "./day";
+import { absences } from "./availability";
 import { gameElapsed, isStarting } from "./live";
 import { pendingMoves, weekRoster, type PendingMoves } from "./roster";
 import { projectTeamWeek, winProbability, type TeamWeek, type WeekInputs } from "./week";
@@ -74,6 +75,11 @@ export function matchupView(data: LeagueData, sp: number): MatchupView {
     availableFrom: new Map([...myWeek.availableFrom, ...(oppWeek?.availableFrom ?? [])]),
     availableUntil: new Map([...myWeek.availableUntil, ...(oppWeek?.availableUntil ?? [])]),
     lines: new Map(data.scoreboard.map((g) => [g.gameId, g])),
+    outUntil: new Map(
+      [...absences([...myWeek.roster, ...(oppWeek?.roster ?? [])], data.injuries, sp)].map(
+        ([id, a]) => [id, a.outUntil],
+      ),
+    ),
   };
   const mine = projectTeamWeek(myWeek.roster, {
     ...weekInputs,

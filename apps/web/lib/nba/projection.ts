@@ -7,6 +7,12 @@ import type { RosterPlayer } from "@fantasy-copilot/espn";
 
 /** Games of actual data that count as much as the preseason projection. */
 const PRIOR_GAMES = 15;
+/**
+ * Prior for a player ESPN didn't project (it didn't consider him rosterable): the median
+ * ESPN projection among projected free agents, 15.0 FP/G on Oct 27, 2026. His games are
+ * blended toward it like anyone's, so one big night doesn't make him a starter.
+ */
+const UNPROJECTED_PRIOR = 15;
 /** Minutes trend (MODEL_CARD.md): last 5 games' minutes vs his season, once he has 8 games. */
 const TREND_WINDOW = 5;
 const TREND_MIN_GAMES = 8;
@@ -60,7 +66,14 @@ export function perGameProjection(p: RosterPlayer, asOf?: number): PerGame {
   const gp = seasonAvg && season?.total ? Math.round(season.total / seasonAvg) : 0;
   if (proj == null && seasonAvg == null) return { fppg: 0, gamesPlayed: 0, source: "none" };
   const trend = minutesTrend(p, asOf);
-  if (proj == null) return { fppg: seasonAvg! * trend, gamesPlayed: gp, source: "season" };
+  if (proj == null) {
+    const w = gp / (gp + PRIOR_GAMES);
+    return {
+      fppg: (w * seasonAvg! + (1 - w) * UNPROJECTED_PRIOR) * trend,
+      gamesPlayed: gp,
+      source: "season",
+    };
+  }
   if (!gp || seasonAvg == null) return { fppg: proj, gamesPlayed: 0, source: "projection" };
   const w = gp / (gp + PRIOR_GAMES);
   return { fppg: (w * seasonAvg + (1 - w) * proj) * trend, gamesPlayed: gp, source: "blend" };

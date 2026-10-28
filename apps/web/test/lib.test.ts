@@ -284,3 +284,28 @@ describe("gameEnvironment", () => {
     expect(gameEnvironment({ total: 210, spread: 4 }, true)).toBeLessThan(1);
   });
 });
+
+describe("perGameProjection without an ESPN projection", () => {
+  it("blends a short season toward a free-agent prior instead of trusting one big game", () => {
+    // Synthetic: one game of 38.5 and no ESPN projection (the Mo Bamba case).
+    const p = {
+      id: 1,
+      name: "A",
+      proTeamId: 1,
+      proTeam: "ATL",
+      positions: ["C"],
+      slot: null,
+      injuryStatus: "ACTIVE",
+      percentOwned: 1,
+      percentChange: 0,
+      projection: null,
+      season: { avg: 38.5, total: 38.5, stats: {} },
+      last7: null,
+      last15: null,
+      last30: null,
+    };
+    const v = perGameProjection(p);
+    expect(v.source).toBe("season");
+    expect(v.fppg).toBeCloseTo((38.5 + 15 * 15) / 16, 6);
+  });
+});

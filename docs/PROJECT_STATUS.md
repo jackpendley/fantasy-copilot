@@ -77,12 +77,14 @@
   - ESPN's estimated return dates drive trades, league strength, the week projection and the Outlook;
   - IL returns cost the least useful player, with a plan shown on Today, Waivers and team pages (ADR-026).
 
+- **Waivers by lineup fit (branch `waivers-lineup-fit`):** every add against every drop, season value from rest-of-season lineups, ranked in expected wins (ADR-027). Unprojected players are no longer taken at their raw average.
+
 ## Plan in progress (approved 2026-10-27, third plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
 
-1. Injury timelines and IL returns (this branch).
-2. Waivers by lineup fit (positions, schedule, roster structure).
+1. Injury timelines and IL returns (merged, #23).
+2. Waivers by lineup fit (this branch).
 3. Calibrated win probability (fitted on this league's 2025-26 days).
 4. ESPN-mobile-style Today/Matchup with player cards; the week preloads and day switching is instant.
 5. The most accurate projection: the props blend test (~Oct 29), nightly refit, accuracy tracking.

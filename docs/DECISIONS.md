@@ -296,3 +296,18 @@
 - **Speed:**
   - `teamValue` now uses per-day bitmasks and cached per-game values.
   - The trade search evaluates the top 20 candidates per size and partner instead of 40: the same top 20 ideas on the live league, in about 2.4 s.
+
+## ADR-027: waivers by lineup fit, ranked in expected wins (2026-10-27)
+
+- **Why:**
+  - Every suggestion dropped the same player (Egor Demin), and the top adds were more centers for a roster that already had six.
+  - Season value was raw FP/G × games, so a center who'd never start counted in full. Drop candidates were the five lowest raw values.
+- **Season value of a move** = change in `teamValue` (rest-of-season starting-lineup points, playoff weeks ×2) with the add in place of the drop. That counts positions, every player's schedule, injuries and IL returns (ADR-026). Waiver claims count from when they clear.
+- **Drops:** every droppable player is tried for every add. Ties (bench players who'd start nothing either way) keep the better depth piece.
+- **One currency, expected wins:**
+  - net = this week's change in win chance + (rest-of-season points − this week's) × wins per point;
+  - wins per point = the slope of a week's win probability at an even matchup of a typical week (`pointsToWins`, ~0.24 wins per 100 points).
+  - Each add gets the drop that maximizes net. "Best moves" ranks by it.
+  - Streams that help now but cost more later sit in a folded "this-week-only" list, with the cost shown.
+- **Explanations** come from the same lineups: "Starts ~59 of his 68 games left for you · Robinson would have started 59".
+- **Also fixed:** a player ESPN didn't project (deep free agents) was projected at his raw season average. After one game, Mo Bamba was "38.5 FP/G" and the top suggestion. Such players now blend toward 15 FP/G (the median ESPN projection among projected free agents), with the same 15-game weight as everyone else.

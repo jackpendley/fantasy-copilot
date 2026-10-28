@@ -69,30 +69,41 @@ function OptionRow({
             <span>Open roster spot: no drop needed</span>
           )}
         </div>
+        {o.addUsage && (
+          <div className="mt-1 pl-[50px] text-xs text-muted-foreground">
+            Starts ~{o.addUsage.starts} of his {o.addUsage.games} games left for you
+            {o.drop && o.dropStarts != null && (
+              <>
+                {" "}
+                · {o.drop.name.split(" ").at(-1)} would have started {o.dropStarts}
+              </>
+            )}
+          </div>
+        )}
       </div>
       <div className="flex items-center justify-between gap-4 pl-[50px] sm:pl-0">
         <div className="text-right">
-          {o.deltaWin != null && (
-            <div
-              className={cn(
-                "text-lg font-semibold tabular-nums",
-                o.deltaWin > 0.0005 ? "text-success" : "text-muted-foreground",
-              )}
-            >
-              {signed(o.deltaWin * 100)}% win
-            </div>
-          )}
+          <div
+            className={cn(
+              "text-lg font-semibold tabular-nums",
+              o.netWins > 0.01 ? "text-success" : o.netWins < -0.01 && "text-danger",
+            )}
+            title="Expected wins: this week's change in win chance plus the rest of the season"
+          >
+            {signed(o.netWins, 2)} wins
+          </div>
           <div className="text-xs text-muted-foreground tabular-nums">
-            {signed(o.deltaPts)} pts · {signed(o.deltaStarts, 0)} starts
+            This week {o.deltaWin != null ? `${signed(o.deltaWin * 100)}%` : "—"} (
+            {signed(o.deltaPts, 0)} pts)
           </div>
           <div
             className={cn(
               "text-xs tabular-nums",
-              o.rosDelta < -20 ? "text-warning" : "text-muted-foreground",
+              o.laterWins < -0.05 ? "text-warning" : "text-muted-foreground",
             )}
-            title="Rest-of-season value gained or lost (fantasy points)"
+            title="After this week: lineup points gained or lost, and what that's worth in wins"
           >
-            Season {signed(o.rosDelta, 0)}
+            Later {signed(o.laterWins, 2)} ({signed(o.rosDelta - o.deltaPts, 0)} pts)
           </div>
         </div>
         {o.il ? (
@@ -144,11 +155,12 @@ export default async function WaiversPage({
     .map((f) => f.waiverUntil ?? 0)
     .filter(Boolean)
     .sort((a, b) => a - b)[0];
-  const best = analysis.thisWeek
-    .filter((o) => o.deltaWin == null || o.deltaWin > 0.0005)
-    .slice(0, 6);
+  const best = analysis.best.slice(0, 8);
   const shown = new Set(best.map((o) => o.add.player.id));
-  const longTerm = analysis.longTerm.filter((o) => !shown.has(o.add.player.id)).slice(0, 5);
+  // Streams that help this week but cost more later than they gain now.
+  const streams = analysis.thisWeek
+    .filter((o) => !shown.has(o.add.player.id) && (o.deltaWin ?? 0) > 0.005)
+    .slice(0, 5);
   const pool = analysis.candidates
     .filter((c) => pos === "All" || c.player.positions.includes(pos))
     .slice(0, 40);
@@ -175,8 +187,8 @@ export default async function WaiversPage({
       )}
 
       <section className="space-y-1.5">
-        <SectionTitle aside="Ranked by change in this week's win chance">
-          Best moves this week
+        <SectionTitle aside="Ranked by expected wins: this week plus the rest of the season">
+          Best moves
         </SectionTitle>
         {best.length ? (
           <div className="divide-y overflow-hidden rounded-xl border bg-card">
@@ -185,21 +197,32 @@ export default async function WaiversPage({
             ))}
           </div>
         ) : (
-          <Callout tone="info">No add raises your chance of winning this week right now.</Callout>
+          <Callout tone="info">
+            No add improves your expected wins right now: every free agent either wouldn&apos;t
+            crack your lineup or costs more later than it gains this week.
+          </Callout>
         )}
+        <p className="px-1 text-xs text-muted-foreground">
+          Every add is tried against every player you could drop, with your real lineup slots, each
+          player&apos;s schedule, injuries and IL returns. &ldquo;Later&rdquo; turns the rest of the
+          season&apos;s lineup points into wins (~{(analysis.winsPerPoint * 100).toFixed(2)} wins
+          per 100 points; playoff weeks count double), so a stream that costs a useful player only
+          shows up when it&apos;s worth it.
+        </p>
       </section>
 
-      {longTerm.length > 0 && (
-        <section className="space-y-1.5">
-          <SectionTitle aside="Ranked by rest-of-season value; this week's cost shown">
-            Best long-term adds
-          </SectionTitle>
-          <div className="divide-y overflow-hidden rounded-xl border bg-card">
-            {longTerm.map((o) => (
+      {streams.length > 0 && (
+        <details className="group">
+          <summary className="cursor-pointer list-none px-1 text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            This-week-only streams ({streams.length}): they help now but cost more later
+            <span className="ml-1 inline-block transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="mt-1.5 divide-y overflow-hidden rounded-xl border bg-card">
+            {streams.map((o) => (
               <OptionRow key={o.add.player.id} o={o} addsLeft={addsLeft} addsCap={addsCap} />
             ))}
           </div>
-        </section>
+        </details>
       )}
 
       <section className="space-y-1.5">

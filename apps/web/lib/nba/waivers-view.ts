@@ -7,7 +7,9 @@ import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
 import { loadFreeAgents, loadLeague } from "./data";
 import { buildDayBoard } from "./day";
 import { matchupView } from "./matchup";
+import { absences } from "./availability";
 import { rosterLocked } from "./roster";
+import { valueContext } from "./trade";
 import { waiverAnalysis } from "./waivers";
 
 export async function loadWaiverView(now = new Date()) {
@@ -62,6 +64,15 @@ export async function loadWaiverView(now = new Date()) {
     irSlots: data.settings.slotCounts.IR ?? 0,
     rosterLocked: locked,
     lastDay: LAST_SCORING_PERIOD,
+    // Rest-of-season lineup fit (positions, schedule, injuries, IL returns).
+    season: valueContext(
+      data.games,
+      data.settings.slotCounts,
+      sp,
+      LAST_SCORING_PERIOD,
+      data.settings.regularSeasonWeeks,
+      absences([...data.ahead.me.roster, ...freeAgents.map((f) => f.player)], data.injuries, sp),
+    ),
   });
   const addsCap = data.settings.addsPerWeek ?? 3;
   const addsUsed = data.me.activity?.addsByPeriod[view.mp] ?? 0;

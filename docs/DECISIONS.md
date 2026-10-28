@@ -355,3 +355,10 @@
   - The weight stays 0 unless the test passes; it's refit nightly and judged each time on the later half of the days.
   - `bestPerGame` (`lib/nba/best.ts`) turns it into today's projections. Today, Matchup (and its win odds) and the player card use them. It adds nothing while the weight is 0.
 - **Accuracy page** (`/nba/model`, linked from Settings and the card): average miss per source over the last 7 and 30 days and the season, the blend's status, and every pre-registered test with its result.
+
+## ADR-031: no teammate role boost (2026-10-27)
+
+- A per-game boost for minutes vacated by absent regular teammates was tried in three forms (any absence, scaled by role, same position) on 2025-26.
+- None beat the current model even in exploration (best: −0.003 FP/game, CI [−0.009, 0.004]), so it isn't pre-registered or shipped (MODEL_CARD.md).
+- Role changes keep coming through the blend toward this season's games and the minutes trend.
+- `scripts/backtest-projection.ts` keeps the variants for a later retry with real pregame absences (`status_events`).

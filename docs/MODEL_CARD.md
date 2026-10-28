@@ -191,3 +191,23 @@ Reliability on the test weeks, P(home wins) bucket → actual:
   - (B) the variance form a·E + b·E², refit on these states.
 - **Test:** weeks 8–13.
 - **Ships:** whichever candidate has the lower Brier score than the current model on the test weeks (if both, the lower). Report its reliability table.
+
+## Teammate role boost (2026-10-27): no gain, not shipped
+
+- **Hypothesis:** when regular teammates sit, the remaining players get more minutes and shots. The minutes trend only catches that after a few games.
+- **Feature, point in time:** minutes vacated by absent regulars. A regular averaged 20+ minutes over his last 10 games, the last of them for this team within 10 days; he's absent when he has no entry in his team's game.
+  - In the backtest that's who didn't play; in production it would be the injury report. Inactive lists are out about an hour before tip.
+- **Model:** current × (1 + k × vacated ÷ 240), optionally scaled by his own minutes, or counting only absent teammates who share a position.
+- **Exploration, 2025-26** (271 players, 16,756 games), vs the current model (blend + minutes trend + game environment):
+
+| Variant                     | k = 0.25               | k = 0.5                | k = 1                 |
+| --------------------------- | ---------------------- | ---------------------- | --------------------- |
+| any absent regular          | +0.005 [−0.006, 0.017] | +0.045 [0.020, 0.070]  | +0.220 [0.165, 0.274] |
+| … scaled by his minutes     | +0.008 [−0.003, 0.019] | +0.046 [0.022, 0.069]  | +0.206 [0.152, 0.261] |
+| same-position absences only | −0.003 [−0.009, 0.004] | +0.002 [−0.010, 0.014] | +0.038 [0.012, 0.063] |
+
+**Reading:**
+
+- No variant beats the current model even on the season it was explored on, so there's nothing to pre-register for a held-out test. **Not shipped.**
+- Role changes still reach the projection through the blend toward this season's games and the minutes trend (both tested).
+- **Possible later:** a minutes-share model by position once the injury-report history (`status_events`, with return dates since Oct 27) covers enough games to know absences before tip.

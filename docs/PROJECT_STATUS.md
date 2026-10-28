@@ -83,6 +83,8 @@
 
 - **Today & Matchup redesign (branch `matchup-cards`):** ESPN-mobile rows, one unlabeled projection, fixed-size boards with instant day switching, and player cards everywhere (ADR-029).
 
+- **Accuracy and blend (branch `accuracy-blend`):** every player's projections logged (ours, ESPN, Vegas); nightly props test sets the blend weight only if it passes; `/nba/model` shows accuracy (ADR-030).
+
 ## Plan in progress (approved 2026-10-27, third plan)
 
 `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`:
@@ -90,8 +92,8 @@
 1. Injury timelines and IL returns (merged, #23).
 2. Waivers by lineup fit (merged, #24).
 3. Win probability (merged, #26; recalibration test after week 13).
-4. ESPN-mobile-style Today/Matchup with player cards (this branch).
-5. The most accurate projection: the props blend test (~Oct 29), nightly refit, accuracy tracking.
+4. ESPN-mobile-style Today/Matchup with player cards (merged, #27).
+5. The most accurate projection (this branch). The props test runs itself each morning; ~800 games around Oct 29.
 6. Teammate role boost, backtest-gated.
 
 ## Earlier plan (2026-10-20, second plan): done

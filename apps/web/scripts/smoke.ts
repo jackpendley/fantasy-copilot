@@ -24,6 +24,7 @@ const PAGES = [
     (s) => `/nba/league/trades?size=${s}`,
   ),
   "/settings",
+  "/nba/model",
   // The player card's data (Tatum).
   "/api/players/4065648/card",
 ];

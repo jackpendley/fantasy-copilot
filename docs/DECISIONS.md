@@ -343,3 +343,15 @@
     - schedule.
   - It replaces the tap-to-expand box score. The Trades page keeps its checkboxes (a tap there toggles the pick).
 - **Client-safe helpers:** `fmtPts`, `slotRank` and `shortName` moved to `lib/display.ts`. `lib/format.ts`, which needs the server-only env, re-exports them. Game-time labels are formatted on the server.
+
+## ADR-030: the most accurate projection: tracked, blended only through the test (2026-10-27)
+
+- **Jack's call:** one number under each score, chosen by measured accuracy (not the highest), while our own model keeps being improved.
+- **Logging** (migration 0009):
+  - The pregame snapshot now stores our projection for **every** player with a game, plus ESPN's preseason one as a baseline, and Vegas' where posted. Before, only players with props were logged.
+  - Morning box scores (`game_results`) score them.
+- **Blend:**
+  - Each morning, after recording results, `refreshBlend` re-runs the pre-registered props test (`lib/nba/props-eval.ts`) on everything logged and stores the outcome (`model_settings.props_blend`).
+  - The weight stays 0 unless the test passes; it's refit nightly and judged each time on the later half of the days.
+  - `bestPerGame` (`lib/nba/best.ts`) turns it into today's projections. Today, Matchup (and its win odds) and the player card use them. It adds nothing while the weight is 0.
+- **Accuracy page** (`/nba/model`, linked from Settings and the card): average miss per source over the last 7 and 30 days and the season, the blend's status, and every pre-registered test with its result.

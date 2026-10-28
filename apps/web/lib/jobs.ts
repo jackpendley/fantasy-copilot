@@ -8,6 +8,7 @@ import { sendAlertOnce } from "./push";
 import { gamedayAlerts } from "./nba/alerts";
 import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calendar";
 import { loadFreeAgents, loadLeague } from "./nba/data";
+import { refreshBlend } from "./nba/accuracy";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
@@ -168,12 +169,24 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
           data.settings.scoring,
         )
       : {};
+  // Then re-run the pre-registered props test; the blend weight only moves if it passes.
+  const blend =
+    snapshot === "morning"
+      ? await refreshBlend()
+          .then((b) => ({
+            blendWeight: b.weight,
+            blendShips: b.ships,
+            blendGames: b.collected.games,
+          }))
+          .catch(() => ({}))
+      : {};
   return {
     [`${snapshot}Props`]: lines.props,
     gamesWithLines: lines.games,
     newStatusEvents: status.newEvents,
     ...snap,
     ...results,
+    ...blend,
   };
 }
 

@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PushSettings } from "@/components/push-settings";
 import { PageHeader } from "@/components/fc/bits";
@@ -17,6 +19,19 @@ export default async function SettingsPage() {
   return (
     <>
       <PageHeader title="Settings" />
+
+      <Link
+        href="/nba/model"
+        className="flex items-center justify-between rounded-xl border bg-card px-4 py-3 text-sm hover:bg-muted/50"
+      >
+        <span>
+          <span className="font-medium">Model accuracy</span>
+          <span className="block text-xs text-muted-foreground">
+            How each projection source has done this season, and every pre-registered test
+          </span>
+        </span>
+        <ChevronRight className="size-4 text-muted-foreground" />
+      </Link>
       <Card>
         <CardHeader>
           <CardTitle>Appearance</CardTitle>

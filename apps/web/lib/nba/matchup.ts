@@ -37,7 +37,12 @@ export interface MatchupView {
   pWin: number | null;
 }
 
-export function matchupView(data: LeagueData, sp: number): MatchupView {
+/** `perGame`: today's projections to use instead of our model's (the props blend, lib/nba/best.ts). */
+export function matchupView(
+  data: LeagueData,
+  sp: number,
+  perGame?: Map<number, number>,
+): MatchupView {
   const mp = matchupPeriodOf(sp);
   const periods = scoringPeriodsOf(mp);
   const matchup = data.matchups.find(
@@ -60,6 +65,7 @@ export function matchupView(data: LeagueData, sp: number): MatchupView {
       scoreboard: data.scoreboard,
       injuries: data.injuries,
       lineups: data.lineups,
+      perGame,
     }).rows;
   const myToday = boardOf(data.me);
   const oppToday = opp ? boardOf(opp) : null;

@@ -137,3 +137,19 @@ Several variants were tried on this season, so it is **not** a clean test.
 - **Problem:** ESPN doesn't project some players (deep free agents, late signings). Before, they were projected at their raw season average, so after one game Mo Bamba was "38.5 FP/G".
 - **Fix:** they now blend toward 15 FP/G with the same 15-game prior weight as everyone else. 15 FP/G is the median ESPN projection among the 180 projected free agents on Oct 27.
 - **Scope:** this is a fallback, not a model change. It only affects players with no ESPN projection, which the walk-forward backtest (built on rostered players' priors) doesn't cover. Revisit if logged accuracy (PR 5) shows a bias for these players.
+
+## Weekly win probability
+
+### Pre-registration (2026-10-27, before any fitting)
+
+- **Problem:** `winProbability` uses a margin spread of 0.14 × points still to come for each side. That shrinks linearly as the week runs out, but random game-to-game noise shrinks only with the square root of the games left. Week 1 showed 99% with four days left and 100% before Sunday's games.
+- **Data:** this league's 2025-26 regular season (ESPN, same league id): per-day points for both teams in every matchup.
+  - At the start of each day: margin so far, expected points still to come for each team, and the final margin.
+  - Expected points still to come = the team's points per NBA game on the slate in earlier weeks × NBA games left that week (point in time; week 1 skipped).
+- **Candidate:** variance of the rest-of-week margin = a·(E₁ + E₂) + b·(E₁² + E₂²), where E is each team's expected points still to come.
+  - The first term is game-to-game noise; the second is shared surprises like injuries, rest and lineup misses.
+  - a and b are fitted by maximum likelihood on weeks 2–10.
+- **Test:** weeks 11–19, every matchup-day.
+  - Brier score of P(win) for the candidate vs the current model, plus a reliability table.
+  - The same comparison restricted to the last two days of a week.
+- **Ships if** the candidate's Brier score is lower on weeks 11–19. Separately, the app never shows 100% or 0% until no games are left.

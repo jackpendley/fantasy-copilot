@@ -15,7 +15,14 @@ import {
   type PropLine,
 } from "@fantasy-copilot/nba-data";
 import { db } from "@/lib/db";
-import { gameEnvironment, perGameProjection, type GameLine } from "./projection";
+import { defenseTable } from "./defense-table";
+import {
+  gameEnvironment,
+  matchupFactor,
+  perGameProjection,
+  type DefenseTable,
+  type GameLine,
+} from "./projection";
 import { vegasProjection } from "./vegas";
 
 export type Snapshot = "morning" | "pregame" | "close";
@@ -48,6 +55,8 @@ export interface ProjectionContext {
   scoring: Record<string, number>;
   /** Scoring period of these games (the projection's as-of day). */
   sp: number;
+  /** Opponent defense by position; loaded here when not given. */
+  defense?: DefenseTable | null;
 }
 
 /**
@@ -64,6 +73,8 @@ export async function collectMarketData(
   projections?: ProjectionContext,
 ): Promise<{ games: number; props: number }> {
   const board = await fetchScoreboard(yyyymmdd);
+  if (projections && projections.defense === undefined)
+    projections = { ...projections, defense: await defenseTable().catch(() => null) };
   const pre = games.filter((g) => {
     const s = board.find((b) => b.gameId === g.gameId);
     return (s ? s.state === "pre" : true) && g.date > now.getTime();
@@ -184,7 +195,13 @@ async function storeProjections(
     if (p.proTeamId !== g.homeProTeamId && p.proTeamId !== g.awayProTeamId) continue;
     const base = perGameProjection(p, ctx.sp).fppg;
     if (base <= 0) continue;
-    const env = gameEnvironment(board, p.proTeamId === g.homeProTeamId);
+    const home = p.proTeamId === g.homeProTeamId;
+    const env = gameEnvironment(board, home);
+    const matchup = matchupFactor(
+      ctx.defense,
+      home ? g.awayProTeamId : g.homeProTeamId,
+      p.positions,
+    );
     const props = byPlayer.get(p.id) ?? [];
     rows.push({
       game_id: g.gameId,
@@ -192,7 +209,8 @@ async function storeProjections(
       snapshot,
       captured_at: now,
       tip: new Date(g.date),
-      model_fppg: base * env,
+      model_fppg: base * env * matchup,
+      matchup_factor: matchup,
       vegas_fppg: vegasProjection(props, p.projection?.stats, base, ctx.scoring)?.fppg ?? null,
       espn_fppg: p.projection?.avg ?? null,
     });
@@ -205,6 +223,7 @@ async function storeProjections(
     "captured_at",
     "tip",
     "model_fppg",
+    "matchup_factor",
     "vegas_fppg",
     "espn_fppg",
   ] as const;
@@ -213,7 +232,7 @@ async function storeProjections(
         insert into pregame_projections ${db()(rows, ...cols)}
         on conflict (game_id, player_id, snapshot) do update set
           captured_at = excluded.captured_at, model_fppg = excluded.model_fppg,
-          vegas_fppg = excluded.vegas_fppg
+          matchup_factor = excluded.matchup_factor, vegas_fppg = excluded.vegas_fppg
       `
     : db()`insert into pregame_projections ${db()(rows, ...cols)} on conflict do nothing`);
 }

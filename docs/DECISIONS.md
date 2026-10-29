@@ -411,3 +411,10 @@
 - DARKO: daily projection, scored with league settings. Its data endpoint has no DPM.
 
 **Bars:** FG and FT are one net bar each.
+
+## ADR-036: opponent defense by position ships; teammate-absence minutes don't (2026-10-29)
+
+- **Opponent defense by position:** passed the pre-registered held-out test (MODEL_CARD).
+  - The factor (opponent × the player's first listed position, shrunk by 200 player-games) multiplies the daily and weekly projections next to the Vegas game environment.
+  - It is rebuilt nightly. The logged projection records the factor, and the table is computed with it divided back out (no feedback).
+- **Teammate absences as minutes:** worse at every setting on 2025-26, so not shipped. Sportsbook props handle tonight's absences once the blend passes its test.

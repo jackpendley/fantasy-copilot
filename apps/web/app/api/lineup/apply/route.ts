@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
   forgetResponses();
   const data = await loadLeague(sp, date);
   const board = buildDayBoard({
+    defense: data.defense,
     roster: data.me.roster,
     slotCounts: data.settings.slotCounts,
     games: data.games.filter((g) => g.scoringPeriodId === sp),

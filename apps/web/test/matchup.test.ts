@@ -75,6 +75,7 @@ function league(meToday: RosterPlayer[], meAhead: RosterPlayer[]) {
     scoreboard: [],
     injuries: [],
     lineups: null,
+    defense: null,
     warnings: [],
   };
 }

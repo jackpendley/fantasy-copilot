@@ -20,6 +20,7 @@ export async function loadWaiverView(now = new Date()) {
 
   const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
   const board = buildDayBoard({
+    defense: data.defense,
     roster: data.me.roster,
     slotCounts: data.settings.slotCounts,
     games: todayGames,

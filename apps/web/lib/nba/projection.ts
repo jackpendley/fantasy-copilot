@@ -114,6 +114,21 @@ const ENV_BETA = 0.75;
  */
 export const LEAGUE_TEAM_TOTAL = 115.3;
 
+/**
+ * Opponent defense against a position (MODEL_CARD, passed 2026-10-29), keyed
+ * `${opponentProTeamId}|${position}`; built nightly by lib/nba/defense.ts.
+ */
+export type DefenseTable = Record<string, number>;
+
+/** How much better or worse his position does against this opponent (1 = average). */
+export function matchupFactor(
+  table: DefenseTable | null | undefined,
+  opponentProTeamId: number,
+  positions: readonly string[],
+): number {
+  return table?.[`${opponentProTeamId}|${positions[0]}`] ?? 1;
+}
+
 /** A game's line as the scoreboard has it: total and home spread (negative = home favored). */
 export interface GameLine {
   total: number | null;

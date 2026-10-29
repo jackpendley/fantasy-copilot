@@ -112,6 +112,24 @@ const minutesRate =
     return min * rate;
   };
 
+/**
+ * Minutes x rate with absent teammates' minutes (pre-registration 2026-10-29, family A): his
+ * expected minutes grow by kSame x the minutes absent same-position regulars usually play,
+ * plus kOther x the rest, capped at 40. His per-minute rate is unchanged.
+ */
+const minutesRateAbsences =
+  (kMin: number, kRate: number, kSame: number, kOther: number): Predictor =>
+  (prior, games, next) => {
+    const base = minutesRate(kMin, kRate)(prior, games, next);
+    if (!games.length || !next.priorMin || !next.vacated) return base;
+    const n = games.length;
+    const min = (n * mean(games.map((g) => g.min)) + kMin * next.priorMin) / (n + kMin);
+    if (!min) return base;
+    const extra =
+      kSame * next.vacatedSamePosition + kOther * (next.vacated - next.vacatedSamePosition);
+    return base * (Math.min(40, min + extra) / min);
+  };
+
 /** Scale by recent minutes vs his season minutes (role changes show up in minutes first). */
 const minutesTrend =
   (base: Predictor, window: number, strength: number): Predictor =>
@@ -283,6 +301,15 @@ async function main() {
       minutesTrend(blend(15), 5, 0.5),
       0.75,
     ),
+    // Pre-registered 2026-10-29 (family A): absent teammates' minutes on the shipped model.
+    ...Object.fromEntries(
+      [0.1, 0.2, 0.3].flatMap((ks) =>
+        [0, 0.05].map((ko) => [
+          `A: absences kSame ${ks} kOther ${ko}`,
+          gameEnvironment(minutesTrend(minutesRateAbsences(2, 15, ks, ko), 5, 0.5), 0.75),
+        ]),
+      ),
+    ),
     // Pre-registered 2026-10-29: minutes x rate, then the shipped trend and environment.
     ...Object.fromEntries(
       [2, 4, 8].flatMap((km) =>
@@ -365,6 +392,23 @@ async function main() {
   const vacatedSame = vacatedMinutes(playerGames, (id, absent) =>
     [...(positions.get(id) ?? [])].some((pos) => positions.get(absent)?.has(pos)),
   );
+  // Family B (opponent defense against each position) needs every game's baseline first.
+  const firstPosition = new Map(
+    [...league.teams.flatMap((t) => t.roster), ...fas.map((f) => f.player)].map((p) => [
+      p.id,
+      p.positions[0] ?? "?",
+    ]),
+  );
+  const recs: {
+    id: number;
+    day: string;
+    opp: string;
+    pos: string;
+    pred: number;
+    actual: number;
+    early: boolean;
+  }[] = [];
+
   for (const { id, prev, cur } of logs) {
     const fp = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
     const prevGames = prev.filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0);
@@ -394,6 +438,15 @@ async function main() {
         priorMin,
         priorRate,
       };
+      recs.push({
+        id,
+        day: etDate(new Date(g.date)),
+        opp: g.opponent,
+        pos: firstPosition.get(id) ?? "?",
+        pred: predictors[BASELINE]!(prior, seen, next),
+        actual,
+        early: seen.length < 20,
+      });
       for (const [k, pred] of Object.entries(predictors)) {
         const e = Math.abs(pred(prior, seen, next) - actual);
         err[k]!.all.push(e);
@@ -404,6 +457,50 @@ async function main() {
     }
     for (const k of Object.keys(predictors))
       perPlayer[k]!.push(mean(mine[k]!) - mean(mine[BASELINE]!));
+  }
+
+  // Family B: f = (n r + k) / (n + k) from the opponent's earlier days against this position.
+  {
+    const ks = [100, 200, 400];
+    const byPlayer = new Map<number, { base: number[]; cand: number[][] }>();
+    const acc = new Map<string, { a: number; p: number; n: number }>();
+    const days = [...new Set(recs.map((r) => r.day))].sort();
+    const byDay = new Map<string, typeof recs>();
+    for (const r of recs) {
+      if (!byDay.has(r.day)) byDay.set(r.day, []);
+      byDay.get(r.day)!.push(r);
+    }
+    for (const k of ks)
+      err[`B: opponent defense by position k ${k}`] = { all: [], early: [], late: [] };
+    for (const day of days) {
+      const today = byDay.get(day)!;
+      for (const r of today) {
+        const s = acc.get(`${r.opp}|${r.pos}`);
+        const ratio = s && s.p > 0 ? s.a / s.p : 1;
+        const n = s?.n ?? 0;
+        if (!byPlayer.has(r.id)) byPlayer.set(r.id, { base: [], cand: ks.map(() => []) });
+        const bp = byPlayer.get(r.id)!;
+        bp.base.push(Math.abs(r.pred - r.actual));
+        ks.forEach((k, i) => {
+          const f = (n * ratio + k) / (n + k);
+          const e = Math.abs(r.pred * f - r.actual);
+          bp.cand[i]!.push(e);
+          const bucket = err[`B: opponent defense by position k ${k}`]!;
+          bucket.all.push(e);
+          (r.early ? bucket.early : bucket.late).push(e);
+        });
+      }
+      for (const r of today) {
+        const key = `${r.opp}|${r.pos}`;
+        const s = acc.get(key) ?? { a: 0, p: 0, n: 0 };
+        acc.set(key, { a: s.a + r.actual, p: s.p + r.pred, n: s.n + 1 });
+      }
+    }
+    ks.forEach((k, i) => {
+      perPlayer[`B: opponent defense by position k ${k}`] = [...byPlayer.values()].map(
+        (b) => mean(b.cand[i]!) - mean(b.base),
+      );
+    });
   }
 
   const rows = Object.entries(err)

@@ -48,7 +48,7 @@ import { marketContext, marketValue } from "./market";
 import { propsForGames } from "./market-data";
 import { scoreGames, summarize } from "./player";
 import { loadPlayer, loadPlayerPool } from "./pool";
-import { gameEnvironment, perGameProjection } from "./projection";
+import { gameEnvironment, matchupFactor, perGameProjection } from "./projection";
 import { teamValue, valueContext } from "./trade";
 import { vegasProjection } from "./vegas";
 
@@ -112,6 +112,8 @@ export interface PlayerCardData {
     vegasLines: { market: string; line: number }[];
     /** Vegas game-environment factor for the next game (1 = average). */
     environment: number;
+    /** The opponent's defense against his position (1 = average). */
+    matchup: number;
     /** Minutes our model expects (minutes x rate), when it has them. */
     minutes: number | null;
   };
@@ -227,8 +229,15 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
   // Projections for the next game.
   const ours = model(nextGame?.scoringPeriodId ?? sp);
   const nextLine = nextGame && data.scoreboard.find((g) => g.gameId === nextGame.gameId);
-  const environment = nextGame
-    ? gameEnvironment(nextLine ?? null, nextGame.homeProTeamId === pl.proTeamId)
+  const nextHome = nextGame?.homeProTeamId === pl.proTeamId;
+  const environment = nextGame ? gameEnvironment(nextLine ?? null, nextHome) : 1;
+  // The opponent's defense against his position (1 before the first nightly run).
+  const matchup = nextGame
+    ? matchupFactor(
+        data.defense,
+        nextHome ? nextGame.awayProTeamId : nextGame.homeProTeamId,
+        pl.positions,
+      )
     : 1;
   const nextProps =
     nextGame && nextGame.scoringPeriodId === sp
@@ -286,7 +295,13 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
     const fp = line ? fantasyPoints(withDerived(line), scoring) : 0;
     const today = model(sp);
     const pregame = bestProjection(
-      today.fppg * gameEnvironment(todayBoard, home),
+      today.fppg *
+        gameEnvironment(todayBoard, home) *
+        matchupFactor(
+          data.defense,
+          home ? todayGame.awayProTeamId : todayGame.homeProTeamId,
+          pl.positions,
+        ),
       null,
       blendWeight,
     );
@@ -375,8 +390,8 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
     live,
     next: nextGame ? { ...asGame(nextGame), today: nextGame.scoringPeriodId === sp } : null,
     projection: {
-      best: bestProjection(ours.fppg * environment, vegas?.fppg ?? null, blendWeight),
-      ours: ours.fppg * environment,
+      best: bestProjection(ours.fppg * environment * matchup, vegas?.fppg ?? null, blendWeight),
+      ours: ours.fppg * environment * matchup,
       espn: pl.projection?.avg ?? null,
       vegas: vegas?.fppg ?? null,
       vegasLines: nextProps.map((l: { market: string; line: number }) => ({
@@ -384,6 +399,7 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
         line: l.line,
       })),
       environment,
+      matchup,
       minutes: ours.minutes ?? null,
     },
     form: {

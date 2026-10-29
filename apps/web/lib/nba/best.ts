@@ -7,12 +7,17 @@ import type { LeagueSettings, ProGame, RosterPlayer } from "@fantasy-copilot/esp
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import { bestProjection, blendSetting } from "./accuracy";
 import { propsForGames } from "./market-data";
-import { gameEnvironment, perGameProjection } from "./projection";
+import { gameEnvironment, matchupFactor, perGameProjection, type DefenseTable } from "./projection";
 import { vegasProjection } from "./vegas";
 
 export async function bestPerGame(
   players: RosterPlayer[],
-  data: { games: ProGame[]; scoreboard: ScoreboardGame[]; settings: LeagueSettings },
+  data: {
+    games: ProGame[];
+    scoreboard: ScoreboardGame[];
+    settings: LeagueSettings;
+    defense?: DefenseTable | null;
+  },
   sp: number,
 ): Promise<Map<number, number> | undefined> {
   const weight = (await blendSetting().catch(() => null))?.weight ?? 0;
@@ -24,12 +29,14 @@ export async function bestPerGame(
     const g = today.find((x) => x.homeProTeamId === p.proTeamId || x.awayProTeamId === p.proTeamId);
     if (!g) continue;
     const base = perGameProjection(p, sp).fppg;
+    const home = g.homeProTeamId === p.proTeamId;
     const ours =
       base *
       gameEnvironment(
         data.scoreboard.find((s) => s.gameId === g.gameId),
-        g.homeProTeamId === p.proTeamId,
-      );
+        home,
+      ) *
+      matchupFactor(data.defense, home ? g.awayProTeamId : g.homeProTeamId, p.positions);
     const vegas = vegasProjection(
       props.get(p.id) ?? [],
       p.projection?.stats,

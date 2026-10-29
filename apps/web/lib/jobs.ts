@@ -10,6 +10,7 @@ import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calenda
 import { loadFreeAgents, loadLeague } from "./nba/data";
 import { refreshBlend } from "./nba/accuracy";
 import { refreshPbpPlayers } from "./nba/advanced";
+import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
@@ -91,6 +92,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     : null;
 
   const board = buildDayBoard({
+    defense: data.defense,
     roster: data.me.roster,
     slotCounts: data.settings.slotCounts,
     games,
@@ -153,6 +155,11 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       await log("market-data", "error", e.message);
       return null;
     });
+    // Opponent defense by position from every result so far (after yesterday's box scores).
+    const defense = await refreshDefense().catch(async (e: Error) => {
+      await log("defense", "error", e.message);
+      return null;
+    });
     const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
     const result = {
       scoringPeriod,
@@ -162,6 +169,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       tradesRefreshed: trades,
       movesChecked: moves,
       pbpPlayers: pbp,
+      defense,
       ...states,
       ...market,
     };

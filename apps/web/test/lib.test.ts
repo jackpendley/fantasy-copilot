@@ -14,6 +14,7 @@ import {
   minutesTrend,
   perGameProjection,
   gameEnvironment,
+  matchupFactor,
   LEAGUE_TEAM_TOTAL,
 } from "@/lib/nba/projection";
 import { projectTeamWeek, winChanceLabel, winProbability } from "@/lib/nba/week";
@@ -195,6 +196,24 @@ describe("week", () => {
     expect(wk.startsByDay.get(2)!.size).toBe(0);
     expect(wk.remaining).toBeGreaterThan(0);
   });
+  it("scales each starter by the opponent's defense against his position", () => {
+    const input = {
+      periods: [1],
+      fromPeriod: 1,
+      games: OPENING,
+      slotCounts: settings.slotCounts,
+      injuries: [],
+    };
+    const base = projectTeamWeek(roster, input);
+    // Every opponent gives up 10% more to everyone (synthetic table).
+    const table = Object.fromEntries(
+      OPENING.flatMap((g) => [g.homeProTeamId, g.awayProTeamId]).flatMap((t) =>
+        ["PG", "SG", "SF", "PF", "C"].map((pos) => [`${t}|${pos}`, 1.1]),
+      ),
+    );
+    const tougher = projectTeamWeek(roster, { ...input, defense: table });
+    expect(tougher.remaining).toBeCloseTo(base.remaining * 1.1, 6);
+  });
   it("gives sensible win probabilities", () => {
     expect(winProbability(0, 1000, 0, 1000)).toBeCloseTo(0.5, 6);
     expect(winProbability(500, 500, 0, 900)).toBeGreaterThan(0.6);
@@ -355,5 +374,15 @@ describe("perGameProjection: minutes x rate", () => {
     const v = perGameProjection(noMin);
     expect(v.source).toBe("blend");
     expect(v.fppg).toBeCloseTo((4 * 28 + 15 * 20) / 19, 9);
+  });
+});
+
+describe("matchupFactor", () => {
+  it("looks up the opponent and his first listed position, 1 when unknown", () => {
+    const table = { "9|C": 1.06, "9|PG": 0.95 };
+    expect(matchupFactor(table, 9, ["C", "PF"])).toBe(1.06);
+    expect(matchupFactor(table, 9, ["PF", "C"])).toBe(1);
+    expect(matchupFactor(table, 10, ["C"])).toBe(1);
+    expect(matchupFactor(null, 9, ["C"])).toBe(1);
   });
 });

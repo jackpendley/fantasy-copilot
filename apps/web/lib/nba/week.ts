@@ -4,7 +4,13 @@
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { optimizeLineup, playProbability, type Position } from "@fantasy-copilot/fantasy-core";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
-import { gameEnvironment, perGameProjection, type GameLine } from "./projection";
+import {
+  gameEnvironment,
+  matchupFactor,
+  perGameProjection,
+  type DefenseTable,
+  type GameLine,
+} from "./projection";
 
 export interface TeamWeek {
   /** Per scoring period: ids projected to start (and with a game). */
@@ -36,6 +42,8 @@ export interface WeekInputs {
    * he's out; from it on he's back, whatever today's status says.
    */
   outUntil?: Map<number, number>;
+  /** Opponent defense by position (lib/nba/defense.ts). */
+  defense?: DefenseTable | null;
 }
 
 /** Rest-of-week chance a listed player plays: today's status applies to the next two days; OUT holds all week. */
@@ -61,11 +69,17 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   for (const sp of input.periods) {
     const dayGames = input.games.filter((g) => g.scoringPeriodId === sp);
     const teams = new Set(dayGames.flatMap((g) => [g.homeProTeamId, g.awayProTeamId]));
-    const env = (proTeamId: number) => {
+    // Vegas game environment and the opponent's defense against his position.
+    const env = (p: RosterPlayer) => {
       const g = dayGames.find(
-        (x) => x.homeProTeamId === proTeamId || x.awayProTeamId === proTeamId,
+        (x) => x.homeProTeamId === p.proTeamId || x.awayProTeamId === p.proTeamId,
       );
-      return g ? gameEnvironment(input.lines?.get(g.gameId), g.homeProTeamId === proTeamId) : 1;
+      if (!g) return 1;
+      const home = g.homeProTeamId === p.proTeamId;
+      return (
+        gameEnvironment(input.lines?.get(g.gameId), home) *
+        matchupFactor(input.defense, home ? g.awayProTeamId : g.homeProTeamId, p.positions)
+      );
     };
     const playing = roster.filter((p) => teams.has(p.proTeamId));
     gamesByDay.set(sp, new Set(playing.map((p) => p.id)));
@@ -78,7 +92,7 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
         teams.has(p.proTeamId) &&
         (input.availableFrom?.get(p.id) ?? 0) <= sp &&
         sp <= (input.availableUntil?.get(p.id) ?? Infinity)
-          ? chance(p, sp, ahead) * (fppg.get(p.id) ?? 0) * env(p.proTeamId)
+          ? chance(p, sp, ahead) * (fppg.get(p.id) ?? 0) * env(p)
           : 0,
       currentSlot: "BE",
     }));

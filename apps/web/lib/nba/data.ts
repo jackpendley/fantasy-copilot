@@ -29,6 +29,7 @@ import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
 import { memoFetch } from "../fetch-memo";
 import { LAST_SCORING_PERIOD } from "./calendar";
+import { defenseTable } from "./defense-table";
 
 /** How long each read is reused: rosters and matchups, live scores, slower feeds. */
 const LEAGUE_FETCH = memoFetch(20_000);
@@ -95,12 +96,13 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
     leagueJson(scoringPeriodId),
     rostersAhead(scoringPeriodId),
   ]);
-  const [games, scoreboard, injuries, lineups] = await Promise.all([
+  const [games, scoreboard, injuries, lineups, defense] = await Promise.all([
     nbaSchedule(season),
     fetchScoreboard(yyyymmdd, LIVE_FETCH).catch(() => []),
     safeInjuries(),
     // Published on game days only; any failure just means no lineup info yet.
     fetchDailyLineups(yyyymmdd, LINEUPS_FETCH).catch(() => null),
+    defenseTable().catch(() => null),
   ]);
   const settings = parseSettings(raw);
   const teams = parseTeams(raw);
@@ -119,6 +121,8 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
     scoreboard,
     injuries: injuries.list,
     lineups,
+    /** Opponent defense by position (null before the first nightly run). */
+    defense,
     warnings: injuries.error ? [`Injury feed unavailable: ${injuries.error}`] : [],
   };
 }

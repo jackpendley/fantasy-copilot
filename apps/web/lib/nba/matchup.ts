@@ -59,6 +59,7 @@ export function matchupView(
   const scoreboard = new Map(data.scoreboard.map((g) => [g.gameId, g]));
   const boardOf = (team: FantasyTeam) =>
     buildDayBoard({
+      defense: data.defense,
       roster: team.roster,
       slotCounts: data.settings.slotCounts,
       games: todayGames,
@@ -81,6 +82,7 @@ export function matchupView(
     availableFrom: new Map([...myWeek.availableFrom, ...(oppWeek?.availableFrom ?? [])]),
     availableUntil: new Map([...myWeek.availableUntil, ...(oppWeek?.availableUntil ?? [])]),
     lines: new Map(data.scoreboard.map((g) => [g.gameId, g])),
+    defense: data.defense,
     outUntil: new Map(
       [...absences([...myWeek.roster, ...(oppWeek?.roster ?? [])], data.injuries, sp)].map(
         ([id, a]) => [id, a.outUntil],
@@ -152,6 +154,7 @@ export function weekPointsThroughToday(data: LeagueData, sp: number): Map<number
       const team = data.teams.find((t) => t.id === teamId);
       if (!team) continue;
       const rows = buildDayBoard({
+        defense: data.defense,
         roster: team.roster,
         slotCounts: data.settings.slotCounts,
         games: todayGames,

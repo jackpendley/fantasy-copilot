@@ -21,7 +21,13 @@ import {
   type ScoreboardGame,
 } from "@fantasy-copilot/nba-data";
 import { absenceOf, returnLabel } from "./availability";
-import { gameEnvironment, perGameProjection, type PerGame } from "./projection";
+import {
+  gameEnvironment,
+  matchupFactor,
+  perGameProjection,
+  type DefenseTable,
+  type PerGame,
+} from "./projection";
 
 export interface DayGame {
   gameId: number;
@@ -91,6 +97,8 @@ export interface DayInputs {
    * its test: lib/nba/best.ts). Before play probability.
    */
   perGame?: Map<number, number>;
+  /** Opponent defense by position (lib/nba/defense.ts). */
+  defense?: DefenseTable | null;
 }
 
 /** ESPN's site injury feed is more granular ("Questionable") than the fantasy status. */
@@ -153,8 +161,19 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       : injury.note;
     const playProb = game ? playProbability(status) : 0;
     const projection = perGameProjection(player, input.games[0]?.scoringPeriodId);
-    // Vegas game environment: more expected team points, more fantasy points to go around.
-    const env = game ? gameEnvironment(live.get(game.gameId), game.home) : 1;
+    // Vegas game environment (more expected team points, more fantasy points to go around)
+    // and the opponent's defense against his position.
+    const pro = game && input.games.find((g) => g.gameId === game.gameId);
+    const env = game
+      ? gameEnvironment(live.get(game.gameId), game.home) *
+        (pro
+          ? matchupFactor(
+              input.defense,
+              game.home ? pro.awayProTeamId : pro.homeProTeamId,
+              player.positions,
+            )
+          : 1)
+      : 1;
     return {
       player,
       game,

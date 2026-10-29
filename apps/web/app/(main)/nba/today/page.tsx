@@ -75,6 +75,7 @@ export default async function TodayPage({
   // The props blend for players with Vegas lines, once it has passed its test (else ours).
   const perGame = date === today ? await bestPerGame(data.me.roster, data, sp) : undefined;
   const board = buildDayBoard({
+    defense: data.defense,
     perGame,
     roster: data.me.roster,
     slotCounts: data.settings.slotCounts,

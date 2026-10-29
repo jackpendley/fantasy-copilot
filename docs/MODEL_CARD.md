@@ -280,3 +280,48 @@ The CI is entirely below 0, so it ships. In production the prior is ESPN's prese
 - Scotty Pippen Jr.: 16.8 against 25.1, 20.4 → 16.8.
 
 **Not covered yet:** players ESPN didn't project, such as Pelle Larsson (30.8 minutes, 21.5 FP/G). They keep the 15 FP/G prior blend. A minutes-aware prior for them is the next candidate.
+
+## Pre-registration: teammate absences and opponent defense (2026-10-29, before any run)
+
+The baseline is the shipped model: minutes × rate, minutes trend, game environment. The harness is the same walk-forward backtest, with the same pool and prior seasons.
+
+**A. Teammate absences as minutes.** The blanket points boost failed (ADR-031). This candidate moves minutes only: expected minutes += kSame × minutes usually played by absent same-position regulars, plus kOther × minutes of other absent regulars, capped at 40. His per-minute rate is unchanged. Absences are point in time: a regular (20+ minutes over his last 10 games, for this team within 10 days) who didn't play.
+
+- Grid: kSame ∈ {0.1, 0.2, 0.3} × kOther ∈ {0, 0.05}.
+
+**B. Opponent defense against each position.** For each opponent and each player's first listed position: actual fantasy points over our baseline projection, summed over the opponent's earlier games only (point in time). The factor is f = (n·r + k) / (n + k), where n is the number of player-games so far and r is that ratio. Prediction × f.
+
+- Grid: k ∈ {100, 200, 400}.
+
+**Procedure:** each family's best setting by overall MAE on 2025-26 (prior 2024-25) is then judged once on held-out 2024-25 (prior 2023-24). A family ships only if its per-player error difference against the shipped model has a 95% CI entirely below 0 there.
+
+Vegas player props already price tonight's absences, so A matters most for the days ahead (Matchup, Waivers, Outlook). Vegas totals already price overall defense, so B tests only the positional part on top.
+
+### Results (2026-10-29)
+
+**A. Teammate absences as minutes: failed at exploration (2025-26).** Every setting was worse than the shipped model, so per the rule it was not run on the held-out season.
+
+| Setting             | vs shipped (95% CI, by player) |
+| ------------------- | ------------------------------ |
+| kSame 0.1, kOther 0 | +0.025 [+0.003, +0.048]        |
+| kSame 0.2, kOther 0 | +0.148 [+0.103, +0.193]        |
+| kSame 0.3, kOther 0 | +0.316 [+0.252, +0.380]        |
+
+The kOther 0.05 settings were worse again. This is the second form of the idea to fail (after ADR-031). Two reasons it may fail:
+
+- The minutes model already moves minutes quickly once a role changes.
+- Absences are inferred from the player pool (~380 players), so some are missed.
+
+Sportsbook props price tonight's absences directly once they're known, and the props blend is the route for that.
+
+**B. Opponent defense by position: passed, shipped.**
+
+- Exploration (2025-26): k 100 −0.009, **k 200 −0.010 [−0.017, −0.002]**, k 400 −0.007.
+- Held out (2024-25), k 200: **−0.010 FP/game, 95% CI [−0.017, −0.002]**. MAE 10.48 → 10.47.
+
+The gain is small and grows through the season as each opponent's sample grows; early on the factors sit near 1.
+
+**In production:**
+
+- **Nightly:** `lib/nba/defense.ts` rebuilds the table from every logged pregame projection and its result, with the factor itself divided back out (`pregame_projections.matchup_factor`, migration 0013), so it never feeds on its own output.
+- **Where it applies:** today's and this week's projections (Today, Matchup, Waivers this week, logged projections, the player card, which names it). Not the rest-of-season values, where opponents average out.

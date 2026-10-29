@@ -9,6 +9,7 @@ import { gamedayAlerts } from "./nba/alerts";
 import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calendar";
 import { loadFreeAgents, loadLeague } from "./nba/data";
 import { refreshBlend } from "./nba/accuracy";
+import { refreshPbpPlayers } from "./nba/advanced";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
@@ -141,6 +142,12 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       await log("move-checks", "error", e.message);
       return null;
     });
+    // PBP Stats season numbers for the player cards (this season and last).
+    const season = Number(process.env.ESPN_SEASON || 2027);
+    const pbp = await refreshPbpPlayers([season, season - 1]).catch(async (e: Error) => {
+      await log("pbp-players", "error", e.message);
+      return null;
+    });
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
     const market = await collectToday("morning", true).catch(async (e: Error) => {
       await log("market-data", "error", e.message);
@@ -154,6 +161,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       weekWin: matchup?.p_win,
       tradesRefreshed: trades,
       movesChecked: moves,
+      pbpPlayers: pbp,
       ...states,
       ...market,
     };

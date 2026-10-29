@@ -19,7 +19,6 @@ const p = (id: number, slot = "BE"): RosterPlayer => ({
   last7: null,
   last15: null,
   last30: null,
-  market: null,
 });
 
 type View = Parameters<typeof tradeFingerprint>[0];

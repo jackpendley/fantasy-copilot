@@ -211,3 +211,22 @@ Reliability on the test weeks, P(home wins) bucket → actual:
 - No variant beats the current model even on the season it was explored on, so there's nothing to pre-register for a held-out test. **Not shipped.**
 - Role changes still reach the projection through the blend toward this season's games and the minutes trend (both tested).
 - **Possible later:** a minutes-share model by position once the injury-report history (`status_events`, with return dates since Oct 27) covers enough games to know absences before tip.
+
+## Season simulator: IR-return roster bug (fixed 2026-10-29)
+
+When a player came back from the IR slot, the simulator dropped the player picked at season start as his fill-in. If streaming had already dropped that player, nobody was cut and the roster grew by one for the rest of the simulated season.
+
+- **Size of the bug:** with real league inputs on Oct 29, 61% of simulated team-seasons ended over the 13-man limit (14–19 players).
+- **Who it favored:** teams with an injured, low-value player, who is usually the first streamed away.
+- **Fix:** the fill-in goes if he's still on the roster, otherwise the roster's lowest-projected player. A test checks that no simulated roster ever exceeds the league limit. It fails on the old code.
+
+It showed up in a real decision. Jack dropped the injured Egor Demin (out until Nov 7) for Collin Gillespie, and the Outlook's odds fell.
+
+Same draws, 2,000 seasons, two seeds:
+
+|                                   | Title        | #1 seed  | Playoffs | Expected wins |
+| --------------------------------- | ------------ | -------- | -------- | ------------- |
+| Before the fix: Demin → Gillespie | −3.5 pts     | −4.4 pts | −3.5 pts | −0.44         |
+| After the fix: Demin → Gillespie  | −0.5 (noise) | +1.0     | +0.4     | +0.05         |
+
+The move was about neutral, not harmful. The Waivers page had said +0.31 wins: Waivers values a roster as fixed, while the simulator also lets the team stream that spot. Making recommendations agree with the simulator is the next change (ADR-033).

@@ -68,6 +68,8 @@ export interface SimInput {
   addCapPerWeek: number;
   seasons: number;
   seed?: number;
+  /** Called after each simulated season with every team's final roster (ids, IR included). */
+  inspect?: (season: number, rosters: number[][]) => void;
   /** Per-game noise and weekly form sd (calibrated defaults). */
   noise?: number;
   form?: number;
@@ -467,12 +469,20 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         const checks = draw(teamKey[ti]!, d, DRAW.active) < t.act;
         if (checks) {
           if (x.ir && outOf(x.ir.player) === 0) {
-            const fill = x.ir.fill;
+            // Back from IR: the player who filled in goes; if he was already streamed away, the
+            // roster's weakest player does (the roster never grows past its size).
+            let fill: P | undefined = x.roster.includes(x.ir.fill) ? x.ir.fill : undefined;
+            if (!fill) for (const r of x.roster) if (!fill || r.fppg < fill.fppg) fill = r;
             const back = x.ir.player;
-            setRoster(x, [...x.roster.filter((r) => r !== fill), back]);
-            faOwner[fill.h] = -1;
-            faList.push(fill);
-            inFaList.add(fill);
+            if (fill) {
+              const gone = fill;
+              setRoster(x, [...x.roster.filter((r) => r !== gone), back]);
+              faOwner[gone.h] = -1;
+              if (!inFaList.has(gone)) {
+                faList.push(gone);
+                inFaList.add(gone);
+              }
+            } else setRoster(x, [...x.roster, back]);
             x.ir = null;
           }
           if (!x.ir && x.budget > 0) {
@@ -548,6 +558,10 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         }
       }
     }
+    input.inspect?.(
+      s,
+      st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id)),
+    );
     // Regular season: decided weeks keep their actual winner.
     const wins = new Array<number>(n).fill(0);
     const pf = new Array<number>(n).fill(0);

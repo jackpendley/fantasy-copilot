@@ -8,7 +8,7 @@ import {
   parseTeams,
   type FantasyTeam,
 } from "@fantasy-copilot/espn";
-import { simulateSeasonAsync } from "@fantasy-copilot/fantasy-core";
+import { simulateSeasonAsync, type SimTeamResult } from "@fantasy-copilot/fantasy-core";
 import { db } from "../db";
 import { espnConfig } from "../env";
 import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
@@ -108,30 +108,58 @@ export async function runOutlook(
     injured,
     seasons,
   });
-  // Runs in slices so the server keeps serving pages while it simulates.
-  const results = await simulateSeasonAsync(input);
   const byId = new Map(data.teams.map((t) => [t.id, t]));
-  const teams: OutlookTeam[] = results
-    .map((r) => {
-      const t = byId.get(r.teamId)!;
-      const a = activity.get(r.teamId)!;
-      return {
-        ...r,
-        name: t.name,
-        wins: t.wins,
-        losses: t.losses,
-        pointsFor: t.pointsFor,
-        act: a.act,
-        addsPerWeek: a.addsPerWeek,
-      };
-    })
-    .sort((x, y) => y.champ - x.champ);
-  await db()`
-    insert into outlook_runs (run_at, scoring_period, seasons, results, trigger)
-    values (${readAt}, ${fromDay}, ${seasons}, ${db().json(teams as never)}, ${trigger})
+  const describe = (results: SimTeamResult[]): OutlookTeam[] =>
+    results
+      .map((r) => {
+        const t = byId.get(r.teamId)!;
+        const a = activity.get(r.teamId)!;
+        return {
+          ...r,
+          name: t.name,
+          wins: t.wins,
+          losses: t.losses,
+          pointsFor: t.pointsFor,
+          act: a.act,
+          addsPerWeek: a.addsPerWeek,
+        };
+      })
+      .sort((x, y) => y.champ - x.champ);
+  // The run's row exists from the start and shows the odds so far (a provisional preview).
+  const [row] = await db()<{ id: number }[]>`
+    insert into outlook_runs (run_at, scoring_period, seasons, results, trigger, status, updated_at)
+    values (${readAt}, ${fromDay}, 0, '[]'::jsonb, ${trigger}, 'running', now())
+    returning id
   `;
+  const id = row!.id;
+  let teams: OutlookTeam[];
+  try {
+    // Runs in slices so the server keeps serving pages while it simulates.
+    const results = await simulateSeasonAsync(input, 25, {
+      every: PROGRESS_EVERY,
+      report: async (partial, done) => {
+        await db()`
+          update outlook_runs set seasons = ${done}, results = ${db().json(describe(partial) as never)},
+            updated_at = now()
+          where id = ${id}
+        `;
+      },
+    });
+    teams = describe(results);
+    await db()`
+      update outlook_runs set seasons = ${seasons}, results = ${db().json(teams as never)},
+        status = 'final', updated_at = now()
+      where id = ${id}
+    `;
+  } catch (e) {
+    await db()`delete from outlook_runs where id = ${id}`.catch(() => {});
+    throw e;
+  }
   return { scoringPeriod: fromDay, teams };
 }
+
+/** A running outlook reports its odds so far this often (seasons). */
+const PROGRESS_EVERY = 250;
 
 export interface OutlookRun {
   run_at: Date;
@@ -146,14 +174,28 @@ export interface OutlookRun {
 export async function latestOutlooks() {
   return db()<OutlookRun[]>`
     select run_at, scoring_period, seasons, results, trigger
-    from outlook_runs order by run_at desc limit 2
+    from outlook_runs where status = 'final' order by run_at desc limit 2
   `;
 }
 
 export async function latestOutlook() {
   const rows = await db()<OutlookRun[]>`
     select run_at, scoring_period, seasons, results, trigger
-    from outlook_runs order by run_at desc limit 1
+    from outlook_runs where status = 'final' order by run_at desc limit 1
+  `;
+  return rows[0] ?? null;
+}
+
+/**
+ * The run in progress, once it has odds to show: newer than the latest final run and still
+ * reporting (a crashed run stops updating and drops out after a few minutes).
+ */
+export async function provisionalOutlook(): Promise<OutlookRun | null> {
+  const rows = await db()<OutlookRun[]>`
+    select run_at, scoring_period, seasons, results, trigger from outlook_runs r
+    where status = 'running' and seasons > 0 and updated_at > now() - interval '3 minutes'
+      and run_at > coalesce((select max(run_at) from outlook_runs where status = 'final'), '-infinity')
+    order by run_at desc limit 1
   `;
   return rows[0] ?? null;
 }
@@ -163,7 +205,7 @@ export async function outlookHistory(teamId: number) {
   const rows = await db()<{ run_at: Date; t: OutlookTeam | null }[]>`
     select run_at,
       (select r from jsonb_array_elements(results) r where (r->>'teamId')::int = ${teamId}) as t
-    from outlook_runs order by run_at asc
+    from outlook_runs where status = 'final' order by run_at asc
   `;
   return rows
     .filter((r) => r.t)

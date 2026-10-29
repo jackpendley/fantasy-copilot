@@ -16,7 +16,12 @@ import {
   recentLeagueMoves,
   refreshLogged,
 } from "@/lib/nba/outlook-refresh";
-import { latestOutlooks, outlookHistory, type OutlookTeam } from "@/lib/nba/outlook-run";
+import {
+  latestOutlooks,
+  outlookHistory,
+  provisionalOutlook,
+  type OutlookTeam,
+} from "@/lib/nba/outlook-run";
 import { cn } from "@/lib/utils";
 
 // A visit can start a re-run in the background (after the response): ~80 s on Vercel, more
@@ -138,19 +143,22 @@ export default async function OutlookPage() {
     return <ErrorNotice title="Outlook needs the database" message="Set DATABASE_URL." />;
   }
   const myId = Number(process.env.ESPN_TEAM_ID);
-  const [runs, history, leagueMoves, running] = await Promise.all([
+  const [runs, history, leagueMoves, running, provisional] = await Promise.all([
     latestOutlooks(),
     outlookHistory(myId),
     recentLeagueMoves().catch(() => []),
     outlookRunning(),
+    provisionalOutlook().catch(() => null),
   ]);
   const [latest, previous] = runs;
   // A roster move newer than the latest run: update now, in the background.
   const stale = isStale(leagueMoves.at(-1)?.at ?? null, latest?.run_at.getTime() ?? null);
   if (stale && !running) after(() => refreshLogged());
-  const updating = stale || running;
-  const me = latest?.results.find((t) => t.teamId === myId);
-  const before = previous?.results.find((t) => t.teamId === myId);
+  const updating = stale || running || provisional != null;
+  // While a run refines, its odds so far are shown (compared with the latest final run).
+  const shown = provisional ?? latest;
+  const me = shown?.results.find((t) => t.teamId === myId);
+  const before = (provisional ? latest : previous)?.results.find((t) => t.teamId === myId);
   // The roster moves between the two runs. Never blocks the page.
   const moves =
     latest && previous
@@ -179,10 +187,11 @@ export default async function OutlookPage() {
         <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm">
           <RefreshCw className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
           <span>
-            Updating for the latest roster move. This page refreshes itself when it&apos;s done
-            (about a minute and a half).
+            {provisional
+              ? `Refining with the latest rosters: ${provisional.seasons.toLocaleString("en-US")} of 2,000 seasons so far. These odds are provisional and update every few seconds.`
+              : "Updating for the latest roster move. Provisional odds appear in a few seconds."}
           </span>
-          <LiveRefresh active seconds={20} />
+          <LiveRefresh active seconds={5} />
         </div>
       )}
 
@@ -237,7 +246,7 @@ export default async function OutlookPage() {
         </section>
       )}
 
-      {latest && (
+      {shown && (
         <section className="space-y-1.5">
           <SectionTitle aside="Active = share of days the manager sets a lineup">
             League
@@ -245,7 +254,7 @@ export default async function OutlookPage() {
 
           {/* Phones: ranked cards. */}
           <div className="divide-y overflow-hidden rounded-xl border bg-card md:hidden">
-            {latest.results.map((t, i) => (
+            {shown.results.map((t, i) => (
               <TeamCard key={t.teamId} t={t} rank={i + 1} mine={t.teamId === myId} />
             ))}
           </div>
@@ -267,7 +276,7 @@ export default async function OutlookPage() {
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {latest.results.map((t, i) => (
+                {shown.results.map((t, i) => (
                   <tr key={t.teamId} className={cn(t.teamId === myId && "bg-primary/5")}>
                     <td className="px-3 py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
                     <td
@@ -292,9 +301,7 @@ export default async function OutlookPage() {
                     <td className="px-3 py-2.5 text-right tabular-nums">{pct(t.final)}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
-                        <ProbBar
-                          value={t.champ / Math.max(...latest.results.map((r) => r.champ))}
-                        />
+                        <ProbBar value={t.champ / Math.max(...shown.results.map((r) => r.champ))} />
                         <span className="w-9 text-right font-semibold tabular-nums">
                           {pct(t.champ)}
                         </span>

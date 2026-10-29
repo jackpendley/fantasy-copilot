@@ -10,8 +10,7 @@
 //  - points per game = fppg x season multiplier (projection error) x weekly form x game noise.
 // Completed weeks keep their actual results; the current week starts from banked points.
 
-import { isStartingSlot, expandSlots, type Position } from "./slots";
-import { greedyStarters } from "./lineup";
+import { isStartingSlot, expandSlots, slotAccepts, type Position } from "./slots";
 
 export interface SimPlayer {
   id: number;
@@ -98,18 +97,24 @@ const DRAW = {
   game: 10,
 } as const;
 
+/** One murmur3-style mixing step: the hash of `key` after `h`. */
+function mix(h: number, k: number): number {
+  h = Math.imul(h ^ (k >>> 0), 0x9e3779b1);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h;
+}
+
+const unit = (h: number) => ((h >>> 0) + 0.5) / 2 ** 32;
+
 /** A uniform number in [0, 1) determined only by `seed` and `key` (murmur3-style mixing). */
 export function keyedUniform(seed: number, key: readonly number[]): number {
   let h = seed >>> 0;
-  for (const k of key) {
-    h = Math.imul(h ^ (k >>> 0), 0x9e3779b1);
-    h ^= h >>> 15;
-    h = Math.imul(h, 0x85ebca6b);
-    h ^= h >>> 13;
-    h = Math.imul(h, 0xc2b2ae35);
-    h ^= h >>> 16;
-  }
-  return ((h >>> 0) + 0.5) / 2 ** 32;
+  for (const k of key) h = mix(h, k);
+  return unit(h);
 }
 
 export function simulateSeason(input: SimInput): SimTeamResult[] {
@@ -120,16 +125,34 @@ export function simulateSeason(input: SimInput): SimTeamResult[] {
   }
 }
 
+export interface SimProgress {
+  /** Report every this many seasons. */
+  every: number;
+  /**
+   * The odds so far. With common random numbers the first k seasons are exactly a k-season
+   * run, so these are a fair (just noisier) preview of the final numbers.
+   */
+  report: (partial: SimTeamResult[], seasonsDone: number) => void | Promise<void>;
+}
+
 /**
  * The same simulation, pausing every ~`sliceMs` so a server keeps answering other requests
- * while it runs (a 2,000-season run is ~30 s of CPU).
+ * while it runs, and optionally reporting the odds so far as it goes.
  */
-export async function simulateSeasonAsync(input: SimInput, sliceMs = 25): Promise<SimTeamResult[]> {
+export async function simulateSeasonAsync(
+  input: SimInput,
+  sliceMs = 25,
+  progress?: SimProgress,
+): Promise<SimTeamResult[]> {
   const run = simulation(input);
   let sliceStart = Date.now();
+  let done = 0;
   for (;;) {
     const step = run.next();
     if (step.done) return step.value;
+    done++;
+    if (progress && done % progress.every === 0 && done < input.seasons)
+      await progress.report(step.value(), done);
     if (Date.now() - sliceStart >= sliceMs) {
       await new Promise((resolve) => setTimeout(resolve, 0));
       sliceStart = Date.now();
@@ -137,23 +160,45 @@ export async function simulateSeasonAsync(input: SimInput, sliceMs = 25): Promis
   }
 }
 
-/** One season per step; the return value is the summary. */
-function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
+/**
+ * A player as the simulation sees him: the input player plus lookups precomputed once per run.
+ * Health is tracked per player id (`h`), like the input, so two entries with one id share it.
+ */
+interface P {
+  src: SimPlayer;
+  fppg: number;
+  /** Index of his id in the per-season health arrays. */
+  h: number;
+  /** 1 on days his team plays (index = day). */
+  days: Uint8Array;
+  /** His team's games from each day to the end of that day's week. */
+  left: Uint8Array;
+  /** Starting slots he can fill, as a bitmask over the open slots. */
+  elig: number;
+}
+
+/** One season per step, yielding the summary so far (as a function); returns the summary. */
+function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamResult[]> {
   const NOISE = input.noise ?? 0.5;
   const FORM = input.form ?? 0.28;
   const OPEN = expandSlots(input.slotCounts).filter(isStartingSlot);
+  const { fromDay, lastDay } = input;
   // Common random numbers: every draw is a hash of what it is for (season, player or team, day
   // or week, purpose), not the next number in one stream. A roster change then only changes
   // the draws it touches, so two runs differ because the inputs differ, not by reshuffled luck.
+  // Each season hashes (seed, season, player or team) once; a draw then mixes in the rest.
   const seed = (input.seed ?? 20261018) >>> 0;
-  const rnd = (...key: number[]) => keyedUniform(seed, key);
-  const gauss = (...key: number[]) =>
-    Math.sqrt(-2 * Math.log(rnd(...key, 1) || 1e-9)) * Math.cos(2 * Math.PI * rnd(...key, 2));
-  const poisson = (lam: number, ...key: number[]) => {
+  const draw = (prefix: number, a: number, b: number) => unit(mix(mix(prefix, a), b));
+  const gauss = (prefix: number, a: number, b: number) => {
+    const k = mix(mix(prefix, a), b);
+    return (
+      Math.sqrt(-2 * Math.log(unit(mix(k, 1)) || 1e-9)) * Math.cos(2 * Math.PI * unit(mix(k, 2)))
+    );
+  };
+  const poisson = (lam: number, u: number) => {
     let k = 0;
     let p = Math.exp(-lam);
     let s = p;
-    const u = rnd(...key);
     while (u > s && k < 10) {
       k++;
       p *= lam / k;
@@ -161,168 +206,302 @@ function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
     }
     return k;
   };
-  const geom = (mean: number, ...key: number[]) =>
-    1 + Math.floor(Math.log(1 - rnd(...key)) / Math.log(1 - 1 / mean));
-  const spellLength = (...key: number[]) =>
-    rnd(...key, DRAW.spellKind) < 0.75
-      ? geom(2, ...key, DRAW.spellLen)
-      : geom(15, ...key, DRAW.spellLen);
+  const geom = (mean: number, u: number) =>
+    1 + Math.floor(Math.log(1 - u) / Math.log(1 - 1 / mean));
+  const spellLength = (prefix: number, d: number) =>
+    draw(prefix, d, DRAW.spellKind) < 0.75
+      ? geom(2, draw(prefix, d, DRAW.spellLen))
+      : geom(15, draw(prefix, d, DRAW.spellLen));
 
-  // Greedy by value is optimal on this slot structure (transversal matroid).
-  const bestLineup = (players: SimPlayer[]): SimPlayer[] =>
-    greedyStarters(
-      players,
-      (p) => p.fppg,
-      (p) => p.eligible,
-      OPEN,
-    );
+  // Calendar tables: the week of each day, and per pro team its game days and games left in
+  // the week from each day.
+  const period = new Int32Array(lastDay + 2);
+  for (let d = 0; d <= lastDay; d++) period[d] = input.periodOf(d);
+  const proTables = new Map<number, { days: Uint8Array; left: Uint8Array }>();
+  const tablesOf = (pro: number) => {
+    let t = proTables.get(pro);
+    if (!t) {
+      const days = new Uint8Array(lastDay + 2);
+      for (const d of input.gameDays.get(pro) ?? []) if (d >= 0 && d <= lastDay + 1) days[d] = 1;
+      const left = new Uint8Array(lastDay + 2);
+      for (let d = lastDay; d >= 0; d--)
+        left[d] = days[d]! + (d < lastDay && period[d + 1] === period[d] ? left[d + 1]! : 0);
+      t = { days, left };
+      proTables.set(pro, t);
+    }
+    return t;
+  };
 
+  const healthIndex = new Map<number, number>();
+  const idOf: number[] = [];
+  const wrapped = new Map<SimPlayer, P>();
+  const wrap = (sp: SimPlayer): P => {
+    let x = wrapped.get(sp);
+    if (!x) {
+      let h = healthIndex.get(sp.id);
+      if (h == null) {
+        h = idOf.length;
+        healthIndex.set(sp.id, h);
+        idOf.push(sp.id);
+      }
+      let elig = 0;
+      OPEN.forEach((slot, j) => {
+        if (slotAccepts(slot, sp.eligible)) elig |= 1 << j;
+      });
+      x = { src: sp, fppg: sp.fppg, h, ...tablesOf(sp.proTeamId), elig };
+      wrapped.set(sp, x);
+    }
+    return x;
+  };
   const teams = input.teams;
   const n = teams.length;
+  const rosters = teams.map((t) => t.roster.map(wrap));
+  const inputFAs = input.freeAgents.map(wrap);
+  const NH = idOf.length;
+
+  // Greedy by value is optimal on this slot structure (transversal matroid): the same
+  // augmenting-path greedy as lineup.ts greedyStarters, on slot bitmasks.
+  const owner = new Int32Array(OPEN.length);
+  const snap = new Int32Array(OPEN.length);
+  let sorted: P[] = [];
+  let seen = 0;
+  const tryPlace = (pi: number): boolean => {
+    const elig = sorted[pi]!.elig;
+    for (let j = 0; j < OPEN.length; j++) {
+      if ((seen >> j) & 1 || !((elig >> j) & 1)) continue;
+      seen |= 1 << j;
+      if (owner[j] === -1 || tryPlace(owner[j]!)) {
+        owner[j] = pi;
+        return true;
+      }
+    }
+    return false;
+  };
+  const bestLineup = (players: P[]): P[] => {
+    sorted = [...players].sort((a, b) => b.fppg - a.fppg);
+    owner.fill(-1);
+    const seated: P[] = [];
+    for (let i = 0; i < sorted.length && seated.length < OPEN.length; i++) {
+      snap.set(owner);
+      seen = 0;
+      if (tryPlace(i)) seated.push(sorted[i]!);
+      else owner.set(snap);
+    }
+    return seated;
+  };
+
   const tIndex = new Map(teams.map((t, i) => [t.id, i]));
-  const plays = (pro: number, d: number) => input.gameDays.get(pro)?.has(d) ?? false;
-  const b2b = (pro: number, d: number) => plays(pro, d) && plays(pro, d - 1);
-  const lastPeriod = input.periodOf(input.lastDay);
+  const lastPeriod = input.periodOf(lastDay);
   const agg = teams.map(() => ({ wins: 0, pf: 0, po: 0, seed1: 0, final: 0, champ: 0 }));
 
   // Points already banked, per team per period.
   const banked = teams.map((t) => {
-    const arr = new Array<number>(lastPeriod + 1).fill(0);
+    const arr = new Float64Array(lastPeriod + 1);
     for (const [p, v] of input.banked.get(t.id) ?? []) if (p <= lastPeriod) arr[p] = v;
     return arr;
   });
 
-  interface Health {
-    mult: number;
-    form: number;
-    q: number;
-    out: number;
-    loadMgd: boolean;
-  }
+  // Per-season state, reused across seasons.
+  const playerKey = new Int32Array(NH);
+  const teamKey = new Int32Array(n);
+  const ready = new Uint8Array(NH);
+  const readyList = new Int32Array(NH);
+  let readyCount = 0;
+  const mult = new Float64Array(NH);
+  const form = new Float64Array(NH);
+  const q = new Float64Array(NH);
+  const out = new Int32Array(NH);
+  const loadMgd = new Uint8Array(NH);
+  const healthyOn = new Int32Array(NH);
+  const healthyVal = new Uint8Array(NH);
+  const faOwner = new Int32Array(NH);
+  let stamp = 0;
+  let day = 0;
+
+  /** His health this season, set up the first time he's looked at. */
+  const H = (x: P): number => {
+    const h = x.h;
+    if (!ready[h]) {
+      const p = x.src;
+      const miss = Math.min(0.85, Math.max(0.01, 1 - p.gp / 82));
+      const spell = 0.75 * 2 + 0.25 * 15;
+      mult[h] = Math.max(0.5, 1 + p.sd * gauss(playerKey[h]!, 0, DRAW.mult));
+      form[h] = 0;
+      q[h] = miss / (spell * (1 - miss));
+      out[h] = 0;
+      loadMgd[h] = p.gp < 72 ? 1 : 0;
+      if (p.outUntil != null && p.outUntil > fromDay) {
+        // A known injury: out for his team's games before the estimated return.
+        for (let k = fromDay; k < Math.min(p.outUntil, lastDay + 1); k++)
+          if (x.days[k]) out[h] = out[h]! + 1;
+      } else if (draw(playerKey[h]!, 0, DRAW.miss) < miss) out[h] = spellLength(playerKey[h]!, 0);
+      ready[h] = 1;
+      readyList[readyCount++] = h;
+    }
+    return h;
+  };
+  const outOf = (x: P) => out[H(x)]!;
+
+  /** Healthy for his game today (`day`); decided once per player per day. */
+  const isHealthy = (x: P): boolean => {
+    if (!x.days[day]) return false;
+    const h = x.h;
+    if (healthyOn[h] === stamp) return healthyVal[h] === 1;
+    H(x);
+    let ok = true;
+    if (out[h]! > 0) {
+      out[h] = out[h]! - 1;
+      ok = false;
+    } else {
+      const bump = loadMgd[h] ? (x.days[day - 1] ? 2 / 1.17 : 1 / 1.17) : 1;
+      if (draw(playerKey[h]!, day, DRAW.injury) < q[h]! * bump) {
+        out[h] = spellLength(playerKey[h]!, day) - 1;
+        ok = false;
+      }
+    }
+    healthyOn[h] = stamp;
+    healthyVal[h] = ok ? 1 : 0;
+    return ok;
+  };
+
+  type TeamState = { roster: P[]; lineups: Map<number, P[]> };
+  const setRoster = (x: TeamState, r: P[]) => {
+    x.roster = r;
+    x.lineups.clear();
+  };
+  /** The best lineup from the roster players passing `keep` (memoized by who passes). */
+  const lineupOf = (x: TeamState, keep: (r: P) => boolean) => {
+    let mask = 0;
+    const pass: P[] = [];
+    for (let k = 0; k < x.roster.length; k++) {
+      const r = x.roster[k]!;
+      if (keep(r)) {
+        mask |= 1 << k;
+        pass.push(r);
+      }
+    }
+    let l = x.lineups.get(mask);
+    if (!l) {
+      l = bestLineup(pass);
+      x.lineups.set(mask, l);
+    }
+    return l;
+  };
+  const fit = (r: P) => outOf(r) === 0;
+  /** A streaming target's worth today: his games left this week plus a few games' value. */
+  const val = (pl: P) => {
+    const o = outOf(pl);
+    return (o > 0 ? 0 : pl.fppg * pl.left[day]!) + 3 * pl.fppg * (o > 5 ? 0.3 : 1);
+  };
+
+  let seasonsDone = 0;
+  const summary = (): SimTeamResult[] => {
+    const S = seasonsDone;
+    return teams.map((t, i) => ({
+      teamId: t.id,
+      expWins: agg[i]!.wins / S,
+      expPointsFor: agg[i]!.pf / S,
+      playoffs: agg[i]!.po / S,
+      seed1: agg[i]!.seed1 / S,
+      final: agg[i]!.final / S,
+      champ: agg[i]!.champ / S,
+    }));
+  };
 
   for (let s = 0; s < input.seasons; s++) {
-    const health = new Map<number, Health>();
-    const H = (p: SimPlayer): Health => {
-      let h = health.get(p.id);
-      if (!h) {
-        const miss = Math.min(0.85, Math.max(0.01, 1 - p.gp / 82));
-        const spell = 0.75 * 2 + 0.25 * 15;
-        h = {
-          mult: Math.max(0.5, 1 + p.sd * gauss(s, p.id, 0, DRAW.mult)),
-          form: 0,
-          q: miss / (spell * (1 - miss)),
-          out: 0,
-          loadMgd: p.gp < 72,
-        };
-        if (p.outUntil != null && p.outUntil > input.fromDay) {
-          // A known injury: out for his team's games before the estimated return.
-          for (let k = input.fromDay; k < Math.min(p.outUntil, input.lastDay + 1); k++)
-            if (plays(p.proTeamId, k)) h.out++;
-        } else if (rnd(s, p.id, 0, DRAW.miss) < miss) h.out = spellLength(s, p.id, 0);
-        health.set(p.id, h);
-      }
-      return h;
-    };
-    const healthyToday = (p: SimPlayer, d: number) => {
-      const h = H(p);
-      if (h.out > 0) {
-        h.out--;
-        return false;
-      }
-      const bump = h.loadMgd ? (b2b(p.proTeamId, d) ? 2 / 1.17 : 1 / 1.17) : 1;
-      if (rnd(s, p.id, d, DRAW.injury) < h.q * bump) {
-        h.out = spellLength(s, p.id, d) - 1;
-        return false;
-      }
-      return true;
-    };
+    const seasonKey = mix(seed, s);
+    for (let h = 0; h < NH; h++) playerKey[h] = mix(seasonKey, idOf[h]!);
+    for (let i = 0; i < n; i++) teamKey[i] = mix(seasonKey, teams[i]!.id);
+    ready.fill(0);
+    readyCount = 0;
+    faOwner.fill(-1);
 
-    const faOwner = new Map<number, number>();
-    const freeAgents = [...input.freeAgents];
-    const st = teams.map((t) => {
+    const faList = [...inputFAs];
+    const inFaList = new Set(faList);
+    const st = rosters.map((roster, i) => {
       // A player already in the IR slot comes back in place of the roster's weakest player.
-      const reserve = t.roster.find((r) => r.reserve);
-      const active = t.roster.filter((r) => r !== reserve);
-      const weakest = [...active].sort((a, b) => a.fppg - b.fppg)[0];
+      const reserve = roster.find((r) => r.src.reserve);
+      const active = roster.filter((r) => r !== reserve);
+      let weakest: P | undefined;
+      for (const r of active) if (!weakest || r.fppg < weakest.fppg) weakest = r;
       return {
         roster: active,
         ir: reserve && weakest ? { player: reserve, fill: weakest } : null,
-        standing: [] as SimPlayer[],
+        standing: [] as P[],
         budget: 0,
-        streamer: t.addsPerWeek >= 0.25,
+        streamer: teams[i]!.addsPerWeek >= 0.25,
+        /** Lineups by availability bitmask, for the roster as it stands. */
+        lineups: new Map<number, P[]>(),
       };
     });
-    const weekPts = banked.map((b) => [...b]);
+    const weekPts = banked.map((b) => Float64Array.from(b));
     let curP = 0;
+    const orderKey = new Float64Array(n);
 
-    for (let d = input.fromDay; d <= input.lastDay; d++) {
-      const p = input.periodOf(d);
+    for (let d = fromDay; d <= lastDay; d++) {
+      const p = period[d]!;
       if (p !== curP) {
         curP = p;
         st.forEach((x, i) => {
           x.budget = Math.min(
             input.addCapPerWeek,
-            poisson(teams[i]!.addsPerWeek, s, teams[i]!.id, p, DRAW.adds),
+            poisson(teams[i]!.addsPerWeek, draw(teamKey[i]!, p, DRAW.adds)),
           );
         });
-        for (const [id, h] of health)
-          h.form = 0.8 * h.form + 0.6 * FORM * gauss(s, id, p, DRAW.form);
+        for (let k = 0; k < readyCount; k++) {
+          const h = readyList[k]!;
+          form[h] = 0.8 * form[h]! + 0.6 * FORM * gauss(playerKey[h]!, p, DRAW.form);
+        }
       }
-      const healthy = new Map<number, boolean>();
-      const isHealthy = (pl: SimPlayer) => {
-        if (!plays(pl.proTeamId, d)) return false;
-        if (!healthy.has(pl.id)) healthy.set(pl.id, healthyToday(pl, d));
-        return healthy.get(pl.id)!;
-      };
-      for (const f of input.freeAgents) if (!faOwner.has(f.id)) isHealthy(f);
+      stamp++;
+      day = d;
+      for (const f of inputFAs) if (faOwner[f.h] === -1) isHealthy(f);
       // Players in the IR slot keep healing (their injury counts down on their team's games).
       for (const x of st) if (x.ir) isHealthy(x.ir.player);
-      const remainingGames = (pl: SimPlayer) => {
-        let g = 0;
-        for (let k = d; k <= input.lastDay && input.periodOf(k) === p; k++)
-          if (plays(pl.proTeamId, k)) g++;
-        return g;
-      };
 
-      const order = [...Array(n).keys()].sort(
-        (a, b) => rnd(s, teams[a]!.id, d, DRAW.order) - rnd(s, teams[b]!.id, d, DRAW.order),
-      );
+      for (let i = 0; i < n; i++) orderKey[i] = draw(teamKey[i]!, d, DRAW.order);
+      const order = [...Array(n).keys()].sort((a, b) => orderKey[a]! - orderKey[b]!);
       for (const ti of order) {
         const t = teams[ti]!;
         const x = st[ti]!;
-        const checks = rnd(s, t.id, d, DRAW.active) < t.act;
+        const checks = draw(teamKey[ti]!, d, DRAW.active) < t.act;
         if (checks) {
-          if (x.ir && H(x.ir.player).out === 0) {
+          if (x.ir && outOf(x.ir.player) === 0) {
             const fill = x.ir.fill;
-            x.roster = x.roster.filter((r) => r !== fill);
-            faOwner.delete(fill.id);
-            freeAgents.push(fill);
-            x.roster.push(x.ir.player);
+            const back = x.ir.player;
+            setRoster(x, [...x.roster.filter((r) => r !== fill), back]);
+            faOwner[fill.h] = -1;
+            faList.push(fill);
+            inFaList.add(fill);
             x.ir = null;
           }
           if (!x.ir && x.budget > 0) {
-            const hurt = x.roster.find((r) => H(r).out > 5);
-            const fa =
-              hurt &&
-              freeAgents.filter((f) => !faOwner.has(f.id)).sort((a, b) => b.fppg - a.fppg)[0];
+            const hurt = x.roster.find((r) => outOf(r) > 5);
+            let fa: P | undefined;
+            if (hurt)
+              for (const f of faList) if (faOwner[f.h] === -1 && (!fa || f.fppg > fa.fppg)) fa = f;
             if (hurt && fa) {
-              x.roster = x.roster.filter((r) => r !== hurt);
-              x.roster.push(fa);
-              faOwner.set(fa.id, ti);
+              setRoster(x, [...x.roster.filter((r) => r !== hurt), fa]);
+              faOwner[fa.h] = ti;
               x.ir = { player: hurt, fill: fa };
               x.budget--;
             }
           }
           if (x.streamer && x.budget > 0) {
-            const val = (pl: SimPlayer) =>
-              (H(pl).out > 0 ? 0 : pl.fppg * remainingGames(pl)) +
-              3 * pl.fppg * (H(pl).out > 5 ? 0.3 : 1);
-            const out = [...x.roster].sort((a, b) => val(a) - val(b))[0];
-            if (out && (H(out).out <= 5 || x.ir)) {
-              let best: SimPlayer | null = null;
-              let bestV = val(out) + 8;
-              for (const f of freeAgents) {
-                if (faOwner.has(f.id)) continue;
+            let drop: P | undefined;
+            let dropV = Infinity;
+            for (const r of x.roster) {
+              const v = val(r);
+              if (v < dropV) {
+                drop = r;
+                dropV = v;
+              }
+            }
+            if (drop && (outOf(drop) <= 5 || x.ir)) {
+              let best: P | null = null;
+              let bestV = dropV + 8;
+              for (const f of faList) {
+                if (faOwner[f.h] !== -1) continue;
                 const v = val(f);
                 if (v > bestV) {
                   best = f;
@@ -331,33 +510,44 @@ function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
               }
               if (best) {
                 const pick = best;
-                x.roster = x.roster.map((r) => (r === out ? pick : r));
-                faOwner.delete(out.id);
-                if (!freeAgents.includes(out)) freeAgents.push(out);
-                faOwner.set(pick.id, ti);
+                const gone = drop;
+                setRoster(
+                  x,
+                  x.roster.map((r) => (r === gone ? pick : r)),
+                );
+                faOwner[gone.h] = -1;
+                if (!inFaList.has(gone)) {
+                  faList.push(gone);
+                  inFaList.add(gone);
+                }
+                faOwner[pick.h] = ti;
                 x.budget--;
               }
             }
           }
-          x.standing = bestLineup(x.roster.filter((r) => H(r).out === 0));
+          x.standing = lineupOf(x, fit);
         }
-        const avail = x.roster.filter(isHealthy);
-        const lineup = checks ? bestLineup(avail) : x.standing.filter((r) => avail.includes(r));
+        let lineup: P[];
+        if (checks) lineup = lineupOf(x, isHealthy);
+        else {
+          const avail = new Set(x.roster.filter(isHealthy));
+          lineup = x.standing.filter((r) => avail.has(r));
+        }
+        const pts = weekPts[ti]!;
         for (const r of lineup) {
-          const h = H(r);
-          weekPts[ti]![p] =
-            weekPts[ti]![p]! +
+          const h = r.h;
+          pts[p] =
+            pts[p]! +
             Math.max(
               -5,
               r.fppg *
-                h.mult *
-                Math.max(0.3, 1 + h.form) *
-                (1 + NOISE * gauss(s, r.id, d, DRAW.game)),
+                mult[h]! *
+                Math.max(0.3, 1 + form[h]!) *
+                (1 + NOISE * gauss(playerKey[h]!, d, DRAW.game)),
             );
         }
       }
     }
-
     // Regular season: decided weeks keep their actual winner.
     const wins = new Array<number>(n).fill(0);
     const pf = new Array<number>(n).fill(0);
@@ -397,17 +587,8 @@ function* simulation(input: SimInput): Generator<void, SimTeamResult[]> {
     agg[s1]!.final++;
     agg[s2]!.final++;
     agg[winnerOf(s1, s2, fw)]!.champ++;
-    yield;
+    seasonsDone++;
+    yield summary;
   }
-
-  const S = input.seasons;
-  return teams.map((t, i) => ({
-    teamId: t.id,
-    expWins: agg[i]!.wins / S,
-    expPointsFor: agg[i]!.pf / S,
-    playoffs: agg[i]!.po / S,
-    seed1: agg[i]!.seed1 / S,
-    final: agg[i]!.final / S,
-    champ: agg[i]!.champ / S,
-  }));
+  return summary();
 }

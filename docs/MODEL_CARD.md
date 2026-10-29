@@ -230,3 +230,53 @@ Same draws, 2,000 seasons, two seeds:
 | After the fix: Demin → Gillespie  | −0.5 (noise) | +1.0     | +0.4     | +0.05         |
 
 The move was about neutral, not harmful. The Waivers page had said +0.31 wins: Waivers values a roster as fixed, while the simulator also lets the team stream that spot. Making recommendations agree with the simulator is the next change (ADR-033).
+
+## Pre-registration: minutes-aware early-season projection (2026-10-29, before any run)
+
+**Question:** do hot starts deserve more weight? Jack noticed guards starting well, such as Ja'Kobe Walter: 27.1 FP/G over 4 games, projected 16.5 by the current 15-game blend.
+
+**Hypothesis:** breakouts are mostly minutes. Fantasy points per minute are stable, so a role change should move the projection faster than a scoring streak.
+
+**Candidate "minutes × rate":**
+
+- **Minutes:** his prior-season minutes blended with this season's at `kMin` prior games.
+- **Rate:** fantasy points per minute: prior-season rate blended with this season's at `kRate` prior minutes-equivalent games.
+- **Prediction:** minutes × rate, then the shipped minutes trend and game environment.
+
+**Procedure:**
+
+- Grid `kMin` ∈ {2, 4, 8} × `kRate` ∈ {15, 30}, explored on 2025-26 (prior 2024-25). The best by overall MAE is chosen there.
+- That one candidate is then run once on held-out 2024-25 (prior 2023-24) against the current model.
+
+**Ships if** its per-player mean error difference vs the current model has a 95% CI entirely below 0 on the held-out season. It is also reported for games 1–20, where it should help most.
+
+### Result (2026-10-29): passed, shipped
+
+The pre-registration above was committed (3b6b805) before either run.
+
+**Exploration, 2025-26** (270 players, 16,652 games): the error difference vs the current model, mean per player with 95% CI.
+
+| kMin \ kRate | 15                          | 30                      |
+| ------------ | --------------------------- | ----------------------- |
+| 2            | **−0.072 [−0.103, −0.041]** | −0.058 [−0.090, −0.026] |
+| 4            | −0.062                      | −0.046                  |
+| 8            | −0.038                      | −0.021                  |
+
+kMin 2, kRate 15 was chosen.
+
+**Held out, 2024-25** (242 players, 14,951 games), chosen candidate only:
+
+| Predictor                                      |   MAE | Games 1–20 | Games 21+ | vs current (95% CI, by player) |
+| ---------------------------------------------- | ----: | ---------: | --------: | ------------------------------ |
+| minutes × rate (kMin 2, kRate 15)              | 10.49 |      10.15 |     10.65 | −0.038 [−0.065, −0.010]        |
+| current model (blend 15 + trend + environment) | 10.51 |      10.22 |     10.66 | baseline                       |
+
+The CI is entirely below 0, so it ships. In production the prior is ESPN's preseason projection: its minutes and its points per minute. Players without minutes data fall back to the old blend.
+
+**Early-season examples, Oct 29:**
+
+- Christian Braun: 35.8 minutes against 27.5 projected, 18.0 → 20.5.
+- Jalen Suggs: 33.3 against 26.3, 20.6 → 23.2.
+- Scotty Pippen Jr.: 16.8 against 25.1, 20.4 → 16.8.
+
+**Not covered yet:** players ESPN didn't project, such as Pelle Larsson (30.8 minutes, 21.5 FP/G). They keep the 15 FP/G prior blend. A minutes-aware prior for them is the next candidate.

@@ -384,3 +384,11 @@
   - A check costs ~40 s on Vercel. It runs in the background (`view_cache` "move-checks") after roster-move refreshes, nightly, and when a visit finds it stale.
   - It skips when nothing relevant changed, with a 30-minute cooldown for short-list churn when Jack's roster is unchanged.
 - **Precision:** at 800 seasons a title change is ±~3.3 points (2 SE) and expected wins ±~0.14. Most single waiver moves fall inside that, so they show as even. That is the honest answer: the simulator says the difference is smaller than the noise.
+
+## ADR-034: projections are minutes × rate (2026-10-29)
+
+**Decision:** a role change shows up in minutes before anything else, so the projection now believes this season's minutes quickly (2 prior games) and his fantasy points per minute slowly (15 prior games).
+
+**Evidence:** it passed the pre-registered walk-forward test on held-out 2024-25: −0.038 FP/game, CI [−0.065, −0.010], with the biggest gain in games 1–20 (MODEL_CARD).
+
+**Why it mattered:** it answers whether hot starters were better adds. Minutes gains count fast; a per-minute scoring streak counts slowly, because that part is mostly noise.

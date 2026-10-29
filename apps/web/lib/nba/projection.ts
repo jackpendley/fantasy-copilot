@@ -1,12 +1,21 @@
 // Per-game fantasy points used for lineup decisions until the ML models land (ROADMAP phase 5):
-// ESPN's preseason projection (already scored with this league's settings), shrunk toward
-// this season's actual average as games accumulate, then scaled by his recent minutes trend.
-// Changes here must pass the walk-forward backtest in docs/MODEL_CARD.md.
+// minutes x rate. ESPN's preseason projection (already scored with this league's settings)
+// gives his expected minutes and fantasy points per minute; this season's games move the
+// minutes fast (a role change shows up there first) and the per-minute rate slowly. Then
+// scaled by his recent minutes trend. Without minutes data it falls back to blending the
+// projection with his season average. Changes here must pass the walk-forward backtest in
+// docs/MODEL_CARD.md.
 
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 
-/** Games of actual data that count as much as the preseason projection. */
+/** Games of actual data that count as much as the preseason projection (fallback blend). */
 const PRIOR_GAMES = 15;
+/**
+ * Minutes x rate (MODEL_CARD, passed 2026-10-29): prior games for minutes per game and for
+ * fantasy points per minute.
+ */
+const MINUTES_PRIOR_GAMES = 2;
+const RATE_PRIOR_GAMES = 15;
 /**
  * Prior for a player ESPN didn't project (it didn't consider him rosterable): the median
  * ESPN projection among projected free agents, 15.0 FP/G on Oct 27, 2026. His games are
@@ -21,7 +30,9 @@ const TREND_STRENGTH = 0.5;
 export interface PerGame {
   fppg: number;
   gamesPlayed: number;
-  source: "projection" | "blend" | "season" | "none";
+  source: "projection" | "minutes" | "blend" | "season" | "none";
+  /** Expected minutes per game, when the minutes model applied. */
+  minutes?: number;
 }
 
 /**
@@ -32,15 +43,21 @@ export interface PerGame {
 function seasonBefore(
   p: RosterPlayer,
   asOf?: number,
-): { avg: number | null; total: number } | null {
+): { avg: number | null; total: number; minutes: number | null } | null {
   const avg = p.season?.avg ?? null;
   const total = p.season?.total ?? null;
   if (avg == null || total == null) return null;
+  const minutes = p.season?.stats?.MIN ?? null;
   const later = asOf == null ? [] : (p.games ?? []).filter((g) => g.scoringPeriodId >= asOf);
-  if (!later.length) return { avg, total };
-  const gp = (avg ? Math.round(total / avg) : 0) - later.length;
+  if (!later.length) return { avg, total, minutes };
+  const all = avg ? Math.round(total / avg) : 0;
+  const gp = all - later.length;
   const rest = total - later.reduce((a, g) => a + g.points, 0);
-  return gp > 0 ? { avg: rest / gp, total: rest } : null;
+  const restMin =
+    minutes == null ? null : minutes * all - later.reduce((a, g) => a + (g.line.MIN ?? 0), 0);
+  return gp > 0
+    ? { avg: rest / gp, total: rest, minutes: restMin == null ? null : restMin / gp }
+    : null;
 }
 
 /**
@@ -75,6 +92,15 @@ export function perGameProjection(p: RosterPlayer, asOf?: number): PerGame {
     };
   }
   if (!gp || seasonAvg == null) return { fppg: proj, gamesPlayed: 0, source: "projection" };
+  const priorMin = p.projection?.stats?.MIN ?? 0;
+  const seasonMin = season?.minutes ?? 0;
+  if (priorMin > 0 && seasonMin > 0) {
+    const minutes = (gp * seasonMin + MINUTES_PRIOR_GAMES * priorMin) / (gp + MINUTES_PRIOR_GAMES);
+    const rate =
+      (gp * (seasonAvg / seasonMin) + RATE_PRIOR_GAMES * (proj / priorMin)) /
+      (gp + RATE_PRIOR_GAMES);
+    return { fppg: minutes * rate * trend, gamesPlayed: gp, source: "minutes", minutes };
+  }
   const w = gp / (gp + PRIOR_GAMES);
   return { fppg: (w * seasonAvg + (1 - w) * proj) * trend, gamesPlayed: gp, source: "blend" };
 }

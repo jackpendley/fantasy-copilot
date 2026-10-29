@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseTeams, parseSettings, type ProGame } from "@fantasy-copilot/espn";
+import { parseTeams, parseSettings, type ProGame, type RosterPlayer } from "@fantasy-copilot/espn";
 import {
   dateForScoringPeriod,
   etDate,

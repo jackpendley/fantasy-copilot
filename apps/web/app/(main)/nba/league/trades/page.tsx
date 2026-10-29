@@ -5,6 +5,7 @@ import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
 import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
+import { LiveRefresh } from "@/components/live-refresh";
 import { SimulateTrade } from "@/components/simulate-trade";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
@@ -13,14 +14,8 @@ import { fmtPts } from "@/lib/format";
 import { loadLeagueView } from "@/lib/nba/league-view";
 import { marketValue, type MarketContext, type Realism } from "@/lib/nba/market";
 import { perGameProjection } from "@/lib/nba/projection";
-import {
-  evaluateTrade,
-  findTradeTargets,
-  tradeSize,
-  type RosterMoves,
-  type TradeEval,
-  type ValueContext,
-} from "@/lib/nba/trade";
+import { evaluateTrade, tradeSize, type RosterMoves, type TradeEval } from "@/lib/nba/trade";
+import { tradeTargets } from "@/lib/nba/trade-view";
 import { matchupPeriodOf } from "@/lib/nba/calendar";
 import { cn } from "@/lib/utils";
 
@@ -237,33 +232,26 @@ function Evaluation({
 
 /** Streamed in after the rest of the page: the search takes a second or two. */
 async function Targets({
-  me,
+  view,
   others,
-  ctx,
-  market,
-  freeAgents,
   size,
 }: {
-  me: FantasyTeam;
+  view: Awaited<ReturnType<typeof loadLeagueView>>;
   others: FantasyTeam[];
-  ctx: ValueContext;
-  market: MarketContext;
-  freeAgents: RosterPlayer[];
   size: string | null;
 }) {
-  await Promise.resolve();
-  const ideas = findTradeTargets(
-    { teamId: me.id, roster: me.roster },
-    others.map((t) => ({ teamId: t.id, roster: t.roster })),
-    ctx,
-    market,
-    freeAgents,
-  );
+  const { ideas, fresh } = await tradeTargets(view);
   const name = new Map(others.map((t) => [t.id, t.name]));
   const count = (s: string) => ideas.filter((i) => tradeSize(i) === s).length;
   const shown = ideas.filter((i) => !size || tradeSize(i) === size).slice(0, 15);
   return (
     <>
+      {!fresh && (
+        <p className="px-1 text-xs text-muted-foreground">
+          Rosters changed: updating these ideas (a few seconds)…
+          <LiveRefresh active seconds={8} />
+        </p>
+      )}
       <div className="flex flex-wrap gap-1.5">
         {["All", ...SIZE_ORDER].map((s) => {
           const active = (s === "All" && !size) || s === size;
@@ -459,14 +447,7 @@ export default async function TradesPage({
             </div>
           }
         >
-          <Targets
-            me={me}
-            others={others}
-            ctx={v.ctx}
-            market={v.market}
-            freeAgents={v.freeAgents}
-            size={size}
-          />
+          <Targets view={v} others={others} size={size} />
         </Suspense>
         <p className="px-1 text-xs text-muted-foreground">
           A target must raise your starting points (playoff weeks count double) and pass the other

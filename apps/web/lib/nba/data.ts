@@ -1,7 +1,9 @@
 import "server-only";
 // Live loaders. Pages read ESPN and the NBA feeds directly (a handful of parallel requests,
 // ~100-300 ms each), so the app works as soon as the ESPN cookies are set. The database
-// comes in with history-dependent features (alerts, news latency, ML).
+// comes in with history-dependent features (alerts, news latency, ML). Responses are reused
+// for a few seconds (memoFetch) so moving between pages doesn't repeat them; ESPN writes
+// clear them.
 
 import {
   fetchLeague,
@@ -25,7 +27,14 @@ import {
 } from "@fantasy-copilot/nba-data";
 import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
+import { memoFetch } from "../fetch-memo";
 import { LAST_SCORING_PERIOD } from "./calendar";
+
+/** How long each read is reused: rosters and matchups, live scores, slower feeds. */
+const LEAGUE_FETCH = memoFetch(20_000);
+const LIVE_FETCH = memoFetch(15_000);
+const FEED_FETCH = memoFetch(60_000);
+const LINEUPS_FETCH = memoFetch(5 * 60_000);
 
 // The NBA schedule is ~400 KB and changes rarely: keep it in memory for 6 hours.
 let scheduleCache: { at: number; games: ProGame[] } | null = null;
@@ -39,7 +48,7 @@ export async function nbaSchedule(season: number): Promise<ProGame[]> {
 /** Injuries never block a page: an outage just means no injury notes. */
 async function safeInjuries(): Promise<{ list: InjuryReport[]; error: string | null }> {
   try {
-    return { list: await fetchInjuries(), error: null };
+    return { list: await fetchInjuries(FEED_FETCH), error: null };
   } catch (e) {
     return { list: [], error: (e as Error).message };
   }
@@ -63,7 +72,7 @@ async function leagueJson(
     };
   }
   const cfg = espnConfig();
-  const raw = await fetchLeague(cfg, LEAGUE_VIEWS, { scoringPeriodId });
+  const raw = await fetchLeague(cfg, LEAGUE_VIEWS, { scoringPeriodId, fetchImpl: LEAGUE_FETCH });
   return { raw, teamId: cfg.teamId, season: cfg.season };
 }
 
@@ -75,6 +84,7 @@ async function rostersAhead(scoringPeriodId: number): Promise<Map<number, Roster
   if (process.env.ESPN_LEAGUE_FILE || scoringPeriodId >= LAST_SCORING_PERIOD) return null;
   const raw = await fetchLeague(espnConfig(), ["mRoster"], {
     scoringPeriodId: scoringPeriodId + 1,
+    fetchImpl: LEAGUE_FETCH,
   });
   return new Map(parseTeams(raw).map((t) => [t.id, t.roster]));
 }
@@ -87,10 +97,10 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
   ]);
   const [games, scoreboard, injuries, lineups] = await Promise.all([
     nbaSchedule(season),
-    fetchScoreboard(yyyymmdd).catch(() => []),
+    fetchScoreboard(yyyymmdd, LIVE_FETCH).catch(() => []),
     safeInjuries(),
     // Published on game days only; any failure just means no lineup info yet.
-    fetchDailyLineups(yyyymmdd).catch(() => null),
+    fetchDailyLineups(yyyymmdd, LINEUPS_FETCH).catch(() => null),
   ]);
   const settings = parseSettings(raw);
   const teams = parseTeams(raw);
@@ -120,6 +130,7 @@ export async function loadFreeAgents(scoringPeriodId: number, limit = 250) {
   const raw = await fetchLeague(cfg, ["kona_player_info"], {
     filter: freeAgentFilter(limit),
     scoringPeriodId,
+    fetchImpl: FEED_FETCH,
   });
   return parseFreeAgents(raw, cfg.season);
 }
@@ -131,6 +142,7 @@ export async function loadLiveRosters(scoringPeriodId: number, matchupPeriod: nu
   const raw = await fetchLeague(cfg, ["mMatchupScore", "mBoxscore"], {
     filter: { schedule: { filterMatchupPeriodIds: { value: [matchupPeriod] } } },
     scoringPeriodId,
+    fetchImpl: LIVE_FETCH,
   });
   return parseLiveRosters(raw, matchupPeriod);
 }

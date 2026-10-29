@@ -319,3 +319,41 @@ describe("winChanceLabel", () => {
     expect(winChanceLabel(0, true)).toBe("0%");
   });
 });
+
+describe("perGameProjection: minutes x rate", () => {
+  // Synthetic: projected 20 FP/G in 25 minutes (0.8/min); 4 games at 32 minutes and 28 FP/G.
+  const p = {
+    id: 9,
+    name: "Role Change",
+    proTeamId: 1,
+    proTeam: "X",
+    positions: ["SG"],
+    slot: "BE",
+    injuryStatus: "ACTIVE",
+    percentOwned: 0,
+    percentChange: 0,
+    projection: { avg: 20, total: 1400, stats: { MIN: 25 } },
+    season: { avg: 28, total: 112, stats: { MIN: 32 } },
+    last7: null,
+    last15: null,
+    last30: null,
+  } as unknown as RosterPlayer;
+
+  it("moves minutes fast and the per-minute rate slowly", () => {
+    const v = perGameProjection(p);
+    const minutes = (4 * 32 + 2 * 25) / 6;
+    const rate = (4 * (28 / 32) + 15 * 0.8) / 19;
+    expect(v.source).toBe("minutes");
+    expect(v.minutes).toBeCloseTo(minutes, 9);
+    expect(v.fppg).toBeCloseTo(minutes * rate, 9);
+    // 24.2 vs 21.7 for the old 15-game blend, which barely moved after 4 games.
+    expect(v.fppg - (4 * 28 + 15 * 20) / 19).toBeCloseTo(2.52, 2);
+  });
+
+  it("falls back to the plain blend without minutes", () => {
+    const noMin = { ...p, projection: { avg: 20, total: 1400, stats: {} } } as RosterPlayer;
+    const v = perGameProjection(noMin);
+    expect(v.source).toBe("blend");
+    expect(v.fppg).toBeCloseTo((4 * 28 + 15 * 20) / 19, 9);
+  });
+});

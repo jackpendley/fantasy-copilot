@@ -310,8 +310,9 @@ async function main() {
     ),
   };
   // What ships today (BASELINE="blend PRIOR_GAMES=15" reproduces the first model card tables;
-  // "blend 15 + minutes trend (5 g, 0.5)" the game-environment ones).
-  const BASELINE = process.env.BASELINE || "current model (+ game environment 0.75)";
+  // "blend 15 + minutes trend (5 g, 0.5)" the game-environment ones; "current model (+ game
+  // environment 0.75)" the minutes x rate test).
+  const BASELINE = process.env.BASELINE || "minutes x rate (kMin 2, kRate 15)";
 
   // Game lines for every game in the test season, and the league's average implied team
   // total from the days before each game (point in time; none until 40 team-games are in).

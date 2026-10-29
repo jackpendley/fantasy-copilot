@@ -195,8 +195,10 @@ describe("known injuries", { timeout: 30_000 }, () => {
 });
 
 // Exactness guard: every path (streaming, IR stashes, known injuries, a reserve, lazy managers,
-// banked and decided weeks) on a synthetic league, against results recorded from the simulator
-// before its 2026-10-29 speed rewrite. Any change to the draws or tie-breaks shows up here.
+// banked and decided weeks) on a synthetic league, against recorded results. Recorded from the
+// simulator before its 2026-10-29 speed rewrite (which matched them to the last bit), then
+// re-recorded once for the IR-return fix the same day. Any change to the draws, tie-breaks or
+// rules shows up here; re-record only for a deliberate model change.
 const GOLDEN_SLOTS = { PG: 1, SG: 1, SF: 1, PF: 1, C: 1, G: 1, F: 1, UTIL: 2, BE: 3, IR: 1 };
 function goldenInput(): SimInput {
   const teams: SimTeam[] = [1, 2, 3, 4, 5, 6, 7, 8].map((id) => ({
@@ -276,80 +278,80 @@ function goldenInput(): SimInput {
 const GOLDEN = [
   {
     teamId: 1,
-    expWins: 4.05,
-    expPointsFor: 7000.084472180561,
-    playoffs: 1,
-    seed1: 0.2,
-    final: 0.18333333333333332,
-    champ: 0.13333333333333333,
+    expWins: 3.95,
+    expPointsFor: 6957.059283504318,
+    playoffs: 0.9833333333333333,
+    seed1: 0.21666666666666667,
+    final: 0.21666666666666667,
+    champ: 0.06666666666666667,
   },
   {
     teamId: 2,
-    expWins: 3.7666666666666666,
-    expPointsFor: 7457.789002314584,
+    expWins: 3.8333333333333335,
+    expPointsFor: 7453.843685560525,
     playoffs: 0.9833333333333333,
-    seed1: 0.26666666666666666,
-    final: 0.43333333333333335,
-    champ: 0.2,
+    seed1: 0.3,
+    final: 0.45,
+    champ: 0.21666666666666667,
   },
   {
     teamId: 3,
-    expWins: 2.15,
-    expPointsFor: 5670.969519126381,
-    playoffs: 0.43333333333333335,
+    expWins: 1.9166666666666667,
+    expPointsFor: 5574.99067071142,
+    playoffs: 0.36666666666666664,
     seed1: 0,
-    final: 0.11666666666666667,
+    final: 0.05,
     champ: 0.05,
   },
   {
     teamId: 4,
-    expWins: 3.6166666666666667,
-    expPointsFor: 6631.486783924006,
-    playoffs: 0.8833333333333333,
-    seed1: 0.15,
-    final: 0.31666666666666665,
-    champ: 0.16666666666666666,
+    expWins: 3.716666666666667,
+    expPointsFor: 6631.970078281314,
+    playoffs: 0.9166666666666666,
+    seed1: 0.16666666666666666,
+    final: 0.35,
+    champ: 0.26666666666666666,
   },
   {
     teamId: 5,
-    expWins: 3.6,
-    expPointsFor: 6721.094945637409,
-    playoffs: 0.9333333333333333,
-    seed1: 0.15,
+    expWins: 3.7,
+    expPointsFor: 6700.884739609615,
+    playoffs: 0.9166666666666666,
+    seed1: 0.1,
     final: 0.3333333333333333,
-    champ: 0.2,
+    champ: 0.1,
   },
   {
     teamId: 6,
-    expWins: 0.9833333333333333,
-    expPointsFor: 5449.806150256776,
-    playoffs: 0.15,
+    expWins: 1.0166666666666666,
+    expPointsFor: 5449.4000267664505,
+    playoffs: 0.13333333333333333,
     seed1: 0,
-    final: 0.05,
+    final: 0.016666666666666666,
     champ: 0,
   },
   {
     teamId: 7,
-    expWins: 2.7333333333333334,
-    expPointsFor: 6487.297239288487,
-    playoffs: 0.7166666666666667,
+    expWins: 2.85,
+    expPointsFor: 6464.9697178430115,
+    playoffs: 0.8,
     seed1: 0.08333333333333333,
-    final: 0.26666666666666666,
-    champ: 0.11666666666666667,
+    final: 0.21666666666666667,
+    champ: 0.05,
   },
   {
     teamId: 8,
-    expWins: 3.1,
+    expWins: 3.0166666666666666,
     expPointsFor: 6792.419732415116,
     playoffs: 0.9,
-    seed1: 0.15,
-    final: 0.3,
-    champ: 0.13333333333333333,
+    seed1: 0.13333333333333333,
+    final: 0.36666666666666664,
+    champ: 0.25,
   },
 ];
 
 describe("simulator exactness", { timeout: 30_000 }, () => {
-  it("matches the results recorded before the speed rewrite, to the last bit", () => {
+  it("matches the recorded results to the last bit", () => {
     expect(simulateSeason(goldenInput())).toEqual(GOLDEN);
   });
 });
@@ -367,5 +369,23 @@ describe("progress reports", { timeout: 30_000 }, () => {
     expect(reports[0]!.partial).toEqual(simulateSeason({ ...goldenInput(), seasons: 20 }));
     expect(reports[1]!.partial).toEqual(simulateSeason({ ...goldenInput(), seasons: 40 }));
     expect(full).toEqual(GOLDEN);
+  });
+});
+
+describe("roster size", { timeout: 30_000 }, () => {
+  it("never exceeds the roster limit: an IR return drops the fill-in, or the weakest player", () => {
+    const input = goldenInput();
+    // 12 active spots (9 starters + 3 bench) plus 1 IR slot.
+    const limit = Object.values(input.slotCounts).reduce((a, n) => a + n, 0);
+    let largest = 0;
+    simulateSeason({
+      ...input,
+      seasons: 40,
+      inspect: (_s, rosters) => {
+        for (const r of rosters) largest = Math.max(largest, r.length);
+      },
+    });
+    expect(limit).toBe(13);
+    expect(largest).toBeLessThanOrEqual(limit);
   });
 });

@@ -175,6 +175,7 @@ describe("parseBoxScore", () => {
           TO: 3,
           STL: 5,
           BLK: 0,
+          PF: 2,
         },
       },
     ]);

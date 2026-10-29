@@ -1,7 +1,7 @@
 // Player card data (read-only): tapped from any player row.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { loadPlayerCard } from "@/lib/nba/player-card";
+import { isLive, loadPlayerCard } from "@/lib/nba/player-card";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,10 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   try {
     const card = await loadPlayerCard(id);
     if (!card) return NextResponse.json({ error: "not found" }, { status: 404 });
-    return NextResponse.json(card, { headers: { "Cache-Control": "private, max-age=60" } });
+    // While his game is on, every request is fresh (the card polls); otherwise a minute.
+    return NextResponse.json(card, {
+      headers: { "Cache-Control": isLive(card) ? "no-store" : "private, max-age=60" },
+    });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

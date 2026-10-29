@@ -128,11 +128,11 @@ export async function fetchGameSummary(
 export interface BoxScoreLine {
   playerId: number;
   teamId: number;
-  /** MIN, PTS, FGM, FGA, 3PM, 3PA, FTM, FTA, REB, AST, TO, STL, BLK (players who played). */
+  /** MIN, PTS, FGM, FGA, 3PM, 3PA, FTM, FTA, REB, AST, TO, STL, BLK, PF (players who played). */
   line: Record<string, number>;
 }
 
-/** Every player who played in a finished game, from the summary's box score. */
+/** Every player who has played in a game (live or finished), from the summary's box score. */
 export function parseBoxScore(summary: Json): BoxScoreLine[] {
   const out: BoxScoreLine[] = [];
   const made = (v: string) => String(v).split("-").map(Number) as [number, number];
@@ -147,7 +147,7 @@ export function parseBoxScore(summary: Json): BoxScoreLine[] {
         if (n === "FG") [line.FGM, line.FGA] = made(v);
         else if (n === "3PT") [line["3PM"], line["3PA"]] = made(v);
         else if (n === "FT") [line.FTM, line.FTA] = made(v);
-        else if (["MIN", "PTS", "REB", "AST", "TO", "STL", "BLK"].includes(n))
+        else if (["MIN", "PTS", "REB", "AST", "TO", "STL", "BLK", "PF"].includes(n))
           line[n] = Number(v) || 0;
       });
       out.push({ playerId: Number(a.athlete?.id), teamId: Number(team.team?.id), line });

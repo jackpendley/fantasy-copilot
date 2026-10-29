@@ -392,3 +392,22 @@
 **Evidence:** it passed the pre-registered walk-forward test on held-out 2024-25: −0.038 FP/game, CI [−0.065, −0.010], with the biggest gain in games 1–20 (MODEL_CARD).
 
 **Why it mattered:** it answers whether hot starters were better adds. Minutes gains count fast; a per-minute scoring streak counts slowly, because that part is mostly noise.
+
+## ADR-035: player card v2 (2026-10-29)
+
+**Tabs:** "Live"/"Final" while his game is on today (otherwise "Next game"), and "Season" (this season against last).
+
+**Game state:** comes from today's scoreboard, so a game that has tipped is never "upcoming". ESPN's game log can trail a game by hours, so yesterday's and today's finished games are read from the box score when the log hasn't added them (the Austin Reaves card that still showed last night's game as "tonight").
+
+**Freshness:**
+
+- The client keeps a card 60 s (15 s live), refreshes every 20 s while open during a game, and refetches when the app returns to the foreground.
+- The API sends `no-store` while live.
+
+**Sources (free):**
+
+- ESPN: PER, TS%, eFG%, AST/TO ratios, +/-. ESPN leaves usage, VORP and rebound rate at 0, so they aren't shown from it.
+- PBP Stats: usage, shot quality, shot zones. The league-wide pull takes 3–4.5 s, so the nightly job stores it in `pbp_players` (migration 0012); the first card fills it once if empty.
+- DARKO: daily projection, scored with league settings. Its data endpoint has no DPM.
+
+**Bars:** FG and FT are one net bar each.

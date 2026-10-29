@@ -71,7 +71,7 @@
 - **Database:** any Postgres reached through `DATABASE_URL` with the `postgres` client (`prepare: false` for poolers). In production that's **Neon's free plan**, created from Vercel → Storage.
   - Schema: `apps/web/db/migrations/*.sql`, applied by `pnpm db:migrate` (a `schema_migrations` table records what ran).
   - Only server code connects, so there is no RLS layer.
-- **Scheduling:** Neon scales to zero and has no pg_cron. Timed jobs are called by a free external scheduler (cron-job.org) at `/api/cron/[job]` with `Authorization: Bearer CRON_SECRET`, every 5 minutes in game windows. Vercel's daily cron remains a fallback.
+- **Scheduling:** Neon scales to zero and has no pg_cron. Timed jobs are called by a free external scheduler (cron-job.org) at `/api/cron/[job]` with `Authorization: Bearer CRON_SECRET`, every 5 minutes in game windows. Vercel's daily cron remains a fallback. cron-job.org gives up after 30 seconds, so `gameday` answers `{accepted: true}` at once and runs in `after()` within the route's 300-second budget (`?wait=1` waits for the result, for debugging).
 - **Size:** big ML data (box scores, shots) lives in local Parquet files (MarketScope pattern). Only small app tables go in Postgres, well under Neon's 0.5 GB.
 
 ## ADR-011: one web app with a section per sport (2026-10-19)

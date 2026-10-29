@@ -57,6 +57,9 @@ interface Next {
   vacated: number;
   /** The same, counting only absent teammates who share a position with him. */
   vacatedSamePosition: number;
+  /** His prior-season minutes per game and fantasy points per minute. */
+  priorMin: number;
+  priorRate: number;
 }
 
 /** A predictor: expected FP for the next game from the prior, the games so far and the line. */
@@ -91,6 +94,22 @@ const ewmaBlend =
       (w * w) / games.reduce((a, _, i) => a + Math.pow(decay, 2 * (games.length - 1 - i)), 0),
     );
     return (n * (s / w) + priorGames * prior) / (n + priorGames);
+  };
+
+/**
+ * Minutes x rate (MODEL_CARD pre-registration 2026-10-29): minutes blended fast toward this
+ * season (kMin prior games), fantasy points per minute slowly (kRate prior games).
+ */
+const minutesRate =
+  (kMin: number, kRate: number): Predictor =>
+  (prior, games, next) => {
+    if (!games.length || !next.priorMin) return prior;
+    const n = games.length;
+    const min = (n * mean(games.map((g) => g.min)) + kMin * next.priorMin) / (n + kMin);
+    const curMin = games.reduce((a, g) => a + g.min, 0);
+    const curRate = curMin ? games.reduce((a, g) => a + g.fp, 0) / curMin : next.priorRate;
+    const rate = (n * curRate + kRate * next.priorRate) / (n + kRate);
+    return min * rate;
   };
 
 /** Scale by recent minutes vs his season minutes (role changes show up in minutes first). */
@@ -264,6 +283,15 @@ async function main() {
       minutesTrend(blend(15), 5, 0.5),
       0.75,
     ),
+    // Pre-registered 2026-10-29: minutes x rate, then the shipped trend and environment.
+    ...Object.fromEntries(
+      [2, 4, 8].flatMap((km) =>
+        [15, 30].map((kr) => [
+          `minutes x rate (kMin ${km}, kRate ${kr})`,
+          gameEnvironment(minutesTrend(minutesRate(km, kr), 5, 0.5), 0.75),
+        ]),
+      ),
+    ),
     ...Object.fromEntries(
       [0.25, 0.5, 0.75, 1].flatMap((k) => [
         [
@@ -344,6 +372,13 @@ async function main() {
     if (prevGames.length < 20 || curGames.length < 20) continue;
     players++;
     const prior = mean(prevGames.map(fp));
+    const priorMin = mean(prevGames.map((g) => g.line.MIN ?? 0));
+    const priorRate =
+      prevGames.reduce((a, g) => a + fp(g), 0) /
+      Math.max(
+        1,
+        prevGames.reduce((a, g) => a + (g.line.MIN ?? 0), 0),
+      );
     const seen: Game[] = [];
     const mine: Record<string, number[]> = {};
     for (const k of Object.keys(predictors)) mine[k] = [];
@@ -355,6 +390,8 @@ async function main() {
         leagueTotal: leagueBefore.get(etDate(new Date(g.date))) ?? null,
         vacated: vacated.get(`${id}:${g.gameId}`) ?? 0,
         vacatedSamePosition: vacatedSame.get(`${id}:${g.gameId}`) ?? 0,
+        priorMin,
+        priorRate,
       };
       for (const [k, pred] of Object.entries(predictors)) {
         const e = Math.abs(pred(prior, seen, next) - actual);

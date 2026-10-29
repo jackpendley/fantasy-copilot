@@ -230,3 +230,22 @@ Same draws, 2,000 seasons, two seeds:
 | After the fix: Demin → Gillespie  | −0.5 (noise) | +1.0     | +0.4     | +0.05         |
 
 The move was about neutral, not harmful. The Waivers page had said +0.31 wins: Waivers values a roster as fixed, while the simulator also lets the team stream that spot. Making recommendations agree with the simulator is the next change (ADR-033).
+
+## Pre-registration: minutes-aware early-season projection (2026-10-29, before any run)
+
+**Question:** do hot starts deserve more weight? Jack noticed guards starting well, such as Ja'Kobe Walter: 27.1 FP/G over 4 games, projected 16.5 by the current 15-game blend.
+
+**Hypothesis:** breakouts are mostly minutes. Fantasy points per minute are stable, so a role change should move the projection faster than a scoring streak.
+
+**Candidate "minutes × rate":**
+
+- **Minutes:** his prior-season minutes blended with this season's at `kMin` prior games.
+- **Rate:** fantasy points per minute: prior-season rate blended with this season's at `kRate` prior minutes-equivalent games.
+- **Prediction:** minutes × rate, then the shipped minutes trend and game environment.
+
+**Procedure:**
+
+- Grid `kMin` ∈ {2, 4, 8} × `kRate` ∈ {15, 30}, explored on 2025-26 (prior 2024-25). The best by overall MAE is chosen there.
+- That one candidate is then run once on held-out 2024-25 (prior 2023-24) against the current model.
+
+**Ships if** its per-player mean error difference vs the current model has a 95% CI entirely below 0 on the held-out season. It is also reported for games 1–20, where it should help most.

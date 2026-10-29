@@ -15,6 +15,7 @@ import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { recordMatchupSnapshot, recordMatchupStates } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
+import { refreshMoveChecks } from "./nba/move-checks";
 import { refreshTradeTargets } from "./nba/trade-view";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
@@ -136,6 +137,10 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       await log("trade-targets", "error", e.message);
       return null;
     });
+    const moves = await refreshMoveChecks().catch(async (e: Error) => {
+      await log("move-checks", "error", e.message);
+      return null;
+    });
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
     const market = await collectToday("morning", true).catch(async (e: Error) => {
       await log("market-data", "error", e.message);
@@ -148,6 +153,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       playoffs: me?.playoffs,
       weekWin: matchup?.p_win,
       tradesRefreshed: trades,
+      movesChecked: moves,
       ...states,
       ...market,
     };

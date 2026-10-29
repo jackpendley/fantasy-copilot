@@ -368,3 +368,19 @@
 - **Fix:** an IR return drops the fill-in, or the weakest player if the fill-in was already streamed away (MODEL_CARD, "IR-return roster bug").
 - **Guard:** the simulator's results on a synthetic league are recorded in `test/sim.test.ts`. A speed change must match them to the last bit; the 5× rewrite did. They are re-recorded only for a deliberate model change, as here.
 - **Test:** no roster ever exceeds the league limit.
+
+## ADR-033: waiver moves are checked with the season simulation, title odds first (2026-10-29)
+
+- **Context:**
+  - The quick Waivers ranking values a roster as fixed for the rest of the season.
+  - The Outlook simulates streaming, injuries and the playoffs.
+  - The two disagreed: Demin → Gillespie was "+0.31 wins" on Waivers and about neutral in the simulator (after ADR-032).
+- **Decision:** the top 4 quick moves are simulated against the current roster (`lib/nba/move-sim.ts`): 800 seasons, the same random draws, paired season by season for standard errors.
+  - A title change larger than twice its error decides (Jack's choice: title odds first).
+  - Otherwise a clear change in expected wins decides.
+  - Otherwise the move is "about even".
+  - Checked moves show the simulator's verdict and lead the list; the quick estimate stays as a breakdown.
+- **Budget:** Vercel Hobby includes 4 active CPU-hours a month (exceeding pauses functions for up to 30 days).
+  - A check costs ~40 s on Vercel. It runs in the background (`view_cache` "move-checks") after roster-move refreshes, nightly, and when a visit finds it stale.
+  - It skips when nothing relevant changed, with a 30-minute cooldown for short-list churn when Jack's roster is unchanged.
+- **Precision:** at 800 seasons a title change is ±~3.3 points (2 SE) and expected wins ±~0.14. Most single waiver moves fall inside that, so they show as even. That is the honest answer: the simulator says the difference is smaller than the noise.

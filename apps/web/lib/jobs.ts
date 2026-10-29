@@ -15,6 +15,7 @@ import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { recordMatchupSnapshot, recordMatchupStates } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
+import { refreshTradeTargets } from "./nba/trade-view";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -66,6 +67,13 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   }
 
   const { events, newEvents } = await logStatusEvents(data, date);
+  // New injury news changes trade values: refresh the stored trade ideas.
+  const trades = newEvents
+    ? await refreshTradeTargets().catch(async (e: Error) => {
+        await log("trade-targets", "error", e.message);
+        return null;
+      })
+    : null;
 
   // Closing lines: re-captured every 5 minutes until tip for games starting soon.
   const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
@@ -98,6 +106,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     date,
     ...watch,
     closingProps: market?.props ?? 0,
+    tradesRefreshed: trades,
     events: events.length,
     newEvents,
     alerts: alerts.length,
@@ -122,6 +131,11 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       return null;
     });
     const { scoringPeriod, teams } = await runOutlook();
+    // A new day's projections: have the trade ideas ready for the first visit.
+    const trades = await refreshTradeTargets().catch(async (e: Error) => {
+      await log("trade-targets", "error", e.message);
+      return null;
+    });
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
     const market = await collectToday("morning", true).catch(async (e: Error) => {
       await log("market-data", "error", e.message);
@@ -133,6 +147,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       title: me?.champ,
       playoffs: me?.playoffs,
       weekWin: matchup?.p_win,
+      tradesRefreshed: trades,
       ...states,
       ...market,
     };

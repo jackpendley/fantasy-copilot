@@ -5,6 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { submitLineup, type LineupMove } from "@fantasy-copilot/espn";
 import { auditAvailable, recordAction } from "@/lib/audit";
+import { forgetResponses } from "@/lib/fetch-memo";
 import { LAST_SCORING_PERIOD, scoringPeriodForDate } from "@/lib/nba/calendar";
 import { loadLeague } from "@/lib/nba/data";
 import { buildDayBoard } from "@/lib/nba/day";
@@ -46,6 +47,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "date outside the season" }, { status: 400 });
   }
 
+  // Checks read ESPN as it is now, not a response remembered from a page load.
+  forgetResponses();
   const data = await loadLeague(sp, date);
   const board = buildDayBoard({
     roster: data.me.roster,
@@ -65,6 +68,7 @@ export async function POST(request: NextRequest) {
 
   const cfg = espnConfig();
   const result = await submitLineup(cfg, cfg.teamId, sp, fresh);
+  forgetResponses();
   try {
     await recordAction({
       kind: "lineup",

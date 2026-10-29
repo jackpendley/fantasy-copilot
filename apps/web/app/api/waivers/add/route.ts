@@ -7,6 +7,7 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 import { submitAddDrop } from "@fantasy-copilot/espn";
 import { auditAvailable, recordAction } from "@/lib/audit";
+import { forgetResponses } from "@/lib/fetch-memo";
 import { espnConfig } from "@/lib/env";
 import { refreshLogged } from "@/lib/nba/outlook-refresh";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
@@ -39,6 +40,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "addId (and dropId) are required" }, { status: 400 });
   }
 
+  // Checks read ESPN as it is now, not a response remembered from a page load.
+  forgetResponses();
   const v = await loadWaiverView();
   const fa = v.freeAgents.find((f) => f.player.id === addId);
   if (!fa) {
@@ -83,6 +86,7 @@ export async function POST(request: NextRequest) {
   const cfg = espnConfig();
   const move = { addId, dropId, claim };
   const result = await submitAddDrop(cfg, cfg.teamId, v.sp, move);
+  forgetResponses();
   // A free-agent add changes the roster now (a claim only once it processes, which the
   // 5-minute roster watch picks up): bring the season outlook up to date.
   if (result.ok && !claim) {

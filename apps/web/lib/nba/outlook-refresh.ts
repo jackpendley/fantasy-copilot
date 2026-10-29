@@ -7,10 +7,12 @@ import "server-only";
 import { after } from "next/server";
 import { fetchLeague, parseTransactions, type LeagueTransaction } from "@fantasy-copilot/espn";
 import { db } from "@/lib/db";
+import { forgetResponses } from "@/lib/fetch-memo";
 import { espnConfig } from "@/lib/env";
 import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
+import { refreshTradeTargets } from "./trade-view";
 
 const LOCK = "outlook";
 /** The roster watch only reads the database when a move is at least this recent. */
@@ -114,6 +116,8 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
   const moves = await recentLeagueMoves(now);
   const newest = moves.at(-1)?.at ?? null;
   if (!recentMove(newest, now.getTime())) return { watch: "quiet" };
+  // Rosters changed: later reads go back to ESPN.
+  forgetResponses();
   const last = await latestOutlook();
   if (!isStale(newest, last?.run_at.getTime() ?? null)) return { watch: "current" };
   after(() => refreshLogged());
@@ -122,13 +126,19 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
 
 /** For `after()` callbacks: run it and log the outcome (nobody is waiting on a response). */
 export async function refreshLogged(trigger?: string | null) {
+  const record = (job: string, status: "ok" | "error", detail: string) =>
+    db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`.catch(
+      () => {},
+    );
   try {
-    const outcome = await refreshOutlook(trigger);
-    await db()`insert into refresh_log (job, status, detail) values ('outlook-refresh', 'ok', ${outcome})`;
+    await record("outlook-refresh", "ok", await refreshOutlook(trigger));
   } catch (e) {
-    await db()`
-      insert into refresh_log (job, status, detail)
-      values ('outlook-refresh', 'error', ${(e as Error).message})
-    `.catch(() => {});
+    await record("outlook-refresh", "error", (e as Error).message);
+  }
+  // Rosters changed: have the trade ideas ready before the page is opened.
+  try {
+    if (await refreshTradeTargets()) await record("trade-targets", "ok", "refreshed");
+  } catch (e) {
+    await record("trade-targets", "error", (e as Error).message);
   }
 }

@@ -11,6 +11,9 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
+import { LiveRefresh } from "@/components/live-refresh";
+import { moveChecks, moveKey, type MoveChecks } from "@/lib/nba/move-checks";
+import type { Delta, MoveEffect } from "@/lib/nba/move-sim";
 import { winChanceLabel } from "@/lib/nba/week";
 import type { StreamOption, WaiverCandidate } from "@/lib/nba/waivers";
 import { cn } from "@/lib/utils";
@@ -40,14 +43,69 @@ function Who({ c }: { c: WaiverCandidate }) {
   );
 }
 
+const VERDICT: Record<MoveEffect["verdict"], { text: string; tone: string }> = {
+  better: { text: "helps", tone: "text-success" },
+  worse: { text: "hurts", tone: "text-danger" },
+  even: { text: "about even", tone: "text-muted-foreground" },
+};
+const pts = (x: Delta) => `${signed(x.d * 100)}`;
+
+/** What the season simulation says about this move (same engine as the Outlook). */
+function SimCheck({ e, seasons }: { e: MoveEffect | undefined; seasons: number }) {
+  if (!e)
+    return (
+      <div className="mt-1 pl-[50px] text-xs text-muted-foreground">
+        Season simulation: checking this move…
+      </div>
+    );
+  const v = VERDICT[e.verdict];
+  return (
+    <div
+      className="mt-1 pl-[50px] text-xs text-muted-foreground"
+      title={`${seasons.toLocaleString("en-US")} simulated seasons with and without the move, same random draws. ± is two standard errors.`}
+    >
+      Season sim: title {pts(e.title)} pts (±{(2 * e.title.se * 100).toFixed(1)}) · playoffs{" "}
+      {pts(e.playoffs)} · {signed(e.wins.d, 2)} wins ·{" "}
+      <span className={cn("font-medium", v.tone)}>{v.text}</span>
+      {e.decidedBy === "wins" && e.verdict !== "even" && " (by expected wins)"}
+    </div>
+  );
+}
+
+/** Checked moves first: clear title gains, then clear win gains, even, unchecked, and losses. */
+function rankByChecks(options: StreamOption[], checks: MoveChecks | null): StreamOption[] {
+  if (!checks?.byKey.size) return options;
+  const group = (e: MoveEffect | undefined) =>
+    !e
+      ? 3
+      : e.verdict === "better"
+        ? e.decidedBy === "title"
+          ? 0
+          : 1
+        : e.verdict === "even"
+          ? 2
+          : 4;
+  // Within "even" (and unchecked) the quick ranking's order stands: the differences are noise.
+  const size = (e: MoveEffect | undefined) =>
+    !e || e.verdict === "even" ? 0 : e.decidedBy === "title" ? e.title.d : e.wins.d;
+  return [...options].sort((x, y) => {
+    const ex = checks.byKey.get(moveKey(x));
+    const ey = checks.byKey.get(moveKey(y));
+    return group(ex) - group(ey) || size(ey) - size(ex);
+  });
+}
+
 function OptionRow({
   o,
   addsLeft,
   addsCap,
+  check,
 }: {
   o: StreamOption;
   addsLeft: number;
   addsCap: number;
+  /** The season simulation's verdict, for the moves it checks. */
+  check?: { e: MoveEffect | undefined; seasons: number };
 }) {
   return (
     <div className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center">
@@ -82,18 +140,35 @@ function OptionRow({
             )}
           </div>
         )}
+        {check && <SimCheck e={check.e} seasons={check.seasons} />}
       </div>
       <div className="flex items-center justify-between gap-4 pl-[50px] sm:pl-0">
         <div className="text-right">
-          <div
-            className={cn(
-              "text-lg font-semibold tabular-nums",
-              o.netWins > 0.01 ? "text-success" : o.netWins < -0.01 && "text-danger",
-            )}
-            title="Expected wins: this week's change in win chance plus the rest of the season"
-          >
-            {signed(o.netWins, 2)} wins
-          </div>
+          {check?.e ? (
+            <div
+              className={cn("text-lg font-semibold tabular-nums", VERDICT[check.e.verdict].tone)}
+              title="Season simulation: change in expected wins (± two standard errors)"
+            >
+              {check.e.verdict === "even" && check.e.decidedBy === "wins"
+                ? "≈ even"
+                : `${signed(check.e.wins.d, 2)} wins`}
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "text-lg font-semibold tabular-nums",
+                o.netWins > 0.01 ? "text-success" : o.netWins < -0.01 && "text-danger",
+              )}
+              title="Expected wins: this week's change in win chance plus the rest of the season"
+            >
+              {signed(o.netWins, 2)} wins
+            </div>
+          )}
+          {check?.e && (
+            <div className="text-xs text-muted-foreground tabular-nums">
+              Quick estimate {signed(o.netWins, 2)}
+            </div>
+          )}
           <div className="text-xs text-muted-foreground tabular-nums">
             This week {o.deltaWin != null ? `${signed(o.deltaWin * 100)}%` : "—"} (
             {signed(o.deltaPts, 0)} pts)
@@ -157,7 +232,9 @@ export default async function WaiversPage({
     .map((f) => f.waiverUntil ?? 0)
     .filter(Boolean)
     .sort((a, b) => a - b)[0];
-  const best = analysis.best.slice(0, 8);
+  const checks = await moveChecks(v).catch(() => null);
+  const checked = new Set(checks ? [...checks.byKey.keys()] : []);
+  const best = rankByChecks(analysis.best.slice(0, 8), checks);
   const shown = new Set(best.map((o) => o.add.player.id));
   // Streams that help this week but cost more later than they gain now.
   const streams = analysis.thisWeek
@@ -189,13 +266,24 @@ export default async function WaiversPage({
       )}
 
       <section className="space-y-1.5">
-        <SectionTitle aside="Ranked by expected wins: this week plus the rest of the season">
+        <SectionTitle aside="Checked with the season simulation: title odds first">
           Best moves
         </SectionTitle>
+        {checks && !checks.fresh && <LiveRefresh active seconds={15} />}
         {best.length ? (
           <div className="divide-y overflow-hidden rounded-xl border bg-card">
-            {best.map((o) => (
-              <OptionRow key={o.add.player.id} o={o} addsLeft={addsLeft} addsCap={addsCap} />
+            {best.map((o, i) => (
+              <OptionRow
+                key={o.add.player.id}
+                o={o}
+                addsLeft={addsLeft}
+                addsCap={addsCap}
+                check={
+                  checks && (checked.has(moveKey(o)) || i < 4)
+                    ? { e: checks.byKey.get(moveKey(o)), seasons: checks.seasons }
+                    : undefined
+                }
+              />
             ))}
           </div>
         ) : (
@@ -209,7 +297,10 @@ export default async function WaiversPage({
           player&apos;s schedule, injuries and IL returns. &ldquo;Later&rdquo; turns the rest of the
           season&apos;s lineup points into wins (~{(analysis.winsPerPoint * 100).toFixed(2)} wins
           per 100 points; playoff weeks count double), so a stream that costs a useful player only
-          shows up when it&apos;s worth it.
+          shows up when it&apos;s worth it. The top moves are then played out in the season
+          simulation that drives the Outlook (with and without the move, same random draws), so a
+          move that helps here moves your Outlook the same way. A title change smaller than its
+          margin (±) is called even, and expected wins decide.
         </p>
       </section>
 

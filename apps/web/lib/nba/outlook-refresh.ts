@@ -12,6 +12,7 @@ import { espnConfig } from "@/lib/env";
 import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
+import { refreshMoveChecks } from "./move-checks";
 import { refreshTradeTargets } from "./trade-view";
 
 const LOCK = "outlook";
@@ -135,10 +136,15 @@ export async function refreshLogged(trigger?: string | null) {
   } catch (e) {
     await record("outlook-refresh", "error", (e as Error).message);
   }
-  // Rosters changed: have the trade ideas ready before the page is opened.
+  // Rosters changed: have the trade ideas and checked waiver moves ready before a visit.
   try {
     if (await refreshTradeTargets()) await record("trade-targets", "ok", "refreshed");
   } catch (e) {
     await record("trade-targets", "error", (e as Error).message);
+  }
+  try {
+    if (await refreshMoveChecks()) await record("move-checks", "ok", "refreshed");
+  } catch (e) {
+    await record("move-checks", "error", (e as Error).message);
   }
 }

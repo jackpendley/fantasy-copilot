@@ -372,6 +372,24 @@ describe("progress reports", { timeout: 30_000 }, () => {
   });
 });
 
+describe("season outcomes", { timeout: 30_000 }, () => {
+  it("reports each season's ending, consistent with the summary", () => {
+    let champs = 0;
+    let seasons = 0;
+    const res = simulateSeason({
+      ...goldenInput(),
+      inspect: (_s, o) => {
+        seasons++;
+        if (o.champion === 2) champs++;
+        expect(o.playoffs).toHaveLength(6);
+        expect(o.playoffs[0]).toBe(o.seed1);
+      },
+    });
+    expect(seasons).toBe(60);
+    expect(res.find((r) => r.teamId === 2)!.champ).toBeCloseTo(champs / 60, 12);
+  });
+});
+
 describe("roster size", { timeout: 30_000 }, () => {
   it("never exceeds the roster limit: an IR return drops the fill-in, or the weakest player", () => {
     const input = goldenInput();
@@ -381,8 +399,8 @@ describe("roster size", { timeout: 30_000 }, () => {
     simulateSeason({
       ...input,
       seasons: 40,
-      inspect: (_s, rosters) => {
-        for (const r of rosters) largest = Math.max(largest, r.length);
+      inspect: (_s, o) => {
+        for (const r of o.rosters) largest = Math.max(largest, r.length);
       },
     });
     expect(limit).toBe(13);

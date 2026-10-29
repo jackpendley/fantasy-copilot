@@ -68,11 +68,22 @@ export interface SimInput {
   addCapPerWeek: number;
   seasons: number;
   seed?: number;
-  /** Called after each simulated season with every team's final roster (ids, IR included). */
-  inspect?: (season: number, rosters: number[][]) => void;
+  /** Called after each simulated season with how it ended (for diagnostics and paired errors). */
+  inspect?: (season: number, outcome: SeasonOutcome) => void;
   /** Per-game noise and weekly form sd (calibrated defaults). */
   noise?: number;
   form?: number;
+}
+
+/** One simulated season's ending, teams in input order. */
+export interface SeasonOutcome {
+  /** Final rosters (player ids, IR included). */
+  rosters: number[][];
+  wins: number[];
+  /** Team ids: the champion, the #1 seed and the six playoff teams. */
+  champion: number;
+  seed1: number;
+  playoffs: number[];
 }
 
 export interface SimTeamResult {
@@ -558,10 +569,6 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         }
       }
     }
-    input.inspect?.(
-      s,
-      st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id)),
-    );
     // Regular season: decided weeks keep their actual winner.
     const wins = new Array<number>(n).fill(0);
     const pf = new Array<number>(n).fill(0);
@@ -600,7 +607,15 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     const s2 = winnerOf(seeds[1]!, q1, sw);
     agg[s1]!.final++;
     agg[s2]!.final++;
-    agg[winnerOf(s1, s2, fw)]!.champ++;
+    const champion = winnerOf(s1, s2, fw);
+    agg[champion]!.champ++;
+    input.inspect?.(s, {
+      rosters: st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id)),
+      wins,
+      champion: teams[champion]!.id,
+      seed1: teams[seeds[0]!]!.id,
+      playoffs: seeds.map((i) => teams[i]!.id),
+    });
     seasonsDone++;
     yield summary;
   }

@@ -12,15 +12,16 @@ export function RunOutlook() {
     setBusy(true);
     const res = await fetch("/api/outlook/run", { method: "POST" });
     const out = await res.json().catch(() => ({}));
-    if (res.ok && out.outcome === "busy") toast.info("Already updating. It'll refresh shortly.");
-    else if (res.ok) toast.success("Outlook updated");
-    else toast.error(`Outlook failed: ${out.error ?? res.status}`);
+    if (res.ok && out.outcome === "busy") toast.info("Already updating.");
+    else if (!res.ok) toast.error(`Outlook failed: ${out.error ?? res.status}`);
+    // The run starts in the background; give it a moment to post its first odds.
+    if (res.ok) await new Promise((r) => setTimeout(r, 2500));
     setBusy(false);
     router.refresh();
   }
   return (
     <Button size="sm" variant="outline" onClick={run} disabled={busy}>
-      {busy ? "Simulating…" : "Recalculate"}
+      {busy ? "Starting…" : "Recalculate"}
     </Button>
   );
 }

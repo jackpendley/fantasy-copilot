@@ -364,6 +364,7 @@
 - `scripts/backtest-projection.ts` keeps the variants for a later retry with real pregame absences (`status_events`).
 
 ## ADR-032: the simulator's roster never grows; golden results guard it (2026-10-29)
+
 - **Fix:** an IR return drops the fill-in, or the weakest player if the fill-in was already streamed away (MODEL_CARD, "IR-return roster bug").
 - **Guard:** the simulator's results on a synthetic league are recorded in `test/sim.test.ts`. A speed change must match them to the last bit; the 5× rewrite did. They are re-recorded only for a deliberate model change, as here.
 - **Test:** no roster ever exceeds the league limit.

@@ -280,3 +280,19 @@ The CI is entirely below 0, so it ships. In production the prior is ESPN's prese
 - Scotty Pippen Jr.: 16.8 against 25.1, 20.4 → 16.8.
 
 **Not covered yet:** players ESPN didn't project, such as Pelle Larsson (30.8 minutes, 21.5 FP/G). They keep the 15 FP/G prior blend. A minutes-aware prior for them is the next candidate.
+
+## Pre-registration: teammate absences and opponent defense (2026-10-29, before any run)
+
+The baseline is the shipped model: minutes × rate, minutes trend, game environment. The harness is the same walk-forward backtest, with the same pool and prior seasons.
+
+**A. Teammate absences as minutes.** The blanket points boost failed (ADR-031). This candidate moves minutes only: expected minutes += kSame × minutes usually played by absent same-position regulars, plus kOther × minutes of other absent regulars, capped at 40. His per-minute rate is unchanged. Absences are point in time: a regular (20+ minutes over his last 10 games, for this team within 10 days) who didn't play.
+
+- Grid: kSame ∈ {0.1, 0.2, 0.3} × kOther ∈ {0, 0.05}.
+
+**B. Opponent defense against each position.** For each opponent and each player's first listed position: actual fantasy points over our baseline projection, summed over the opponent's earlier games only (point in time). The factor is f = (n·r + k) / (n + k), where n is the number of player-games so far and r is that ratio. Prediction × f.
+
+- Grid: k ∈ {100, 200, 400}.
+
+**Procedure:** each family's best setting by overall MAE on 2025-26 (prior 2024-25) is then judged once on held-out 2024-25 (prior 2023-24). A family ships only if its per-player error difference against the shipped model has a 95% CI entirely below 0 there.
+
+Vegas player props already price tonight's absences, so A matters most for the days ahead (Matchup, Waivers, Outlook). Vegas totals already price overall defense, so B tests only the positional part on top.

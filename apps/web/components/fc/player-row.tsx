@@ -1,7 +1,7 @@
 import { Lock } from "lucide-react";
 import type { DayRow } from "@/lib/nba/day";
 import { statSummary, type LiveRow } from "@/lib/nba/live";
-import { keepStatsTogether, shortName } from "@/lib/display";
+import { compactClock, keepStatsTogether, shortName } from "@/lib/display";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SlotChip } from "./bits";
@@ -11,14 +11,35 @@ import { PlayerCardButton } from "./player-card";
 import { Pill, StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
 
-/** "vs PHI 4:00 PM", "@ DET Final 113-121", "vs BOS Q3 5:12 60-55". */
-function gameText(row: DayRow, live?: LiveRow): string {
+/**
+ * "vs [logo] PHI 4:00 PM", "@ [logo] DET Final 113-121"; live, "vs [logo] BOS Q3 5:12 60-55" on
+ * desktop and the compact "vs [logo] BOS 60-55 Q3 5:12" on phones.
+ */
+function GameLine({ row, live }: { row: DayRow; live?: LiveRow }) {
   const g = row.game;
-  if (!g) return "No game";
+  if (!g) return <>No game</>;
+  const score = live?.score ? `${live.score.us}-${live.score.them}` : "";
   const when =
     g.state === "pre" ? fmtTip(g.tip) : g.state === "post" ? "Final" : g.detail || "Live";
-  const score = live?.score ? ` ${live.score.us}-${live.score.them}` : "";
-  return `${g.home ? "vs" : "@"} ${g.opponent} ${when}${score}`;
+  const inGame = g.state === "in";
+  return (
+    <>
+      {g.home ? "vs" : "@"} <TeamLogo abbr={g.opponent} size={14} className="align-[-3px]" />{" "}
+      {g.opponent}{" "}
+      {inGame ? (
+        <>
+          <span className="sm:hidden">
+            {score} {compactClock(g.detail || "Live")}
+          </span>
+          <span className="hidden sm:inline">
+            {when} {score}
+          </span>
+        </>
+      ) : (
+        `${when} ${score}`
+      )}
+    </>
+  );
 }
 
 /**
@@ -105,7 +126,7 @@ export function PlayerRow({
               inProgress && "font-medium text-success",
             )}
           >
-            {row.back ?? gameText(row, live)}
+            {row.back ?? <GameLine row={row} live={live} />}
           </div>
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.

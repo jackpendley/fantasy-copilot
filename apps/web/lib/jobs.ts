@@ -15,6 +15,7 @@ import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { rosterWatch } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
+import { logOfficialReport } from "./nba/official-report";
 import { recordMatchupSnapshot, recordMatchupStates } from "./nba/matchup-snapshots";
 import { runOutlook } from "./nba/outlook-run";
 import { refreshMoveChecks } from "./nba/move-checks";
@@ -65,18 +66,34 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   if (!games.length) return { ...watch, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
+
+  // Availability forward test (MODEL_CARD 2026-10-30): the official injury report and ESPN's
+  // feed for every listed player, from 9 AM on game days (its midday snapshot comes long before
+  // the game window opens).
+  const availability =
+    etHour(now) >= 9 && t <= Math.max(...tips) + AFTER_LAST_TIP_MS
+      ? await logAvailabilitySources(data, date, now).catch(async (e: Error) => {
+          await log("official-report", "error", e.message);
+          return { error: e.message };
+        })
+      : null;
+
+  const morningNews =
+    availability && "rosteredNews" in availability ? availability.rosteredNews : 0;
+  // New injury news changes trade values: refresh the stored trade ideas.
+  const refreshTrades = () =>
+    refreshTradeTargets().catch(async (e: Error) => {
+      await log("trade-targets", "error", e.message);
+      return null;
+    });
+
   if (t < Math.min(...tips) - BEFORE_FIRST_TIP_MS || t > Math.max(...tips) + AFTER_LAST_TIP_MS) {
-    return { ...watch, skipped: "outside game window" };
+    const trades = morningNews ? await refreshTrades() : null;
+    return { ...watch, availability, tradesRefreshed: trades, skipped: "outside game window" };
   }
 
   const { events, newEvents } = await logStatusEvents(data, date);
-  // New injury news changes trade values: refresh the stored trade ideas.
-  const trades = newEvents
-    ? await refreshTradeTargets().catch(async (e: Error) => {
-        await log("trade-targets", "error", e.message);
-        return null;
-      })
-    : null;
+  const trades = newEvents + morningNews ? await refreshTrades() : null;
 
   // Closing lines: re-captured every 5 minutes until tip for games starting soon.
   const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
@@ -113,6 +130,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     tradesRefreshed: trades,
     events: events.length,
     newEvents,
+    availability,
     alerts: alerts.length,
     sent,
   };
@@ -245,6 +263,47 @@ export async function pregameJob(): Promise<Record<string, unknown>> {
   }
 }
 
+/** Hour of the day in US/Eastern. */
+const etHour = (at: Date) =>
+  Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hourCycle: "h23",
+      hour: "2-digit",
+    }).format(at),
+  );
+
+/** The availability test's inputs: ESPN's whole injury feed and the latest official report. */
+async function logAvailabilitySources(
+  data: Awaited<ReturnType<typeof loadLeague>>,
+  date: string,
+  now: Date,
+) {
+  const rostered = data.teams.flatMap((team) => team.roster);
+  const fresh = await insertStatusEvents(
+    statusEventsFrom({
+      rostered: [],
+      injuries: data.injuries,
+      lineups: null,
+      gameDate: date,
+      everyInjury: true,
+    }),
+  );
+  const ids = new Set(rostered.map((p) => p.id));
+  const official = await logOfficialReport({
+    now,
+    rostered,
+    injuries: data.injuries,
+    games: data.games,
+  });
+  return {
+    ...official,
+    espnEvents: fresh.length,
+    /** New injury news for rostered players (it moves trade values). */
+    rosteredNews: fresh.filter((id) => ids.has(id)).length,
+  };
+}
+
 /** Record status changes (injury feed, NBA.com lineups, ESPN fantasy) for every rostered player. */
 async function logStatusEvents(
   data: Awaited<ReturnType<typeof loadLeague>>,
@@ -256,7 +315,15 @@ async function logStatusEvents(
     lineups: data.lineups,
     gameDate: date,
   });
-  if (!events.length) return { events, newEvents: 0 };
+  return { events, newEvents: (await insertStatusEvents(events)).length };
+}
+
+/**
+ * Insert status events (a status is stored once per source and game day until it changes); the
+ * players with a new one.
+ */
+async function insertStatusEvents(events: StatusEvent[]): Promise<number[]> {
+  if (!events.length) return [];
   const rows = events.map((e) => ({
     player_id: e.playerId,
     source: e.source,
@@ -278,7 +345,7 @@ async function logStatusEvents(
       "return_date",
     )}
     on conflict do nothing
-    returning id
+    returning player_id
   `;
-  return { events, newEvents: inserted.length };
+  return inserted.map((r) => r.player_id as number);
 }

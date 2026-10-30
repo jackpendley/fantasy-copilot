@@ -35,7 +35,7 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] One-click "Apply moves" (server recomputes, refuses stale, audit required; local JSONL until the database exists)
 - [x] NBA.com daily lineups on /today: starter badges, inactive -> 0 projected
 - [x] `status_events` logging (ESPN injuries, ESPN fantasy, NBA.com lineups) in the game window
-- [ ] Official injury report PDFs (moved to phase 4: parsed in Python with the warehouse)
+- [x] Official injury report PDFs: parsed in TypeScript (`packages/nba-data`), logged live from 9 AM on game days
 - [x] Questionable-player hedging: later-tipping bench backup on Today + alert
 - [x] PWA + web push alerts: lineup not optimal at T−30, a starter ruled OUT, hedge reminder, ESPN login expired; /settings
 - [ ] Production push keys in Vercel + cron-job.org calling /api/cron/gameday every 5 min (Jack)
@@ -61,7 +61,8 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] `MODEL_CARD.md` and walk-forward backtest harness; minutes trend passed a held-out season and ships
 - [x] Minutes × rate projection and opponent defense by position passed held-out tests and ship (ADR-034, ADR-036); teammate-absence minutes failed
 - [x] Unprojected players' minutes × rate passed and ships; opponent defense per stat failed (ADR-037)
-- [ ] Promote each further model only after it passes its gate (next: availability; DARKO in the blend is collecting logged games)
+- [x] Availability: fitted chances from three seasons of official reports failed the held-out gate against simple per-status chances (ADR-038)
+- [ ] Promote each further model only after it passes its gate (collecting: official statuses vs ESPN, forward; DARKO in the blend)
 
 ## Phase 6: trades (weeks 5–7)
 

@@ -142,7 +142,7 @@ export default async function TodayPage({
         </Callout>
       ))}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px] lg:items-start">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="space-y-4 lg:order-2 lg:sticky lg:top-20">
           {/* Summary: the number that matters today and the one action to take. */}
           <div className="rounded-xl border bg-card p-4">

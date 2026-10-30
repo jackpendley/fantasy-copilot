@@ -46,12 +46,20 @@ export function Pill({
 }
 
 /** Injury status pill; renders nothing for healthy players. */
-export function StatusPill({ status, note }: { status: string; note?: string | null }) {
+export function StatusPill({
+  status,
+  note,
+  className,
+}: {
+  status: string;
+  note?: string | null;
+  className?: string;
+}) {
   const s = normalizeStatus(status);
   const style = STYLE[s];
   if (s === "ACTIVE" || !style) return null;
   return (
-    <Pill tone={style.tone as keyof typeof TONE} title={note ?? undefined}>
+    <Pill tone={style.tone as keyof typeof TONE} title={note ?? undefined} className={className}>
       {style.label}
     </Pill>
   );

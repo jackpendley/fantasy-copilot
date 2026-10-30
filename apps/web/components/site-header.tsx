@@ -17,7 +17,10 @@ export function Logo() {
   );
 }
 
-/** Top bar. On phones it shows the logo, sport and Settings; navigation moves to the bottom tab bar. */
+/**
+ * Top bar. Below 1024 px (phones, and tablets in portrait) it shows the logo, sport and Settings;
+ * navigation moves to the bottom tab bar.
+ */
 export function SiteHeader() {
   const path = usePathname();
   return (
@@ -44,7 +47,7 @@ export function SiteHeader() {
             ),
           )}
         </div>
-        <nav className="ml-4 hidden items-center gap-1 md:flex">
+        <nav className="ml-4 hidden items-center gap-1 lg:flex">
           {NBA_NAV.map((n) => (
             <Link
               key={n.href}
@@ -61,14 +64,14 @@ export function SiteHeader() {
         <Link
           href={SETTINGS_NAV.href}
           className={cn(
-            "ml-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground md:hidden",
+            "ml-auto rounded-md p-1.5 text-muted-foreground hover:text-foreground lg:hidden",
             path.startsWith(SETTINGS_NAV.href) && "text-foreground",
           )}
           aria-label="Settings"
         >
           <SETTINGS_NAV.icon className="size-5" />
         </Link>
-        <div className="ml-auto hidden items-center gap-3 md:flex">
+        <div className="ml-auto hidden items-center gap-3 lg:flex">
           <ThemeToggle compact />
           <Link
             href={SETTINGS_NAV.href}
@@ -91,7 +94,7 @@ export function BottomNav() {
   const path = usePathname();
   const items = NBA_NAV;
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
       <div className="grid grid-cols-6">
         {items.map(({ href, label, icon: Icon }) => {
           const active = path.startsWith(href);

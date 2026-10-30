@@ -447,7 +447,7 @@ The per-stat version is slightly worse. Ten factors per opponent and position sp
 
 ### Result (2026-10-30): failed, not shipped
 
-The pre-registration above was committed (f9d360d) before any outcome was looked at.
+The pre-registration above was committed before any outcome was looked at: the first commit of PR #44 (7060fc0 on the PR branch; the run happened after it). Later harness changes only fixed fetching: the hourly-to-quarter-hourly switch date, retrying network errors, and the All-Star break gap.
 
 **Data:**
 

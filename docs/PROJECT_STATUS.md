@@ -15,7 +15,7 @@
 
 Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 (PRs #30–#38):**
+**Shipped Oct 29 (PRs #30–#39):**
 
 - **Scheduler endpoint (#30):** `/api/cron/gameday` answers at once and works in `after()`. Settings shows "Background jobs" (with the error text when one fails). **cron-job.org job 8752774** calls it every 5 minutes; verified Oct 29 (200 in 1.9 s, `gameday ok`).
 - **Speed (#31):**
@@ -36,10 +36,10 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
   - ESPN advanced stats, PBP Stats (stored nightly in `pbp_players`), DARKO; net FG/FT bars.
   - Always current: game-state aware, late box scores merged, polling while live (ADR-035).
 - **Opponent defense by position (#37):** passed its pre-registered held-out test and is applied to daily and weekly projections. Teammate-absence minutes failed and aren't shipped (ADR-036).
-- **Mobile matchup (#38):**
-  - Team logo on the name line.
-  - Two full info lines on phones (`@BOS 82-77 Q4 10:37`, `22p 9r 4a 1s`).
-  - Edge-to-edge board, no row photo below 640 px. Checked at 375 and 390 px with live games.
+- **Mobile matchup (#38, reworked in #39):**
+  - Bordered card with side margins; no row photo below 640 px.
+  - Each phone cell: team logo, name and status beside the score; positions beside the projection; the game across the cell with the opponent's logo (`@ [logo] BOS 82-77 Q4 10:37`); the stat line labeled as on desktop (`22 PTS 9 REB 4 AST`), wrapping to a second line instead of being cut.
+  - Worst case (`vs BOS 118-121 Q4 10:37`) measured at 137 px against 140 px at 375 px; checked at 375 and 390 px with live games.
   - The nightly matchup snapshot retries once (the Oct 29 4 AM run failed once).
 
 **Data sources** (free first; paid ones on hold, see memory `nba-data-sources`): ESPN (fantasy, site, core APIs), DraftKings props via ESPN, DARKO, PBP Stats. Databallr/nbarapm, Dunks & Threes and The Odds API are pinned until the free stack is complete.

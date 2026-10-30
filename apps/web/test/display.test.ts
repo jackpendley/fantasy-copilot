@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactClock, compactGame, compactStats } from "@/lib/display";
+import { compactClock, compactGame } from "@/lib/display";
 
 describe("compact phone labels", () => {
   it("compacts ESPN's game status", () => {
@@ -15,10 +15,10 @@ describe("compact phone labels", () => {
 
   const g = { opponent: "BOS", home: false, detail: "", score: null };
   it("formats a game in one short line", () => {
-    expect(compactGame({ ...g, state: "pre", when: "7:00 PM" })).toBe("@BOS 7:00p");
+    expect(compactGame({ ...g, state: "pre", when: "7:00 PM" })).toBe("@ BOS 7:00p");
     expect(
       compactGame({ ...g, state: "in", detail: "10:37 - 4th", score: { us: 82, them: 77 } }),
-    ).toBe("@BOS 82-77 Q4 10:37");
+    ).toBe("@ BOS 82-77 Q4 10:37");
     expect(
       compactGame({
         ...g,
@@ -31,7 +31,7 @@ describe("compact phone labels", () => {
     expect(compactGame(null)).toBe("No game");
   });
 
-  it("fits a 375 px half cell (~126 px of text): 23 characters at most", () => {
+  it("stays short enough for a full phone cell (~140 px): 23 characters at most", () => {
     const longest = compactGame({
       ...g,
       home: true,
@@ -41,13 +41,5 @@ describe("compact phone labels", () => {
     });
     expect(longest).toBe("vs BOS 118-121 Q4 10:37");
     expect(longest.length).toBeLessThanOrEqual(23);
-  });
-
-  it("abbreviates the stat line", () => {
-    expect(compactStats({ PTS: 22, REB: 9, AST: 4, STL: 1, BLK: 0, "3PM": 3 })).toBe(
-      "22p 9r 4a 1s",
-    );
-    expect(compactStats({ PTS: 0 })).toBe("0p");
-    expect(compactStats(null)).toBeNull();
   });
 });

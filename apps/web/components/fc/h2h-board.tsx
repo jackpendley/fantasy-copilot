@@ -14,12 +14,10 @@ import { PlayerCardButton } from "./player-card";
 import { StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
 
-// Three lines everywhere: name with logo and positions, the day's game, his stats (up to two
-// lines). Phones add a top row for the photo and score, so the three lines run the full width.
-const ROW = "h-[100px] sm:h-[76px]";
-
-/** Whether phone cells show the player's photo (top outer corner). */
-const PHONE_PHOTOS = true;
+// Each side is laid out like a Today row, mirrored: photo, then three lines (name with logo and
+// positions, the day's game, his stats), then points over the projection by the slot column.
+// Phones in portrait have no room for the photo, so they show the same thing without it.
+const ROW = "h-[92px] sm:h-[76px]";
 
 function GameText({ game }: { game: H2HGame | null }) {
   if (!game) return <span>No game</span>;
@@ -51,10 +49,10 @@ const projTitle = (c: H2HCell) =>
 function Score({ c, right }: { c: H2HCell; right: boolean }) {
   const live = c.game?.state === "in";
   return (
-    <div className={cn("w-12 shrink-0 md:w-16", right ? "text-left" : "text-right")}>
+    <div className={cn("w-8 shrink-0 sm:w-12 md:w-16", right ? "text-left" : "text-right")}>
       <div
         className={cn(
-          "text-lg leading-tight font-semibold tabular-nums",
+          "text-[14px] leading-tight font-semibold tabular-nums sm:text-lg",
           live && "text-success",
           c.points == null && "text-muted-foreground",
         )}
@@ -64,7 +62,7 @@ function Score({ c, right }: { c: H2HCell; right: boolean }) {
       {c.proj != null && (
         <div
           className={cn(
-            "mt-0.5 flex items-center gap-0.5 text-xs text-muted-foreground tabular-nums",
+            "mt-0.5 flex items-center gap-0.5 text-[10.5px] text-muted-foreground tabular-nums sm:text-xs",
             right ? "justify-start" : "justify-end",
           )}
           title={projTitle(c)}
@@ -73,33 +71,6 @@ function Score({ c, right }: { c: H2HCell; right: boolean }) {
           {fmtPts(c.proj)}
           {right && <TrendMark trend={c.trend} className="size-3" />}
         </div>
-      )}
-    </div>
-  );
-}
-
-/** Phones: points and projection on one line, points nearest the slot column. */
-function PhoneScore({ c, right }: { c: H2HCell; right: boolean }) {
-  const live = c.game?.state === "in";
-  return (
-    <div className={cn("flex items-baseline gap-1 tabular-nums", !right && "flex-row-reverse")}>
-      <span
-        className={cn(
-          "text-[15px] leading-none font-semibold",
-          live && "text-success",
-          c.points == null && "text-muted-foreground",
-        )}
-      >
-        {c.points != null ? fmtPts(c.points) : c.game ? "–" : ""}
-      </span>
-      {c.proj != null && (
-        <span
-          className="flex items-center gap-0.5 text-[10.5px] leading-none text-muted-foreground"
-          title={projTitle(c)}
-        >
-          <TrendMark trend={c.trend} className="size-2.5" />
-          {fmtPts(c.proj)}
-        </span>
       )}
     </div>
   );
@@ -124,18 +95,17 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
   const name = (
     <div className={cn("flex min-w-0 items-center gap-1", right && "flex-row-reverse")}>
       <TeamLogo abbr={c.player.proTeam} size={14} />
-      <span className="min-w-0 truncate text-[13px] font-medium md:text-sm">
+      <span className="min-w-0 truncate text-[12.5px] font-medium sm:text-[13px] md:text-sm">
         <span className="md:hidden">{shortName(c.player.name)}</span>
         <span className="hidden md:inline">{c.player.name}</span>
       </span>
-      <span className="shrink-0 text-[10px] text-muted-foreground md:text-[11px]">
+      <span className="shrink-0 text-[9.5px] text-muted-foreground sm:text-[10px] md:text-[11px]">
         {c.player.positions.join("/")}
       </span>
       <span className="shrink-0">
-        {/* On phones it sits in the top row instead. */}
         <StatusPill
           status={c.status}
-          className="hidden sm:inline-flex sm:h-4 sm:px-1 sm:text-[9.5px] md:h-5 md:px-1.5 md:text-[11px]"
+          className="h-4 px-1 text-[9.5px] md:h-5 md:px-1.5 md:text-[11px]"
         />
       </span>
     </div>
@@ -151,25 +121,26 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
         c.game?.state === "in" && "bg-success/5",
       )}
     >
-      {/* Phones: photo (outer corner) and score (by the slot) on top, then his name, game and
-          stats together across the whole cell. Top-aligned, so both sides of a row line up. */}
-      <div className={cn("min-w-0 flex-1 self-start pt-1.5 sm:hidden", right && "text-right")}>
-        <div className={cn("flex h-7 items-start justify-between", right && "flex-row-reverse")}>
-          <div className={cn("flex items-center gap-1", right && "flex-row-reverse")}>
-            {PHONE_PHOTOS && <PlayerAvatar id={c.player.id} name={c.player.name} size={28} />}
-            <StatusPill status={c.status} className="h-4 px-1 text-[10px]" />
-          </div>
-          <PhoneScore c={c} right={right} />
-        </div>
-        <div className="mt-1">{name}</div>
-        <div className="truncate text-[10px] whitespace-nowrap text-muted-foreground tabular-nums">
-          {c.back ?? <PhoneGame game={c.game} />}
-        </div>
-        {stats && (
-          <div className="line-clamp-2 text-[10.5px] leading-[13px] text-foreground/80 tabular-nums">
-            {stats}
-          </div>
+      {/* Phones in portrait: the Today row without the photo. Top-aligned, so both sides of a
+          row line up; a long game or stat line wraps rather than being cut. */}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 items-start gap-1 self-start pt-2 sm:hidden",
+          right && "flex-row-reverse text-right",
         )}
+      >
+        <div className="min-w-0 flex-1">
+          {name}
+          <div className="line-clamp-2 text-[10px] leading-[13px] text-muted-foreground tabular-nums">
+            {c.back ?? <PhoneGame game={c.game} />}
+          </div>
+          {stats && (
+            <div className="line-clamp-3 text-[10.5px] leading-[13px] text-foreground/80 tabular-nums">
+              {stats}
+            </div>
+          )}
+        </div>
+        {(c.game || c.points != null || c.proj != null) && <Score c={c} right={right} />}
       </div>
       <PlayerAvatar
         id={c.player.id}
@@ -195,18 +166,21 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
   );
 }
 
-/** "@ [logo] BOS 82-77 Q4 10:37" for a phone row; the longest fits 140 px (375 px screen). */
+/** "@ [logo] BOS 82-77 Q4 10:37" for a phone row; wraps (if it must) before the score. */
 function PhoneGame({ game }: { game: H2HGame | null }) {
   if (!game) return <span>No game</span>;
   return (
-    <span className="inline-flex items-center gap-[2px]">
-      <span>{game.home ? "vs" : "@"}</span>
-      <TeamLogo abbr={game.opponent} size={12} />
-      <span>{game.opponent}</span>
-      <span className={cn(game.state === "in" && "font-semibold text-success")}>
+    <>
+      <span className="whitespace-nowrap">
+        {game.home ? "vs" : "@"}{" "}
+        <TeamLogo abbr={game.opponent} size={12} className="align-[-2px]" /> {game.opponent}
+      </span>{" "}
+      <span
+        className={cn("whitespace-nowrap", game.state === "in" && "font-semibold text-success")}
+      >
         {compactStatus(game)}
       </span>
-    </span>
+    </>
   );
 }
 

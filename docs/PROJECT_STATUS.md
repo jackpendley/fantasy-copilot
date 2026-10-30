@@ -1,4 +1,4 @@
-# Project status (2026-10-29, evening)
+# Project status (2026-10-30)
 
 ## Where things stand
 
@@ -15,64 +15,49 @@
 
 Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 (PRs #30–#40):**
+**Shipped Oct 29–30 (PRs #30–#44):**
 
-- **Scheduler endpoint (#30):** `/api/cron/gameday` answers at once and works in `after()`. Settings shows "Background jobs" (with the error text when one fails). **cron-job.org job 8752774** calls it every 5 minutes; verified Oct 29 (200 in 1.9 s, `gameday ok`).
-- **Speed (#31):**
-  - ESPN reads reused 15–60 s per instance (`lib/fetch-memo.ts`), cleared on writes and detected moves.
-  - Trade targets stored in `view_cache` and refreshed in the background (Trades 6.4 s → ~0.5 s).
-  - `loading.tsx` skeletons everywhere.
-- **Outlook in seconds (#32):**
-  - Simulator 5.3× faster, with bit-identical results (golden test).
-  - Provisional odds every 250 seasons (`outlook_runs.status`).
-  - Production run ~20 s (was ~85 s), first odds at ~4 s.
-- **Simulator IR bug (#33):** an IR return could grow a roster past 13. This is why dropping the injured Demin for Gillespie looked like −3.5 title points; it's about neutral (ADR-032).
-- **Waivers checked by the simulation (#34):**
-  - The top 4 moves are re-run in the Outlook's simulator (800 paired seasons), title odds first, "about even" within noise.
-  - Background job in `view_cache`, budgeted for Hobby CPU (ADR-033).
-- **Projection: minutes × rate (#35):** passed its pre-registered held-out test (ADR-034).
-- **Player card v2 (#36):**
-  - Live/Final and Next game tab; Season tab (this season against last).
-  - ESPN advanced stats, PBP Stats (stored nightly in `pbp_players`), DARKO; net FG/FT bars.
-  - Always current: game-state aware, late box scores merged, polling while live (ADR-035).
-- **Opponent defense by position (#37):** passed its pre-registered held-out test and is applied to daily and weekly projections. Teammate-absence minutes failed and aren't shipped (ADR-036).
-- **Mobile matchup (#38, reworked in #39):**
-  - Bordered card with side margins; no row photo below 640 px.
-  - Each phone cell: team logo, name and status beside the score; positions beside the projection; the game across the cell with the opponent's logo (`@ [logo] BOS 82-77 Q4 10:37`); the stat line labeled as on desktop (`22 PTS 9 REB 4 AST`), wrapping to a second line instead of being cut.
-  - Worst case (`vs BOS 118-121 Q4 10:37`) measured at 137 px against 140 px at 375 px; checked at 375 and 390 px with live games.
-  - The nightly matchup snapshot retries once (the Oct 29 4 AM run failed once).
+- **Scheduler (#30):** cron-job.org job 8752774 calls `/api/cron/gameday` every 5 minutes. Settings shows "Background jobs".
+- **Speed (#31, #32):** ESPN reads memoized; trade targets precomputed; skeletons. Outlook runs take ~20 s, with the first odds in ~4 s.
+- **Simulator IR fix (#33), waivers checked by the simulation (#34).**
+- **Projection:** minutes × rate (#35); opponent defense by position (#37); unprojected players' minutes × rate (#40).
+- **Player card v2 (#36).**
+- **Player rows (#38, #39, #41–#43):**
+  - Today and Matchup rows have three lines: logo, name and positions; the day's game, with the opponent's logo; his stats. Finished games read "Final 121-113" (no W/L).
+  - Matchup sides mirror a Today row: points over projection by the slot column.
+  - Phones in portrait have no headshots on Matchup (a side is ~150 px, no room beside a name and the score); landscape and desktop do.
+  - Long game and stat lines wrap instead of being cut; both sides are top-aligned.
+  - Checked at 320–1280 px: no horizontal scroll. The top nav moves to the bottom tab bar below 1024 px.
+- **Availability (#44, ADR-038):**
+  - Fitted play chances from three seasons of the NBA's official injury reports failed the held-out gate. They beat today's app (ESPN day-to-day = 0.75) but not fixed per-status chances.
+  - The official statuses with the existing priors are now **tested forward**. The 5-minute job logs each new official report (table `official_status`) and ESPN's whole injury feed, from 9 AM ET on game days.
 
-- **Model candidates (#40, ADR-037):**
-  - Unprojected players' minutes × rate passed (held out −0.46 FP/game) and ships.
-  - Opponent defense per stat failed.
-  - DARKO in the blend is collecting logged games: it's scored nightly and shown on `/nba/model`.
+**Data sources** (free first; paid ones on hold, see memory `nba-data-sources`):
 
-**Data sources** (free first; paid ones on hold, see memory `nba-data-sources`): ESPN (fantasy, site, core APIs), DraftKings props via ESPN, DARKO, PBP Stats. Databallr/nbarapm, Dunks & Threes and The Odds API are pinned until the free stack is complete.
+- ESPN (fantasy, site, core APIs);
+- DraftKings props via ESPN;
+- DARKO;
+- PBP Stats;
+- the NBA official injury report (`ak-static.cms.nba.com`).
 
-**Compute budget:** Vercel Hobby includes **4 active CPU-hours a month**, and going over pauses functions for up to 30 days. Each background simulation is budgeted against it:
+**Read the injury report politely.** A burst of ~16,000 guessed file names got this machine refused for about an hour on Oct 29. The live job makes at most one request per 5 minutes. The backfill harness spaces requests 2 s apart and never caches a miss.
 
-- Outlook run ~20 s;
-- waiver checks ~40 s;
-- trade refresh ~5 s.
-
-Check Vercel → Usage regularly.
+**Compute budget:** Vercel Hobby includes 4 active CPU-hours a month. Outlook runs take ~20 s, waiver checks ~40 s, trade refreshes ~5 s, and parsing a report ~0.2 s. Check Vercel → Usage.
 
 ## Waiting on Jack
 
 1. **Push notifications:** rotate the VAPID keys, then enable on the iPhone.
-2. **Vercel → Usage:** check Active CPU after a few days with the scheduler on (cron-job.org job 8752774, every 5 minutes, header `Authorization: Bearer <CRON_SECRET>`).
+2. **Vercel → Usage:** check Active CPU after a few days with the scheduler on.
 
 ## Next tasks
 
-1. **Watch the first production runs** of:
-   - the nightly PBP Stats pull (`refresh_log` "pbp-players");
-   - the defense table ("defense");
-   - waiver checks ("move-checks");
-   - the matchup snapshot retry ("matchup-snapshot").
-     The Live tab was checked during the Oct 29 games.
-2. **Props blend test:** it runs itself nightly; check `/nba/model` once 7 days and 800 games are in.
-3. **DARKO blend test:** check `/nba/model` once 7 game days and 800 games with DARKO are in. If it passes, wire DARKO into projections in its own PR.
-4. **Next model candidate: availability** (who plays at all), from `status_events` history. Pre-register first.
-5. **Rest-of-season value with streaming:** the quick Waivers ranking still values a fixed roster. The simulator check covers the top 4; a cheaper replacement-level adjustment could align the whole list.
-6. **Win-probability recalibration** after week 13 (pre-registered, data logging).
-7. Replace the fixed league-average team total (115.3) with this season's average.
+1. **Watch the first production runs of the new logging.** Look at `refresh_log` "gameday" (the `availability` field, and "official-report" errors). `official_status` should fill from 9 AM ET on game days.
+2. **Official statuses forward test:**
+   - write its evaluation (rows, snapshots and gate are pre-registered in MODEL_CARD);
+   - run it **once**, when there are ≥1,500 non-Out rows (roughly 3–4 weeks);
+   - if it passes, the day board and week projections use official statuses for listed players.
+3. **Props blend test** and **DARKO blend test:** they run nightly. Check `/nba/model` once 7 game days and 800 games are in.
+4. **Rest-of-season value with streaming** for the quick Waivers ranking.
+5. **Win-probability recalibration** after week 13 (pre-registered).
+6. Replace the fixed league-average team total (115.3) with this season's average.
+7. **Days-ahead availability** (week projections still hold today's status for two days): a separate candidate.

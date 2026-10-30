@@ -406,3 +406,98 @@ The per-stat version is slightly worse. Ten factors per opponent and position sp
 - The nightly morning job now scores DARKO's snapshot for every logged game and runs the props test's rules on it (`model_settings` `darko_blend`).
 - `/nba/model` shows DARKO's accuracy and the test's status.
 - The first verdict comes once there are 7 game days and 800 games with both projections.
+
+## Pre-registration: availability (2026-10-29, before any outcome was looked at)
+
+**Question:** how likely is a listed player to play? Today the app takes ESPN's injury feed, which only says "Out" or "Day-To-Day", and plays a day-to-day player with probability 0.75 (`fantasy-core` `playProbability`). The finer priors in that table (probable 0.93, questionable 0.5, doubtful 0.12) are guesses and never see those statuses from ESPN.
+
+**Data:** the NBA's official injury report, a PDF the league publishes through each game day (hourly at :30 until late 2025, every 15 minutes since) and archives. Each report prints its own publish time, so it is point in time. Parsed with `packages/nba-data/src/injury-report.ts`; the harness is `apps/web/scripts/backtest-availability.ts`.
+
+- **Snapshots** for each game: **midday**, the latest report published at or before min(1 PM ET, tip − 3 h); **pre-tip**, the latest at or before tip − 1 h. Reports are searched up to 3 hours back from the cutoff; a game without one in that window has no row for that snapshot.
+- **Rows:** every listed player (Available, Probable, Questionable, Doubtful, Out) in the projection harness's pool (today's rostered players and top free agents), matched by name and team, in regular-season games. Player-seasons with no logged games are left out, because a failed game-log fetch looks the same.
+- **Label:** he played (minutes > 0 in that game, from his ESPN game log).
+- **Point-in-time features:** games his team has played before this one that he missed in a row (team schedules come from the logged games of every pool player's opponents).
+
+**Baselines:**
+
+- **B0, today's app:** Out 0; Probable, Questionable and Doubtful 0.75 (ESPN shows them as day-to-day); Available 1.
+- **B1, the status priors:** Probable 0.93, Questionable 0.5, Doubtful 0.12, Out 0, Available 1.
+
+**Candidates** (each cell's play rate on the fit season, smoothed toward its parent with 10 pseudo-rows):
+
+- **A1:** status × snapshot, smoothed toward B1.
+- **A2:** A1 split by whether he played his team's previous game (no previous game counts as played), smoothed toward A1.
+- **A3:** A1 split by games missed in a row (0, 1–2, 3+), smoothed toward A1.
+
+**Procedure:**
+
+- Walk forward: exploration fits on 2024-25 and scores 2025-26. It picks one of A1–A3 by mean Brier score.
+- That one candidate is judged once on held-out 2024-25, fit on 2023-24.
+- The metric is the per-player mean Brier difference with a 95% interval.
+- **Ships only if** the held-out interval is entirely below 0 against **both** B0 and B1. If the held-out season has fewer than 2,000 non-Out rows, the result is inconclusive and nothing ships.
+
+**If it ships:**
+
+- The table is refit on 2025-26 with the same smoothing and hard-coded.
+- The app reads the latest official report in the 5-minute job, logs it to `status_events` (source `nba_injury_report`), and uses the fitted chance for players it lists for that game.
+- A report published 3+ hours before tip uses the midday table; a later one uses the pre-tip table.
+- Players it doesn't list keep today's ESPN-based chance.
+- The NBA.com inactive list stays final.
+- Chances for days ahead (week projections) are unchanged; that's a separate candidate.
+
+### Result (2026-10-30): failed, not shipped
+
+The pre-registration above was committed before any outcome was looked at: the first commit of PR #44 (7060fc0 on the PR branch; the run happened after it). Later harness changes only fixed fetching: the hourly-to-quarter-hourly switch date, retrying network errors, and the All-Star break gap.
+
+**Data:**
+
+- The official reports came from the league's archive.
+- Of 776–803 tip-time groups per season, 96–99% had a midday report and 99% a pre-tip report.
+- About 55% of listed players are in the pool; the rest are mostly two-way and G League players.
+- Reports switched from hourly to quarter-hourly on 2025-12-22.
+
+Exploration (fit 2024-25, score 2025-26; 14,939 rows, 323 players) picked **A3** by mean Brier (0.0399; A2 0.0401, A1 0.0407).
+
+| Held out: 2024-25, fit on 2023-24 (13,390 rows, 297 players) |      Brier | vs B0 (95% CI, by player)      | vs B1 (95% CI, by player)      |
+| ------------------------------------------------------------ | ---------: | ------------------------------ | ------------------------------ |
+| B0 today (ESPN day-to-day = 0.75)                            |     0.0768 |                                | +0.0249 [+0.0188, +0.0309]     |
+| B1 status priors                                             |     0.0546 | −0.0249 [−0.0309, −0.0188]     |                                |
+| **A3 (chosen)**                                              | **0.0546** | **−0.0251 [−0.0297, −0.0206]** | **−0.0003 [−0.0027, +0.0022]** |
+
+A3 beats B0 but not B1, so it fails the gate.
+
+**What the test found:**
+
+- Almost all of the gain comes from the official report's finer statuses. Fitting the chances adds nothing measurable over the priors already in `fantasy-core`.
+- On both seasons, players actually played at these rates (2024-25 / 2025-26):
+  - questionable: 53–63%;
+  - probable: 93–98%;
+  - doubtful: 0–5%;
+  - Available (listed, then cleared): 90–95%.
+- Today the app treats every ESPN day-to-day player as 0.75 to play.
+
+**Not shipped:** B1 on official statuses was not a pre-registered candidate, and both seasons have now been seen. It is tested forward instead (below).
+
+## Pre-registration: official statuses, forward test (2026-10-30, before any data)
+
+**Candidate:**
+
+- For a player on the latest official report, his chance to play comes from his listed status, using the existing priors (probable 0.93, questionable 0.5, doubtful 0.12, out 0, available 1).
+- Players not listed keep today's ESPN-based chance.
+
+**Baseline:** today's app, ESPN's injury-feed status at the same moment (day-to-day 0.75, out 0, not listed 1).
+
+**Data (logged from this PR's deploy on):**
+
+- The 5-minute job reads each new official report from 9 AM ET on game days. It stores every status change for listed players it can match to an ESPN player (league rosters and ESPN's injury feed), along with the report's printed time.
+- It also logs ESPN's injury feed for every listed player from 9 AM.
+
+**Rows:**
+
+- For each listed player and game, two snapshots: midday, the latest report at or before min(1 PM ET, tip − 3 h), and pre-tip, the latest at or before tip − 1 h.
+- The baseline uses ESPN's latest status for that game day observed before the same cutoff. A row without an ESPN observation that day before the cutoff is left out.
+- The label is whether he played (a box score line in `game_results`).
+
+**Metric:** per-player mean Brier difference, candidate − baseline, with a 95% interval.
+
+**Ships only if** the interval is entirely below 0. The first evaluation runs once there are ≥1,500 non-Out rows; one evaluation, no peeking before then.

@@ -30,12 +30,14 @@ export function statusEventsFrom(input: {
   injuries: InjuryReport[];
   lineups: LineupEntry[] | null;
   gameDate: string;
+  /** Log every player on ESPN's injury feed, not just rostered ones (availability test). */
+  everyInjury?: boolean;
 }): StatusEvent[] {
   const ids = new Set(input.rostered.map((p) => p.id));
   const out: StatusEvent[] = [];
 
   for (const i of input.injuries) {
-    if (!ids.has(i.playerId)) continue;
+    if (!input.everyInjury && !ids.has(i.playerId)) continue;
     out.push({
       playerId: i.playerId,
       source: "espn_injuries",

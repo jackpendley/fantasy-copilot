@@ -428,3 +428,14 @@
 - **DARKO:** can't be backtested, so it is judged forward on logged games with the props test's rules. That reuses `evaluateProps`: DARKO's number goes in the rows' `vegas` slot.
   - The evaluation runs nightly but changes nothing by itself.
   - If it passes, wiring DARKO into projections is a separate PR.
+
+## ADR-038: availability: fitted chances fail; official statuses are tested forward (2026-10-30)
+
+- **Fitted play chances fail.** They were fitted from the league's official injury reports (status × time before tip × games missed in a row). On held-out 2024-25 they beat today's app (ESPN "day-to-day" = 0.75) by a wide margin, but did not beat simple fixed chances per official status. They don't ship (MODEL_CARD).
+- **The gain is in the data source, not the fit.** ESPN's feed only says Out or Day-To-Day; the official report separates probable (~95% play), questionable (~55%) and doubtful (~2%).
+- **Next: a forward test.** Using the official statuses with the existing priors wasn't pre-registered, and both past seasons are now seen. It is pre-registered as a forward test on logged 2026-27 data against ESPN's actual statuses at the same moments.
+- **Reading the reports politely.**
+  - The parser lives in `packages/nba-data` (`unpdf`).
+  - A first backfill burst (~16,000 guessed file names) got this machine refused by the league's CDN for about an hour.
+  - The harness now requests only files that should exist, one every 2 seconds, and never caches a miss.
+  - The live job reads at most one new report per 15 minutes.

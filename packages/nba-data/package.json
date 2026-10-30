@@ -15,11 +15,12 @@
   "devDependencies": {
     "@types/node": "^22",
     "eslint": "^9",
+    "tsx": "^4",
     "typescript": "^5",
-    "vitest": "^3",
-    "tsx": "^4"
+    "vitest": "^3"
   },
   "dependencies": {
-    "@fantasy-copilot/espn": "workspace:*"
+    "@fantasy-copilot/espn": "workspace:*",
+    "unpdf": "1.8.1"
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactClock, compactGame } from "@/lib/display";
+import { compactClock, compactGame, keepStatsTogether } from "@/lib/display";
 
 describe("compact phone labels", () => {
   it("compacts ESPN's game status", () => {
@@ -27,7 +27,7 @@ describe("compact phone labels", () => {
         state: "post",
         score: { us: 121, them: 113 },
       }),
-    ).toBe("vs PHI W 121-113");
+    ).toBe("vs PHI Final 121-113");
     expect(compactGame(null)).toBe("No game");
   });
 
@@ -41,5 +41,11 @@ describe("compact phone labels", () => {
     });
     expect(longest).toBe("vs BOS 118-121 Q4 10:37");
     expect(longest.length).toBeLessThanOrEqual(23);
+  });
+});
+
+describe("keepStatsTogether", () => {
+  it("joins each number to its label, so a wrapped line never strands one", () => {
+    expect(keepStatsTogether("21 PTS 3 REB 3 3PM")).toBe("21\u00a0PTS 3\u00a0REB 3\u00a03PM");
   });
 });

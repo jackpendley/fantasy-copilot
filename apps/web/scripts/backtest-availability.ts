@@ -74,7 +74,7 @@ async function report(file: string): Promise<OfficialInjuryReport | null> {
 }
 
 /** Reports were hourly (at :30) through this date and every 15 minutes after it. */
-const LAST_HOURLY = process.env.LAST_HOURLY || "2025-12-31";
+const LAST_HOURLY = process.env.LAST_HOURLY || "2025-12-21";
 
 /** The latest report published at or before an ET time (minutes after midnight), up to 3 h back. */
 async function latestReport(date: string, cutoff: number): Promise<OfficialInjuryReport | null> {

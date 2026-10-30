@@ -82,13 +82,18 @@ export default async function SettingsPage() {
         <CardContent className="space-y-1 text-sm">
           {status.length === 0 && <p className="text-muted-foreground">No job runs yet.</p>}
           {status.map((j) => (
-            <div key={j.job} className="flex items-baseline justify-between gap-2">
-              <span>{j.job}</span>
-              <span className={j.status === "ok" ? "text-muted-foreground" : "text-destructive"}>
-                {j.status === "ok"
-                  ? `ok ${when(j.ran_at)}`
-                  : `failed ${when(j.ran_at)}${j.last_ok ? ` · last ok ${when(j.last_ok)}` : ""}`}
-              </span>
+            <div key={j.job}>
+              <div className="flex items-baseline justify-between gap-2">
+                <span>{j.job}</span>
+                <span className={j.status === "ok" ? "text-muted-foreground" : "text-destructive"}>
+                  {j.status === "ok"
+                    ? `ok ${when(j.ran_at)}`
+                    : `failed ${when(j.ran_at)}${j.last_ok ? ` · last ok ${when(j.last_ok)}` : ""}`}
+                </span>
+              </div>
+              {j.status !== "ok" && j.detail && (
+                <p className="text-xs break-words text-muted-foreground">{j.detail}</p>
+              )}
             </div>
           ))}
         </CardContent>

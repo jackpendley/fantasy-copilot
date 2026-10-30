@@ -125,10 +125,16 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
   try {
     // Before today's games: this week's win chance, for the matchup page's chart. A failure
     // here is logged but doesn't stop the season outlook.
-    const matchup = await recordMatchupSnapshot().catch(async (e: Error) => {
-      await log("matchup-snapshot", "error", e.message);
-      return null;
-    });
+    // One retry: a transient ESPN or database error would otherwise leave a day off the chart.
+    const matchup = await recordMatchupSnapshot()
+      .catch(async () => {
+        await new Promise((r) => setTimeout(r, 10_000));
+        return recordMatchupSnapshot();
+      })
+      .catch(async (e: Error) => {
+        await log("matchup-snapshot", "error", e.message);
+        return null;
+      });
     // Every league matchup's state, for calibrating the weekly win probability.
     const states = await recordMatchupStates().catch(async (e: Error) => {
       await log("matchup-states", "error", e.message);

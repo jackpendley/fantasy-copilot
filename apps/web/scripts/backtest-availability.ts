@@ -39,27 +39,47 @@ async function gameLog(id: number, season: number): Promise<GameLogEntry[]> {
 }
 
 // The league's CDN blocks bursts (a first version probing every quarter hour got this machine
-// refused). Requests are serialized and spaced, misses are only remembered in memory (a block
-// looks like a missing file), and the run stops after a streak of misses.
+// refused). Requests are serialized and spaced, and misses are only remembered in memory (a block
+// looks like a missing file). After a streak of misses (All-Star break has no reports) a known
+// report is fetched: if it's refused too, the run stops.
 const SPACING_MS = 2000;
 const MAX_MISS_STREAK = 6;
+const KNOWN_GOOD = "Injury-Report_2025-01-15_06PM.pdf";
 let queue: Promise<unknown> = Promise.resolve();
 let missStreak = 0;
 const missing = new Set<string>();
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** One request; network failures are retried, never taken for a missing report. */
+async function fetchSpaced(file: string): Promise<OfficialInjuryReport | null> {
+  for (let attempt = 1; ; attempt++) {
+    await sleep(SPACING_MS);
+    try {
+      return await fetchInjuryReport(file);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (/HTTP/.test(msg) || attempt >= 4) throw e;
+      if (!/fetch failed|ECONNRESET|ETIMEDOUT|socket/i.test(msg)) {
+        console.warn(`unreadable report ${file}: ${msg}`);
+        return null;
+      }
+      await sleep(10_000 * attempt);
+    }
+  }
+}
 
 async function report(file: string): Promise<OfficialInjuryReport | null> {
   const cached = new URL(file.replace(/\.pdf$/, ".json"), REPORTS);
   if (existsSync(cached)) return JSON.parse(readFileSync(cached, "utf8")).report;
   if (missing.has(file)) return null;
   const run = queue.then(async () => {
-    if (missStreak >= MAX_MISS_STREAK)
-      throw new Error(`${MAX_MISS_STREAK} misses in a row (blocked?); stopping at ${file}`);
-    await new Promise((r) => setTimeout(r, SPACING_MS));
-    return fetchInjuryReport(file).catch((e: Error) => {
-      if (/HTTP/.test(e.message)) throw e;
-      console.warn(`unreadable report ${file}: ${e.message}`);
-      return null;
-    });
+    if (missStreak >= MAX_MISS_STREAK) {
+      if (!(await fetchSpaced(KNOWN_GOOD)))
+        throw new Error(`refused a known report; stopping at ${file}`);
+      missStreak = 0;
+    }
+    return fetchSpaced(file);
   });
   queue = run.catch(() => {});
   const r = await run;

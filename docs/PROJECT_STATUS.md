@@ -15,7 +15,7 @@
 
 Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 (PRs #30–#39):**
+**Shipped Oct 29 (PRs #30–#40):**
 
 - **Scheduler endpoint (#30):** `/api/cron/gameday` answers at once and works in `after()`. Settings shows "Background jobs" (with the error text when one fails). **cron-job.org job 8752774** calls it every 5 minutes; verified Oct 29 (200 in 1.9 s, `gameday ok`).
 - **Speed (#31):**
@@ -42,6 +42,11 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
   - Worst case (`vs BOS 118-121 Q4 10:37`) measured at 137 px against 140 px at 375 px; checked at 375 and 390 px with live games.
   - The nightly matchup snapshot retries once (the Oct 29 4 AM run failed once).
 
+- **Model candidates (#40, ADR-037):**
+  - Unprojected players' minutes × rate passed (held out −0.46 FP/game) and ships.
+  - Opponent defense per stat failed.
+  - DARKO in the blend is collecting logged games: it's scored nightly and shown on `/nba/model`.
+
 **Data sources** (free first; paid ones on hold, see memory `nba-data-sources`): ESPN (fantasy, site, core APIs), DraftKings props via ESPN, DARKO, PBP Stats. Databallr/nbarapm, Dunks & Threes and The Odds API are pinned until the free stack is complete.
 
 **Compute budget:** Vercel Hobby includes **4 active CPU-hours a month**, and going over pauses functions for up to 30 days. Each background simulation is budgeted against it:
@@ -66,10 +71,8 @@ Check Vercel → Usage regularly.
    - the matchup snapshot retry ("matchup-snapshot").
      The Live tab was checked during the Oct 29 games.
 2. **Props blend test:** it runs itself nightly; check `/nba/model` once 7 days and 800 games are in.
-3. **Next model candidates** (pre-register first):
-   - a minutes-aware prior for players ESPN didn't project (Pelle Larsson-type);
-   - DARKO's projection in the blend;
-   - the per-stat version of opponent defense.
-4. **Rest-of-season value with streaming:** the quick Waivers ranking still values a fixed roster. The simulator check covers the top 4; a cheaper replacement-level adjustment could align the whole list.
-5. **Win-probability recalibration** after week 13 (pre-registered, data logging).
-6. Replace the fixed league-average team total (115.3) with this season's average.
+3. **DARKO blend test:** check `/nba/model` once 7 game days and 800 games with DARKO are in. If it passes, wire DARKO into projections in its own PR.
+4. **Next model candidate: availability** (who plays at all), from `status_events` history. Pre-register first.
+5. **Rest-of-season value with streaming:** the quick Waivers ranking still values a fixed roster. The simulator check covers the top 4; a cheaper replacement-level adjustment could align the whole list.
+6. **Win-probability recalibration** after week 13 (pre-registered, data logging).
+7. Replace the fixed league-average team total (115.3) with this season's average.

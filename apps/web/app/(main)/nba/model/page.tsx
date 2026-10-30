@@ -1,7 +1,12 @@
 import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { ErrorNotice } from "@/components/setup-notice";
 import { dbConfigured } from "@/lib/db";
-import { blendSetting, currentAccuracy, type SourceAccuracy } from "@/lib/nba/accuracy";
+import {
+  blendSetting,
+  currentAccuracy,
+  darkoSetting,
+  type SourceAccuracy,
+} from "@/lib/nba/accuracy";
 import { etDate } from "@/lib/nba/calendar";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +16,7 @@ const LABEL: Record<SourceAccuracy["source"], string> = {
   vegas: "Vegas (props)",
   blend: "Blend (shown)",
   espn: "ESPN preseason",
+  darko: "DARKO",
 };
 
 const cell = (w: { games: number; mae: number | null }) =>
@@ -21,19 +27,29 @@ const TESTS = [
   ["15-game blend toward this season", "Shipped (baseline)"],
   ["Minutes trend", "Shipped: held-out −0.052 FP/game"],
   ["Vegas game environment (team totals)", "Shipped: held-out −0.028 FP/game"],
+  ["Minutes × per-minute rate", "Shipped: held-out −0.038 FP/game"],
+  ["Opponent defense by position", "Shipped: held-out −0.010 FP/game"],
+  ["Minutes × rate for players ESPN didn't project", "Shipped: held-out −0.463 FP/game"],
+  ["Opponent defense per stat", "Not shipped: held-out +0.004 FP/game (worse)"],
+  ["Teammate absences (boost, then minutes)", "Not shipped: worse even in exploration"],
+  ["DARKO in the blend", "Collecting: judged on logged games (below)"],
   [
     "Win probability: variance model",
     "Did not ship (Brier 0.0831 vs 0.0778); recalibration after week 13",
   ],
-  ["Teammate role boost", "Not shipped: no gain even in exploration (2025-26)"],
 ];
 
 export default async function ModelPage() {
   if (!dbConfigured()) {
     return <ErrorNotice title="Model accuracy needs the database" message="Set DATABASE_URL." />;
   }
-  const [accuracy, blend] = await Promise.all([currentAccuracy(etDate()), blendSetting()]);
+  const [accuracy, blend, darko] = await Promise.all([
+    currentAccuracy(etDate()),
+    blendSetting(),
+    darkoSetting(),
+  ]);
   const e = blend?.evaluation ?? null;
+  const d = darko?.evaluation ?? null;
   return (
     <>
       <PageHeader
@@ -71,7 +87,15 @@ export default async function ModelPage() {
           Lower is better. Every evening before tip, the app logs our projection, ESPN&apos;s and
           the Vegas-implied one for every player with a game; the next morning&apos;s box scores
           score them. Vegas only covers players with posted props, so compare it to ours on the
-          blend test below (same games).
+          blend test below (same games). DARKO is its free daily projection, as of the morning.
+        </p>
+        <p className="px-1 text-xs text-muted-foreground">
+          DARKO blend test (same rules as Vegas&apos;):{" "}
+          {darko
+            ? d
+              ? `${d.ships ? "passed" : "did not pass"}: weight ${d.weight}, held-out days ${d.test.blend.mae.toFixed(2)} vs ours ${d.test.model.mae.toFixed(2)} (${d.test.games} games).`
+              : `collecting, ${darko.collected.games} games over ${darko.collected.days} days so far.`
+            : "waiting for the first nightly check."}
         </p>
       </section>
 

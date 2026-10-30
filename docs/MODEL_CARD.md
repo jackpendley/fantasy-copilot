@@ -325,3 +325,54 @@ The gain is small and grows through the season as each opponent's sample grows; 
 
 - **Nightly:** `lib/nba/defense.ts` rebuilds the table from every logged pregame projection and its result, with the factor itself divided back out (`pregame_projections.matchup_factor`, migration 0013), so it never feeds on its own output.
 - **Where it applies:** today's and this week's projections (Today, Matchup, Waivers this week, logged projections, the player card, which names it). Not the rest-of-season values, where opponents average out.
+
+## Pre-registration: three candidates (2026-10-29, before any run)
+
+All three are judged against what ships today: minutes × rate (kMin 2, kRate 15), minutes trend, game environment and opponent defense by position (k 200). The walk-forward harness is `apps/web/scripts/backtest-projection.ts`. Each test reports per-player mean error differences with a 95% interval; a candidate **ships only if that interval is entirely below 0** on its judging data.
+
+### C. A minutes-aware prior for players ESPN didn't project
+
+**Today:** these players (Pelle Larsson-type) blend their season average toward a flat 15.0 FP/G at 15 prior games, ignoring minutes.
+
+**Candidate:** minutes × rate with generic priors:
+
+- prior minutes M0 = 22.8 (the median ESPN-projected minutes among the 178 projected free agents, Oct 29);
+- prior rate R0 = 15.0 / 22.8 = 0.658 FP per minute, so a player with no games still projects to 15.0, as today;
+- kMin 2, kRate ∈ {5, 15}.
+
+The trend, environment and defense layers are applied to both, as in production.
+
+**Pool:** players in the harness pool with fewer than 20 games in the prior season (no real prior: rookies and fringe players) and 20+ in the test season. Each is projected as if ESPN hadn't projected him.
+
+**Procedure:** pick kRate on 2025-26 (prior 2024-25); judge that one setting once on held-out 2024-25. If the held-out pool has fewer than 30 players, the result is reported as inconclusive and nothing ships.
+
+### D. DARKO in the blend (forward test on logged data)
+
+DARKO can't be backtested: only today's projection is published. The daily snapshot (`projection_snapshots`, source `darko`) has been saved since the morning job started logging it.
+
+**Data:**
+
+- For each logged pregame projection with a result, DARKO's projection is its latest snapshot captured before tip and dated within 2 days of the game.
+- That projection's per-game box score is scored with the league's settings.
+
+**Protocol:** the same as the props test (`lib/nba/props-eval.ts`):
+
+- the first evaluation runs once there are ≥7 game days and ≥800 player-games with both projections;
+- the weight w ∈ {0, 0.1, …, 1} is chosen on the first half of the game days;
+- (1 − w)·ours + w·DARKO is judged on the second half.
+
+**Ships if** w > 0 and the interval is entirely below 0. It is evaluated nightly and shown on `/nba/model`. Passing it would then be wired into projections in its own PR.
+
+### E. Opponent defense per stat
+
+**Today:** one factor per opponent and position scales the whole projection.
+
+**Candidate:** one factor per opponent, position and counting stat (FGM, FGA, FTM, FTA, 3PM, REB, AST, STL, BLK, TO).
+
+- His expected count of each stat is the baseline projection × his prior-season count per fantasy point (point in time).
+- f = (n·r + k) / (n + k) from the opponent's earlier games against that position, where r = actual count ÷ expected count.
+- The prediction adds, for each stat, (fantasy value of one unit) × expected count × (f − 1) to the baseline.
+- The baseline here is minutes × rate + trend + environment, with no position factor.
+- k ∈ {100, 200, 400}.
+
+**Procedure:** pick k on 2025-26 against the shipped overall factor (k 200); judge that one k once on held-out 2024-25 against it.

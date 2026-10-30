@@ -172,6 +172,41 @@ const roleBoost =
 
 const DAY_MS = 86_400_000;
 
+/** Family C (pre-registered 2026-10-29): generic prior for players ESPN didn't project. */
+const UNPROJECTED_FPPG = 15;
+const UNPROJECTED_MIN = 22.8;
+const C_RATE_PRIORS = [5, 15];
+
+/** Family E: the counting stats with their own opponent factor, and the k grid. */
+const COUNTS = ["FGM", "FGA", "FTM", "FTA", "3PM", "REB", "AST", "STL", "BLK", "TO"];
+const E_KS = [100, 200, 400];
+
+/** Fantasy value of one more of each count (a make is also an attempt, so not a miss). */
+function unitValues(s: ScoringMap): Record<string, number> {
+  const w = (k: string) => s[k] ?? 0;
+  return {
+    FGM: w("FGM") - w("FGMI") + 2 * w("PTS"),
+    FGA: w("FGMI"),
+    FTM: w("FTM") - w("FTMI") + w("PTS"),
+    FTA: w("FTMI"),
+    "3PM": w("3PM") + w("PTS"),
+    REB: w("REB"),
+    AST: w("AST"),
+    STL: w("STL"),
+    BLK: w("BLK"),
+    TO: w("TO"),
+  };
+}
+
+/** Mean of per-player differences with a 95% interval ("" for the baseline row). */
+function ci(d: number[]): string {
+  if (d.length < 2) return "baseline";
+  const m = mean(d);
+  const sd = Math.sqrt(d.reduce((a, x) => a + (x - m) ** 2, 0) / (d.length - 1));
+  const half = (1.96 * sd) / Math.sqrt(d.length);
+  return `${m.toFixed(3)} [${(m - half).toFixed(3)}, ${(m + half).toFixed(3)}]`;
+}
+
 /**
  * For every player-game in the pool: minutes vacated by regular teammates who didn't play.
  * A regular has averaged 20+ minutes over his last 10 games, the last of them for this team
@@ -407,12 +442,60 @@ async function main() {
     pred: number;
     actual: number;
     early: boolean;
+    /** Family E: this game's counts, and his prior-season count of each stat per fantasy point. */
+    line: Record<string, number>;
+    perFp: Record<string, number>;
   }[] = [];
+  /** Family C: players without a real prior, projected as ESPN-unprojected (fallback vs minutes). */
+  const unprojected: {
+    id: number;
+    day: string;
+    opp: string;
+    pos: string;
+    actual: number;
+    base: number;
+    cand: Record<number, number>;
+  }[] = [];
+  let unprojectedPlayers = 0;
 
   for (const { id, prev, cur } of logs) {
     const fp = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
     const prevGames = prev.filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0);
     const curGames = cur.filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0);
+    if (prevGames.length < 20 && curGames.length >= 20) {
+      // Family C (pre-registered 2026-10-29): no real prior, so projected as ESPN-unprojected.
+      unprojectedPlayers++;
+      const seenC: Game[] = [];
+      for (const g of curGames) {
+        const actual = fp(g);
+        const odds = lines.get(g.gameId);
+        const next: Next = {
+          teamTotal: odds ? impliedTeamTotal(odds, g.home) : null,
+          leagueTotal: leagueBefore.get(etDate(new Date(g.date))) ?? null,
+          vacated: 0,
+          vacatedSamePosition: 0,
+          priorMin: UNPROJECTED_MIN,
+          priorRate: UNPROJECTED_FPPG / UNPROJECTED_MIN,
+        };
+        const layers = (p: Predictor) => gameEnvironment(minutesTrend(p, 5, 0.5), 0.75);
+        unprojected.push({
+          id,
+          day: etDate(new Date(g.date)),
+          opp: g.opponent,
+          pos: firstPosition.get(id) ?? "?",
+          actual,
+          base: layers(blend(15))(UNPROJECTED_FPPG, seenC, next),
+          cand: Object.fromEntries(
+            C_RATE_PRIORS.map((kr) => [
+              kr,
+              layers(minutesRate(2, kr))(UNPROJECTED_FPPG, seenC, next),
+            ]),
+          ),
+        });
+        seenC.push({ fp: actual, min: g.line.MIN ?? 0 });
+      }
+      continue;
+    }
     // Point in time: a prior needs a real 2024-25 sample; the player needs a 2025-26 season.
     if (prevGames.length < 20 || curGames.length < 20) continue;
     players++;
@@ -424,6 +507,13 @@ async function main() {
         1,
         prevGames.reduce((a, g) => a + (g.line.MIN ?? 0), 0),
       );
+    const priorFp = mean(prevGames.map(fp));
+    const perFp = Object.fromEntries(
+      COUNTS.map((c) => [
+        c,
+        priorFp > 0 ? mean(prevGames.map((g) => g.line[c] ?? 0)) / priorFp : 0,
+      ]),
+    );
     const seen: Game[] = [];
     const mine: Record<string, number[]> = {};
     for (const k of Object.keys(predictors)) mine[k] = [];
@@ -446,6 +536,8 @@ async function main() {
         pred: predictors[BASELINE]!(prior, seen, next),
         actual,
         early: seen.length < 20,
+        line: g.line,
+        perFp,
       });
       for (const [k, pred] of Object.entries(predictors)) {
         const e = Math.abs(pred(prior, seen, next) - actual);
@@ -472,8 +564,56 @@ async function main() {
     }
     for (const k of ks)
       err[`B: opponent defense by position k ${k}`] = { all: [], early: [], late: [] };
+    // Family E: per stat, against the shipped B (k 200). Family C: on its own pool, both
+    // predictions scaled by the shipped B factor as in production.
+    const unit = unitValues(scoring);
+    const accE = new Map<string, { a: number; e: number; n: number }>();
+    const byPlayerE = new Map<number, { b200: number[]; cand: number[][] }>();
+    const byPlayerC = new Map<number, { base: number[]; cand: number[][] }>();
+    const unprojectedByDay = new Map<string, typeof unprojected>();
+    for (const u of unprojected) {
+      if (!unprojectedByDay.has(u.day)) unprojectedByDay.set(u.day, []);
+      unprojectedByDay.get(u.day)!.push(u);
+    }
+    const factorB = (opp: string, pos: string) => {
+      const s = acc.get(`${opp}|${pos}`);
+      const n = s?.n ?? 0;
+      const ratio = s && s.p > 0 ? s.a / s.p : 1;
+      return (n * ratio + 200) / (n + 200);
+    };
     for (const day of days) {
+      for (const u of unprojectedByDay.get(day) ?? []) {
+        const f = factorB(u.opp, u.pos);
+        if (!byPlayerC.has(u.id))
+          byPlayerC.set(u.id, { base: [], cand: C_RATE_PRIORS.map(() => []) });
+        const bp = byPlayerC.get(u.id)!;
+        bp.base.push(Math.abs(u.base * f - u.actual));
+        C_RATE_PRIORS.forEach((kr, i) => bp.cand[i]!.push(Math.abs(u.cand[kr]! * f - u.actual)));
+      }
       const today = byDay.get(day)!;
+      for (const r of today) {
+        const b200 = Math.abs(r.pred * factorB(r.opp, r.pos) - r.actual);
+        if (!byPlayerE.has(r.id)) byPlayerE.set(r.id, { b200: [], cand: E_KS.map(() => []) });
+        const be = byPlayerE.get(r.id)!;
+        be.b200.push(b200);
+        E_KS.forEach((k, i) => {
+          let pred = r.pred;
+          for (const c of COUNTS) {
+            const expected = r.pred * r.perFp[c]!;
+            const s = accE.get(`${r.opp}|${r.pos}|${c}`);
+            const n = s?.n ?? 0;
+            const ratio = s && s.e > 0 ? s.a / s.e : 1;
+            pred += unit[c]! * expected * ((n * ratio + k) / (n + k) - 1);
+          }
+          be.cand[i]!.push(Math.abs(pred - r.actual));
+        });
+      }
+      for (const r of today)
+        for (const c of COUNTS) {
+          const key = `${r.opp}|${r.pos}|${c}`;
+          const s = accE.get(key) ?? { a: 0, e: 0, n: 0 };
+          accE.set(key, { a: s.a + (r.line[c] ?? 0), e: s.e + r.pred * r.perFp[c]!, n: s.n + 1 });
+        }
       for (const r of today) {
         const s = acc.get(`${r.opp}|${r.pos}`);
         const ratio = s && s.p > 0 ? s.a / s.p : 1;
@@ -501,6 +641,39 @@ async function main() {
         (b) => mean(b.cand[i]!) - mean(b.base),
       );
     });
+
+    const report = (title: string, rows: [string, number, number[]][]) => {
+      console.log(`\n${title}\n`);
+      console.log("| Predictor | MAE | vs baseline (95% CI, by player) |\n|---|---:|---|");
+      for (const [name, mae, d] of rows) console.log(`| ${name} | ${mae.toFixed(4)} | ${ci(d)} |`);
+    };
+    const all = <T>(m: Map<number, T>, f: (t: T) => number[]) => [...m.values()].flatMap(f);
+    report(`E: opponent defense per stat vs shipped B k 200 (${byPlayerE.size} players)`, [
+      ["B k 200 (shipped)", mean(all(byPlayerE, (b) => b.b200)), []],
+      ...E_KS.map(
+        (k, i) =>
+          [
+            `E: per stat k ${k}`,
+            mean(all(byPlayerE, (b) => b.cand[i]!)),
+            [...byPlayerE.values()].map((b) => mean(b.cand[i]!) - mean(b.b200)),
+          ] as [string, number, number[]],
+      ),
+    ]);
+    report(`C: unprojected players (${unprojectedPlayers} players, ${unprojected.length} games)`, [
+      [
+        "fallback: blend toward 15.0 at 15 games (shipped)",
+        mean(all(byPlayerC, (b) => b.base)),
+        [],
+      ],
+      ...C_RATE_PRIORS.map(
+        (kr, i) =>
+          [
+            `C: minutes x rate (M0 ${UNPROJECTED_MIN}, kMin 2, kRate ${kr})`,
+            mean(all(byPlayerC, (b) => b.cand[i]!)),
+            [...byPlayerC.values()].map((b) => mean(b.cand[i]!) - mean(b.base)),
+          ] as [string, number, number[]],
+      ),
+    ]);
   }
 
   const rows = Object.entries(err)

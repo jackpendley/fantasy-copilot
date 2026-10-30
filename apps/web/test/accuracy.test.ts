@@ -8,12 +8,14 @@ const g = (
   vegas: number | null,
   espn: number | null,
   actual: number,
+  darko: number | null = null,
 ): ScoredGame => ({
   playerId: 1,
   day,
   ours,
   vegas,
   espn,
+  darko,
   actual,
 });
 
@@ -49,5 +51,16 @@ describe("accuracyBySource", () => {
   });
   it("feeds the props test only games with both projections", () => {
     expect(evalRows(games).map((r) => r.day)).toEqual(["2026-10-27", "2026-10-01"]);
+  });
+  it("scores DARKO only where it projected, and feeds its test the same way", () => {
+    expect(accuracyBySource(games, 0, "2026-10-27").find((x) => x.source === "darko")).toBe(
+      undefined,
+    );
+    const withDarko = [...games, g("2026-10-26", 18, null, null, 24, 21)];
+    const darko = accuracyBySource(withDarko, 0, "2026-10-27").find((x) => x.source === "darko")!;
+    expect(darko.season).toEqual({ games: 1, mae: 3 });
+    expect(evalRows(withDarko, "darko")).toEqual([
+      { playerId: 1, day: "2026-10-26", model: 18, vegas: 21, actual: 24 },
+    ]);
   });
 });

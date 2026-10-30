@@ -418,3 +418,13 @@
   - The factor (opponent × the player's first listed position, shrunk by 200 player-games) multiplies the daily and weekly projections next to the Vegas game environment.
   - It is rebuilt nightly. The logged projection records the factor, and the table is computed with it divided back out (no feedback).
 - **Teammate absences as minutes:** worse at every setting on 2025-26, so not shipped. Sportsbook props handle tonight's absences once the blend passes its test.
+
+## ADR-037: unprojected players get minutes × rate; per-stat defense doesn't ship; DARKO is tested forward (2026-10-29)
+
+- **Unprojected players:** players ESPN doesn't project but who have season minutes now use minutes × rate.
+  - Generic priors: 22.8 minutes, the median projected free agent; 0.658 FP per minute, so 15.0 FP/G before he plays.
+  - Held out −0.46 FP/game (MODEL_CARD C).
+- **Opponent defense per stat:** worse than the overall factor on both seasons, so not shipped (MODEL_CARD E).
+- **DARKO:** can't be backtested, so it is judged forward on logged games with the props test's rules. That reuses `evaluateProps`: DARKO's number goes in the rows' `vegas` slot.
+  - The evaluation runs nightly but changes nothing by itself.
+  - If it passes, wiring DARKO into projections is a separate PR.

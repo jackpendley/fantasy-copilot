@@ -215,7 +215,7 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
   // Then re-run the pre-registered props test; the blend weight only moves if it passes.
   const blend =
     snapshot === "morning"
-      ? await refreshBlend()
+      ? await refreshBlend(data.settings.scoring, date)
           .then((b) => ({
             blendWeight: b.weight,
             blendShips: b.ships,

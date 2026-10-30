@@ -327,6 +327,33 @@ describe("perGameProjection without an ESPN projection", () => {
     expect(v.source).toBe("season");
     expect(v.fppg).toBeCloseTo((38.5 + 15 * 15) / 16, 6);
   });
+
+  it("uses minutes x rate from generic priors when his minutes are known", () => {
+    // Synthetic: 5 games of 21.5 FP in 30.8 minutes, no ESPN projection (the Larsson case).
+    const p = {
+      id: 2,
+      name: "B",
+      proTeamId: 1,
+      proTeam: "MIA",
+      positions: ["SG"],
+      slot: null,
+      injuryStatus: "ACTIVE",
+      percentOwned: 1,
+      percentChange: 0,
+      projection: null,
+      season: { avg: 21.5, total: 107.5, stats: { MIN: 30.8 } },
+      last7: null,
+      last15: null,
+      last30: null,
+    };
+    const v = perGameProjection(p);
+    const minutes = (5 * 30.8 + 2 * 22.8) / 7;
+    const rate = (5 * (21.5 / 30.8) + 15 * (15 / 22.8)) / 20;
+    expect(v.source).toBe("minutes");
+    expect(v.fppg).toBeCloseTo(minutes * rate, 9);
+    // 19.1 vs 16.6 from the flat blend toward 15.
+    expect(v.fppg).toBeGreaterThan((5 * 21.5 + 15 * 15) / 20 + 2);
+  });
 });
 
 describe("winChanceLabel", () => {

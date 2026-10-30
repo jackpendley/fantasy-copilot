@@ -22,6 +22,12 @@ const RATE_PRIOR_GAMES = 15;
  * blended toward it like anyone's, so one big night doesn't make him a starter.
  */
 const UNPROJECTED_PRIOR = 15;
+/**
+ * With season minutes he gets minutes x rate like everyone else (MODEL_CARD candidate C,
+ * passed 2026-10-29), from generic priors: the median projected free agent's 22.8 minutes,
+ * at the rate that gives the same 15.0 FP/G before he plays.
+ */
+const UNPROJECTED_MINUTES = 22.8;
 /** Minutes trend (MODEL_CARD.md): last 5 games' minutes vs his season, once he has 8 games. */
 const TREND_WINDOW = 5;
 const TREND_MIN_GAMES = 8;
@@ -84,6 +90,16 @@ export function perGameProjection(p: RosterPlayer, asOf?: number): PerGame {
   if (proj == null && seasonAvg == null) return { fppg: 0, gamesPlayed: 0, source: "none" };
   const trend = minutesTrend(p, asOf);
   if (proj == null) {
+    const seasonMin = season?.minutes ?? 0;
+    if (gp && seasonMin > 0) {
+      const minutes =
+        (gp * seasonMin + MINUTES_PRIOR_GAMES * UNPROJECTED_MINUTES) / (gp + MINUTES_PRIOR_GAMES);
+      const rate =
+        (gp * (seasonAvg! / seasonMin) +
+          RATE_PRIOR_GAMES * (UNPROJECTED_PRIOR / UNPROJECTED_MINUTES)) /
+        (gp + RATE_PRIOR_GAMES);
+      return { fppg: minutes * rate * trend, gamesPlayed: gp, source: "minutes", minutes };
+    }
     const w = gp / (gp + PRIOR_GAMES);
     return {
       fppg: (w * seasonAvg! + (1 - w) * UNPROJECTED_PRIOR) * trend,

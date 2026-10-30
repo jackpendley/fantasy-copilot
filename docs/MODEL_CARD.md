@@ -376,3 +376,33 @@ DARKO can't be backtested: only today's projection is published. The daily snaps
 - k ∈ {100, 200, 400}.
 
 **Procedure:** pick k on 2025-26 against the shipped overall factor (k 200); judge that one k once on held-out 2024-25 against it.
+
+### Results (2026-10-29)
+
+The pre-registration above was committed (710e033) before any run. Exploration picked kRate 15 for C and k 200 for E (by overall MAE).
+
+**C. Unprojected players' minutes: passed, shipped.**
+
+| Season                 | Pool                        | Fallback MAE | Candidate MAE | vs fallback (95% CI, by player) |
+| ---------------------- | --------------------------- | -----------: | ------------: | ------------------------------- |
+| 2025-26 (exploration)  | 47 players, 2,781 games     |        9.470 |         9.066 | −0.536 [−0.779, −0.293]         |
+| **2024-25 (held out)** | **52 players, 2,849 games** |    **9.459** |     **9.140** | **−0.463 [−0.689, −0.238]**     |
+
+- The gain is large because the flat 15.0 FP/G pull ignores a young player's role.
+- **In production:** ESPN gives season minutes for 52 of the 72 unprojected players with a season on Oct 29. They now get minutes × rate from the generic priors; the other 20 keep the flat blend.
+- **Caveat:** the backtest pool (players without a real prior, mostly rookies) stands in for "ESPN didn't project him". Players who reach 20 games are survivors, but both predictors are judged on the same players.
+
+**E. Opponent defense per stat: failed, not shipped.**
+
+| Season                | k 200 vs shipped overall factor (95% CI) |
+| --------------------- | ---------------------------------------- |
+| 2025-26 (exploration) | +0.002 [−0.000, +0.005]                  |
+| 2024-25 (held out)    | +0.004 [+0.002, +0.007]                  |
+
+The per-stat version is slightly worse. Ten factors per opponent and position spread the same sample thin, and the overall factor already captures most of it.
+
+**D. DARKO in the blend: collecting.**
+
+- The nightly morning job now scores DARKO's snapshot for every logged game and runs the props test's rules on it (`model_settings` `darko_blend`).
+- `/nba/model` shows DARKO's accuracy and the test's status.
+- The first verdict comes once there are 7 game days and 800 games with both projections.

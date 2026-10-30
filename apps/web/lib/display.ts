@@ -42,14 +42,12 @@ interface GameLike {
 }
 
 /**
- * One short line for a phone row: "@BOS 7:00p", "@BOS 82-77 Q4 10:37", "vs PHI W 121-113".
- * 23 characters at most, so it fits a half-width cell at 375 px.
+ * The game's state after the opponent, compacted for phones: "7:00p", "82-77 Q4 10:37",
+ * "W 121-113".
  */
-export function compactGame(g: GameLike | null): string {
-  if (!g) return "No game";
-  const vs = `${g.home ? "vs " : "@"}${g.opponent}`;
+export function compactStatus(g: GameLike): string {
   const score = g.score ? `${g.score.us}-${g.score.them}` : "";
-  if (g.state === "pre") return `${vs} ${compactClock(g.when ?? g.detail)}`;
+  if (g.state === "pre") return compactClock(g.when ?? g.detail);
   if (g.state === "post") {
     const wl = g.score
       ? g.score.us > g.score.them
@@ -58,24 +56,13 @@ export function compactGame(g: GameLike | null): string {
           ? "L "
           : ""
       : "";
-    return `${vs} ${wl}${score || "Final"}`.trim();
+    return `${wl}${score || "Final"}`;
   }
-  return `${vs} ${score} ${compactClock(g.detail || g.when || "")}`.replace(/\s+/g, " ").trim();
+  return `${score} ${compactClock(g.detail || g.when || "")}`.replace(/\s+/g, " ").trim();
 }
 
-/** "22p 9r 4a 1s 2b" (nonzero only; "0p" for a scoreless line), or null without a line. */
-export function compactStats(line: Record<string, number> | null): string | null {
-  if (!line) return null;
-  const parts = (
-    [
-      ["PTS", "p"],
-      ["REB", "r"],
-      ["AST", "a"],
-      ["STL", "s"],
-      ["BLK", "b"],
-    ] as const
-  )
-    .filter(([k]) => (line[k] ?? 0) !== 0)
-    .map(([k, s]) => `${line[k]}${s}`);
-  return parts.length ? parts.join(" ") : "0p";
+/** One short line: "@ BOS 7:00p", "@ BOS 82-77 Q4 10:37", "vs PHI W 121-113". */
+export function compactGame(g: GameLike | null): string {
+  if (!g) return "No game";
+  return `${g.home ? "vs" : "@"} ${g.opponent} ${compactStatus(g)}`;
 }

@@ -107,8 +107,10 @@ export function PlayerRow({
             <FitText className="text-[length:calc(14px*var(--fit,1))] font-medium sm:hidden">
               {shortName(row.player.name)}
             </FitText>
-            <FitText className="hidden text-base font-medium sm:block">{row.player.name}</FitText>
-            <span className="shrink-0 text-[length:calc(10px*var(--fit,1))] text-muted-foreground sm:text-[11px]">
+            <FitText className="hidden sm:text-[length:calc(16px*var(--fit,1))] font-medium sm:block">
+              {row.player.name}
+            </FitText>
+            <span className="shrink-0 text-[length:calc(10px*var(--fit,1))] text-muted-foreground sm:text-[length:calc(11px*var(--fit,1))]">
               {row.player.positions.join("/")}
             </span>
             {/* Phones: short badges, so the name keeps its room. */}
@@ -129,7 +131,7 @@ export function PlayerRow({
                 title={
                   row.nba.confirmed ? "Confirmed starter (NBA.com)" : "Expected starter (NBA.com)"
                 }
-                className="h-4 px-1 text-[length:calc(9.5px*var(--fit,1))] sm:h-5 sm:px-1.5 sm:text-[11px]"
+                className="h-4 px-1 text-[length:calc(9.5px*var(--fit,1))] sm:h-5 sm:px-1.5 sm:text-[length:calc(11px*var(--fit,1))]"
               >
                 <span className="sm:hidden">{row.nba.confirmed ? "Start" : "Exp"}</span>
                 <span className="hidden sm:inline">
@@ -146,7 +148,7 @@ export function PlayerRow({
           </div>
           <FitText
             className={cn(
-              "text-[length:calc(12px*var(--fit,1))] text-muted-foreground sm:text-xs",
+              "text-[length:calc(12px*var(--fit,1))] text-muted-foreground",
               inProgress && "font-medium text-success",
             )}
           >
@@ -154,12 +156,12 @@ export function PlayerRow({
           </FitText>
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.
-            <div className="line-clamp-2 text-[length:calc(11px*var(--fit,1))] leading-[14px] text-foreground/80 tabular-nums sm:line-clamp-1 sm:text-xs sm:leading-4">
+            <div className="line-clamp-2 text-[length:calc(11px*var(--fit,1))] leading-[14px] text-foreground/80 tabular-nums sm:line-clamp-1 sm:text-[length:calc(12px*var(--fit,1))] sm:leading-4">
               {stats}
             </div>
           ) : (
             row.injuryNote && (
-              <FitText className="hidden text-xs text-muted-foreground sm:block">
+              <FitText alone className="hidden text-xs text-muted-foreground sm:block">
                 {row.injuryNote}
               </FitText>
             )
@@ -168,7 +170,7 @@ export function PlayerRow({
         <div className="w-12 shrink-0 text-right sm:w-16">
           <div
             className={cn(
-              "text-[length:calc(18px*var(--fit,1))] leading-tight font-semibold tabular-nums sm:text-lg",
+              "text-[length:calc(18px*var(--fit,1))] leading-tight font-semibold tabular-nums",
               inProgress && "text-success",
               !started && "text-muted-foreground",
             )}
@@ -177,7 +179,7 @@ export function PlayerRow({
           </div>
           {below != null && (
             <div
-              className="flex items-center justify-end gap-0.5 text-[length:calc(12px*var(--fit,1))] text-muted-foreground tabular-nums sm:text-xs"
+              className="flex items-center justify-end gap-0.5 text-[length:calc(12px*var(--fit,1))] text-muted-foreground tabular-nums"
               title={
                 !started
                   ? "Projection"

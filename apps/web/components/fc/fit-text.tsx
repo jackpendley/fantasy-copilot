@@ -77,15 +77,19 @@ export function FitGroup({
   );
 }
 
+/** `alone`: fit on its own even inside a group (a side note shouldn't shrink every row). */
 export function FitText({
   children,
   className,
+  alone = false,
 }: {
   children: React.ReactNode;
   className?: string;
+  alone?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const group = use(FitGroupContext);
+  const inGroup = use(FitGroupContext);
+  const group = alone ? null : inGroup;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !group) return;

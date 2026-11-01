@@ -15,7 +15,7 @@
 
 Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 – Nov 1 (PRs #30–#48):**
+**Shipped Oct 29 – Nov 1 (PRs #30–#49):**
 
 - **Scheduler (#30):** cron-job.org job 8752774 calls `/api/cron/gameday` every 5 minutes. Settings shows "Background jobs".
 - **Speed (#31, #32):** ESPN reads memoized; trade targets precomputed; skeletons. Outlook runs take ~20 s, with the first odds in ~4 s.
@@ -33,8 +33,8 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
   - The official statuses with the existing priors are now **tested forward**. The 5-minute job logs each new official report (table `official_status`) and ESPN's whole injury feed, from 9 AM ET on game days.
 
 - **Win-probability logging (#45, ADR-039):** each matchup-morning now logs both sides' variance still to come, summed over projected starts (`matchup_states.*_start_var`). Candidate C is tested on it (MODEL_CARD, Pre-registration 3).
-- **Phone matchup rows (#46–#48; ADR-040, ADR-042, ADR-043):** a fixed 58 px, every line on one line, with full stat labels.
-  - Nothing is cut: when a line is too wide, the whole board's text shrinks together (`FitGroup`, one scale for all seven days) on Matchup and Today. Matchup's scale is 100% from 412 px, 98% at 390 px and 90% at 360 px.
+- **Phone matchup rows (#46–#49; ADR-040, ADR-042–044):** a fixed 58 px, every line on one line, with full stat labels.
+  - Nothing is cut: when a line is too wide, the whole board's text shrinks together (`FitGroup`, one scale for all seven days) on Matchup and Today. Matchup's scale is 100% from 412 px, 87% at 390 px and 65% at 360 px, set by the longest name with a badge. Names keep their suffixes; badges sit on the name line; tip times read "7:00 PM".
   - Other pages (Waivers, Players, Trades, League) still truncate with "…".
 - **Win probability, candidate C on 2025-26 (#46, MODEL_CARD 3b):** rebuilt from last season's daily rosters. Brier 0.0865 vs 0.0872, interval [−0.0028, +0.0017]: not shipped. Both models are overconfident at the top (95%+ won 92–94%).
 

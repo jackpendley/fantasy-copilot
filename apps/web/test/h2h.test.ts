@@ -96,7 +96,7 @@ describe("cells for other days", () => {
 
   it("marks a final well above its projection", () => {
     const final = cellFromFinal(
-      { playerId: 7, slot: "SF", points: 45, line: { PTS: 30 } },
+      { playerId: 7, player: null, slot: "SF", points: 45, line: { PTS: 30 } },
       undefined,
       gameOn(games, 1, 3, "post"),
       30,
@@ -110,7 +110,7 @@ describe("cells for other days", () => {
     });
     // No game that day: nothing to score or compare.
     const idle = cellFromFinal(
-      { playerId: 8, slot: "BE", points: 0, line: null },
+      { playerId: 8, player: null, slot: "BE", points: 0, line: null },
       undefined,
       null,
       25,

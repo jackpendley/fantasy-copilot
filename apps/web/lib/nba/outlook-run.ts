@@ -11,7 +11,7 @@ import {
 import { simulateSeasonAsync, type SimTeamResult } from "@fantasy-copilot/fantasy-core";
 import { db } from "../db";
 import { espnConfig } from "../env";
-import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
+import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
 import { weekPointsThroughToday } from "./matchup";
 import { buildOutlookInput } from "./outlook";
@@ -54,7 +54,7 @@ async function previousSeasonTeams(): Promise<FantasyTeam[] | null> {
  * are banked, and every team plays tomorrow's roster, so moves made after the lock count.
  */
 export async function outlookSetup(now = new Date()) {
-  const date = etDate(now);
+  const date = gameDate(now);
   const today = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const cfg = espnConfig();
   const [league, previousTeams, faRaw] = await Promise.all([

@@ -10,14 +10,32 @@ const MERGED_CALENDAR_WEEK = 18; // calendar weeks 18 + 19 (Feb 15-28) are one m
 const DAY_MS = 86_400_000;
 const utcMidnight = (ymd: string) => Date.parse(`${ymd}T00:00:00Z`);
 
-/** Calendar date in US/Eastern ("2026-10-20") for an instant. ESPN groups games by it. */
-export function etDate(at: Date | number = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/New_York",
+const dateIn = (timeZone: string, at: Date | number) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(at);
+
+/** Calendar date in US/Eastern ("2026-10-20") for an instant. ESPN groups games by it. */
+export function etDate(at: Date | number = new Date()): string {
+  return dateIn("America/New_York", at);
+}
+
+/** Jack's time zone (Arizona: MST all year). DISPLAY_TZ overrides it. */
+export const HOME_TZ = process.env.DISPLAY_TZ || "America/Phoenix";
+const LATE_GAMES_MS = 3 * 3_600_000;
+
+/**
+ * The game day in progress, as an ET game date: Jack's own calendar date, but never past the
+ * ET date of three hours ago, so late games stay "today" until they're over. (Plain etDate()
+ * turned the day over at midnight ET, 9-10 PM in Arizona, while West Coast games were live.)
+ */
+export function gameDate(at: Date | number = new Date()): string {
+  const local = dateIn(HOME_TZ, at);
+  const late = etDate(+at - LATE_GAMES_MS);
+  return local < late ? local : late;
 }
 
 export function scoringPeriodForDate(ymd: string): number {

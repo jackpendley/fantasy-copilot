@@ -10,7 +10,7 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
 import { espnConfig } from "@/lib/env";
-import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "@/lib/nba/calendar";
+import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "@/lib/nba/calendar";
 import { nbaSchedule } from "@/lib/nba/data";
 import { propsForGames } from "@/lib/nba/market-data";
 import { scoreGames, summarize } from "@/lib/nba/player";
@@ -49,7 +49,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
   const fromLastSeason = p.logSeason !== p.season;
 
   // Tonight's game, as the sportsbooks see it (when props are posted).
-  const sp = Math.min(Math.max(scoringPeriodForDate(etDate()), 1), LAST_SCORING_PERIOD);
+  const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
   const tonight = (await nbaSchedule(espnConfig().season).catch(() => [])).find(
     (g) =>
       g.scoringPeriodId === sp &&

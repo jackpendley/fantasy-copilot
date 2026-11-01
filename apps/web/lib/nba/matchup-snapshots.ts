@@ -2,12 +2,12 @@ import "server-only";
 // Daily win-chance snapshots for the current matchup (written by the nightly job).
 
 import { db } from "@/lib/db";
-import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
+import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
 import { matchupView } from "./matchup";
 
 export async function recordMatchupSnapshot(now = new Date()) {
-  const date = etDate(now);
+  const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const v = matchupView(await loadLeague(sp, date), sp);
   if (!v.theirs || v.pWin == null) return null; // bye week
@@ -29,7 +29,7 @@ export async function recordMatchupSnapshot(now = new Date()) {
  * projections (calibration data for the weekly win probability). One row per matchup per day.
  */
 export async function recordMatchupStates(now = new Date()) {
-  const date = etDate(now);
+  const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const data = await loadLeague(sp, date);
   const mp = matchupPeriodOf(sp);

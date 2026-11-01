@@ -88,12 +88,13 @@ describe("liveRows", () => {
   const live = [
     {
       playerId: 1,
+      player: null,
       slot: "PG",
       points: 22,
       line: { PTS: 14, REB: 5, AST: 3, FGM: 6, FGA: 11, MIN: 27 },
     },
-    { playerId: 2, slot: "SG", points: 31.5, line: null },
-    { playerId: 4, slot: "BE", points: 0, line: null },
+    { playerId: 2, player: null, slot: "SG", points: 31.5, line: null },
+    { playerId: 4, player: null, slot: "BE", points: 0, line: null },
   ];
   const rows = liveRows(board, live, scoreboard);
   const by = (id: number) => rows.find((r) => r.row.player.id === id)!;
@@ -119,8 +120,8 @@ describe("pregame vs updated projection", () => {
   const board = [row(1, "in", 40), row(2, "post", 30), row(3, "pre", 20)];
   const scoreboard = [sb(1, "in", 3, "0:00"), sb(2, "post", 4, "0.0"), sb(3, "pre", 0, "")];
   const live = [
-    { playerId: 1, slot: "PG", points: 22, line: null },
-    { playerId: 2, slot: "SG", points: 45, line: null },
+    { playerId: 1, player: null, slot: "PG", points: 22, line: null },
+    { playerId: 2, player: null, slot: "SG", points: 45, line: null },
   ];
   const rows = liveRows(board, live, scoreboard);
   const by = (id: number) => rows.find((r) => r.row.player.id === id)!;

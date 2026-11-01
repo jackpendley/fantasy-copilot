@@ -10,13 +10,13 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
   LAST_SCORING_PERIOD,
   dateForScoringPeriod,
-  etDate,
   matchupPeriodOf,
   scoringPeriodForDate,
   scoringPeriodsOf,
   shortDay,
+  gameDate,
 } from "@/lib/nba/calendar";
-import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
+import { loadLeague, loadLiveRosters, loadPlayersById } from "@/lib/nba/data";
 import { dbConfigured } from "@/lib/db";
 import {
   cellFromFinal,
@@ -110,7 +110,7 @@ export default async function WeekPage({
 }: {
   searchParams: Promise<{ day?: string }>;
 }) {
-  const today = etDate();
+  const today = gameDate();
   const sp = Math.min(Math.max(scoringPeriodForDate(today), 1), LAST_SCORING_PERIOD);
   const mp = matchupPeriodOf(sp);
   const periods = scoringPeriodsOf(mp);
@@ -177,6 +177,15 @@ export default async function WeekPage({
         .map(async (d) => [d, await loadLiveRosters(d, mp).catch(() => null)] as const),
     ),
   );
+  const notRostered = [
+    ...new Set(
+      [...pastFinals.values()]
+        .flatMap((byTeam) => [...(byTeam?.values() ?? [])].flat())
+        .map((e) => e.playerId)
+        .filter((id) => !people.has(id)),
+    ),
+  ];
+  const dropped = await loadPlayersById(notRostered, sp).catch(() => new Map<number, never>());
   // Ruled-out players: out until ESPN's estimated return, then back.
   const out = absences([...data.ahead.me.roster, ...(oppAhead?.roster ?? [])], data.injuries, sp);
   const slots = startingSlots(data.settings.slotCounts);
@@ -206,7 +215,8 @@ export default async function WeekPage({
       const past = pastFinals.get(day);
       const final = (teamId: number) =>
         (past?.get(teamId) ?? []).map((e) => {
-          const p = people.get(e.playerId);
+          // A player dropped since is on no roster now: look him up, or use the day's entry.
+          const p = people.get(e.playerId) ?? dropped.get(e.playerId) ?? e.player ?? undefined;
           return cellFromFinal(
             e,
             p,

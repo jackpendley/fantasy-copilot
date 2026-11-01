@@ -3,7 +3,7 @@ import "server-only";
 // and (when the outlook has run) playoff and title odds.
 
 import { dbConfigured } from "@/lib/db";
-import { LAST_SCORING_PERIOD, etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
+import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadDraftPicks, loadFreeAgents, loadLeague } from "./data";
 import { absences } from "./availability";
 import { marketContext } from "./market";
@@ -11,7 +11,7 @@ import { latestOutlook } from "./outlook-run";
 import { teamValue, valueContext, type TeamValue } from "./trade";
 
 export async function loadLeagueView(now = new Date()) {
-  const date = etDate(now);
+  const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const [league, outlook, freeAgents, draftPicks] = await Promise.all([
     loadLeague(sp, date),

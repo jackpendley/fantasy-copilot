@@ -28,6 +28,10 @@ const data = {
                 id: 101,
                 appliedStatTotal: 30,
                 player: {
+                  id: 101,
+                  fullName: "Test Guard",
+                  proTeamId: 1,
+                  eligibleSlots: [0, 1, 3, 11, 12],
                   stats: [
                     // PTS 0, REB 6, AST 3, FGM 13, FGA 14, MIN 40
                     {
@@ -78,16 +82,21 @@ describe("live matchup parsing", () => {
   it("reads today's points and slots per player for the matchup period", () => {
     const live = parseLiveRosters(data, 2);
     expect([...live.keys()]).toEqual([13]);
-    expect(live.get(13)).toEqual([
+    expect(live.get(13)).toMatchObject([
       {
         playerId: 101,
         slot: "PG",
         points: 30,
         line: { PTS: 20, REB: 8, AST: 5, FGM: 8, FGA: 15, MIN: 34 },
       },
-      { playerId: 102, slot: "BE", points: 12.5, line: null },
-      { playerId: 103, slot: "IR", points: 0, line: null },
+      { playerId: 102, slot: "BE", points: 12.5, line: null, player: null },
+      { playerId: 103, slot: "IR", points: 0, line: null, player: null },
     ]);
+  });
+  it("keeps the player ESPN sends with the entry (a dropped player has no other record)", () => {
+    const p = parseLiveRosters(data, 2).get(13)![0]!.player!;
+    expect(p).toMatchObject({ id: 101, name: "Test Guard", proTeamId: 1 });
+    expect(p.positions).toEqual(["PG", "SG", "PF"]);
   });
 });
 

@@ -8,9 +8,12 @@ export const slotRank = (slot: string) => {
   return i === -1 ? SLOT_ORDER.length : i;
 };
 
+const SUFFIX = /^(jr\.?|sr\.?|ii|iii|iv|v)$/i;
+
 /** "J. Duren" for tight phone columns. */
 export const shortName = (name: string) => {
-  const [first, ...rest] = name.split(" ");
+  // Generational suffixes go too ("Trey Murphy III" -> "T. Murphy"): the full name is on his card.
+  const [first, ...rest] = name.split(" ").filter((w, i) => i < 2 || !SUFFIX.test(w));
   return rest.length ? `${first![0]}. ${rest.join(" ")}` : name;
 };
 

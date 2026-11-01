@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { fmtPts } from "@/lib/display";
 import { cn } from "@/lib/utils";
+import { FitGroup } from "./fit-text";
 import { H2HBoard, type BoardData } from "./h2h-board";
 
 export interface MatchupDay {
@@ -77,7 +78,22 @@ export function MatchupDays({
           </button>
         ))}
       </nav>
-      <H2HBoard board={day.board} benchSlots={benchRows} irSlots={irRows} />
+      {/* One text scale for the whole week: the other days are laid out invisibly beside the
+          one shown, so a long line on any day shrinks every day's text alike. */}
+      <FitGroup className="relative">
+        <H2HBoard board={day.board} benchSlots={benchRows} irSlots={irRows} />
+        <div
+          inert
+          aria-hidden
+          className="invisible absolute inset-x-0 top-0 h-0 overflow-hidden sm:hidden"
+        >
+          {days
+            .filter((d) => d !== day)
+            .map((d) => (
+              <H2HBoard key={d.sp} board={d.board} benchSlots={benchRows} irSlots={irRows} />
+            ))}
+        </div>
+      </FitGroup>
       <p className="px-1 text-xs text-muted-foreground">{day.note}</p>
     </section>
   );

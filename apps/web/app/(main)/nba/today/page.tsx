@@ -4,6 +4,7 @@ import { bestPerGame } from "@/lib/nba/best";
 import { ilReturnPlan } from "@/lib/nba/il-plan";
 import { ApplyMoves } from "@/components/apply-moves";
 import { Callout, DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
+import { FitGroup } from "@/components/fc/fit-text";
 import { PlayerRow } from "@/components/fc/player-row";
 import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -231,7 +232,8 @@ export default async function TodayPage({
           )}
         </div>
 
-        <div className="space-y-4 lg:order-1">
+        {/* One text scale for all the rows: if a line must shrink to fit, they all do. */}
+        <FitGroup className="space-y-4 lg:order-1">
           <Group
             title="Starters"
             rows={starters}
@@ -247,7 +249,7 @@ export default async function TodayPage({
             rest of it. ▲/▼ = 5+ points and 20%+ off. Tap a player for his card: our model, Vegas
             and ESPN side by side, recent games, and rest-of-season value.
           </p>
-        </div>
+        </FitGroup>
       </div>
       <LiveRefresh active={gamesLive} />
     </>

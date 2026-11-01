@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactClock, compactGame, keepStatsTogether } from "@/lib/display";
+import { compactClock, compactGame, keepStatsTogether, shortName } from "@/lib/display";
 
 describe("compact phone labels", () => {
   it("compacts ESPN's game status", () => {
@@ -47,5 +47,15 @@ describe("compact phone labels", () => {
 describe("keepStatsTogether", () => {
   it("joins each number to its label, so a wrapped line never strands one", () => {
     expect(keepStatsTogether("21 PTS 3 REB 3 3PM")).toBe("21\u00a0PTS 3\u00a0REB 3\u00a03PM");
+  });
+});
+
+describe("shortName", () => {
+  it("abbreviates the first name and drops generational suffixes", () => {
+    expect(shortName("Jalen Duren")).toBe("J. Duren");
+    expect(shortName("Trey Murphy III")).toBe("T. Murphy");
+    expect(shortName("Jaren Jackson Jr.")).toBe("J. Jackson");
+    expect(shortName("Shai Gilgeous-Alexander")).toBe("S. Gilgeous-Alexander");
+    expect(shortName("Nene")).toBe("Nene");
   });
 });

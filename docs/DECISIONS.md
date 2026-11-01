@@ -527,3 +527,14 @@
   - tip times read "7:00 PM", not "7:00p" (`compactClock`).
 - **Cost:** the tightest Matchup line is again a long name with a badge. The board's one scale is 100% from 412 px, 87% at 390 px, 75% at 375 px, 65% at 360 px and 34% at 320 px. Nothing is cut or overlapping at 320–932 px. Today stays at 100% at every width.
 - **Side notes fit alone:** a long injury note on Today (landscape and desktop) shrinks on its own (`FitText alone`) instead of shrinking every row. Today's desktop sizes are on the shared scale too, so a too-long name there shrinks all rows rather than being cut.
+
+## ADR-045: the game day follows Jack's clock; past days name dropped players (2026-11-01)
+
+- **Bug:** at 9:15 PM in Arizona during daylight time (12:15 AM ET), Matchup moved "Today" to the next day and showed that night's live games as Final. Every "today" came from `etDate()`, which turns over at midnight ET (9 PM in Arizona in summer, 10 PM in winter). The 5-minute job did the same, so live scoring and alerts after midnight ET looked at the wrong day.
+- **Fix:**
+  - `gameDate()` (`lib/nba/calendar.ts`) is the game day in progress: Jack's own date (`HOME_TZ`, Arizona; `DISPLAY_TZ` overrides it), but never past the ET date of three hours ago, so late games stay today until they're over.
+  - Pages, jobs and views use it.
+  - `etDate()` remains for turning a tip time into its ET game date.
+- **Dropped players on past days** showed as "Player 5203685": they're on no roster now.
+  - ESPN sends each player with that day's roster entry (`LiveEntry.player`).
+  - Matchup looks such players up by id (`loadPlayersById`) for their positions and projection, and falls back to the entry's player.

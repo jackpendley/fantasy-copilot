@@ -346,6 +346,8 @@ export function parseFreeAgents(data: Json, season: number): FreeAgent[] {
 
 export interface LiveEntry {
   playerId: number;
+  /** The player as ESPN sent him with that day's roster (a dropped player's only record). */
+  player: RosterPlayer | null;
   /** Lineup slot today (BE/IR don't count). */
   slot: string;
   /** Fantasy points so far today. */
@@ -369,6 +371,9 @@ export function parseLiveRosters(data: Json, matchupPeriod: number): Map<number,
         side.teamId,
         (roster.entries ?? []).map((e: Json) => ({
           playerId: e.playerId ?? e.playerPoolEntry?.id ?? e.playerPoolEntry?.player?.id,
+          player: e.playerPoolEntry?.player?.fullName
+            ? parsePlayer(e.playerPoolEntry.player, data?.seasonId, e.lineupSlotId)
+            : null,
           slot: SLOT_BY_ID[e.lineupSlotId] ?? String(e.lineupSlotId),
           points: Number(e.playerPoolEntry?.appliedStatTotal ?? 0),
           line: gameEntries(e.playerPoolEntry?.player?.stats ?? []).at(-1)?.line ?? null,

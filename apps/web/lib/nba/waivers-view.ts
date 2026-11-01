@@ -3,7 +3,7 @@ import "server-only";
 // so the server can re-check a move against fresh data before writing it.
 
 import { isStartingSlot } from "@fantasy-copilot/fantasy-core";
-import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
+import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadFreeAgents, loadLeague } from "./data";
 import { buildDayBoard } from "./day";
 import { matchupView } from "./matchup";
@@ -13,7 +13,7 @@ import { valueContext } from "./trade";
 import { waiverAnalysis } from "./waivers";
 
 export async function loadWaiverView(now = new Date()) {
-  const date = etDate(now);
+  const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
   const view = matchupView(data, sp);

@@ -12,10 +12,10 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
   LAST_SCORING_PERIOD,
   addDays,
-  etDate,
   longDay,
   matchupPeriodOf,
   scoringPeriodForDate,
+  gameDate,
 } from "@/lib/nba/calendar";
 import { loadLeague, loadLiveRosters } from "@/lib/nba/data";
 import { liveRows, type LiveRow } from "@/lib/nba/live";
@@ -56,7 +56,7 @@ export default async function TodayPage({
   searchParams: Promise<{ date?: string }>;
 }) {
   const { date: requested } = await searchParams;
-  const today = etDate();
+  const today = gameDate();
   const date = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : today;
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
 

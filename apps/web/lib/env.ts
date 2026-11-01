@@ -17,5 +17,5 @@ export function espnConfig(): EspnConfig & { teamId: number } {
   };
 }
 
-/** Where times are shown. Jack is in Arizona (MST all year). */
-export const DISPLAY_TZ = process.env.DISPLAY_TZ || "America/Phoenix";
+/** Where times are shown: Jack's time zone (lib/nba/calendar.ts). */
+export { HOME_TZ as DISPLAY_TZ } from "./nba/calendar";

@@ -13,9 +13,11 @@ import {
   parseFreeAgents,
   parseLiveRosters,
   parseMatchups,
+  parsePlayerPool,
   parseProSchedule,
   parseSettings,
   parseTeams,
+  playerIdsFilter,
   type ProGame,
   type RosterPlayer,
 } from "@fantasy-copilot/espn";
@@ -137,6 +139,18 @@ export async function loadFreeAgents(scoringPeriodId: number, limit = 250) {
     fetchImpl: FEED_FETCH,
   });
   return parseFreeAgents(raw, cfg.season);
+}
+
+/** Players by id, wherever they are now (e.g. dropped since a past day); empty in dev mode. */
+export async function loadPlayersById(ids: number[], scoringPeriodId: number) {
+  if (process.env.ESPN_LEAGUE_FILE || !ids.length) return new Map<number, RosterPlayer>();
+  const cfg = espnConfig();
+  const raw = await fetchLeague(cfg, ["kona_player_info"], {
+    filter: playerIdsFilter(ids),
+    scoringPeriodId,
+    fetchImpl: FEED_FETCH,
+  });
+  return new Map(parsePlayerPool(raw, cfg.season).map((p) => [p.id, p]));
 }
 
 /** Today's fantasy points per player for every team in this matchup period (live during games). */

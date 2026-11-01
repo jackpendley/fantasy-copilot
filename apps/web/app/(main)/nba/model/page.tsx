@@ -7,7 +7,7 @@ import {
   darkoSetting,
   type SourceAccuracy,
 } from "@/lib/nba/accuracy";
-import { etDate } from "@/lib/nba/calendar";
+import { gameDate } from "@/lib/nba/calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +44,7 @@ export default async function ModelPage() {
     return <ErrorNotice title="Model accuracy needs the database" message="Set DATABASE_URL." />;
   }
   const [accuracy, blend, darko] = await Promise.all([
-    currentAccuracy(etDate()),
+    currentAccuracy(gameDate()),
     blendSetting(),
     darkoSetting(),
   ]);

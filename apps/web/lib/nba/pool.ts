@@ -5,12 +5,12 @@ import "server-only";
 import { fetchLeague, parseFreeAgents, playerIdsFilter } from "@fantasy-copilot/espn";
 import { fetchGameLog } from "@fantasy-copilot/nba-data";
 import { espnConfig } from "@/lib/env";
-import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
+import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadFreeAgents, loadLeague } from "./data";
 import type { PoolPlayer } from "./trends";
 
 export async function loadPlayerPool(now = new Date()) {
-  const date = etDate(now);
+  const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const [league, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
   // Who owns whom, counting moves that take effect tomorrow.

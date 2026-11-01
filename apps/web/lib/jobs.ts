@@ -6,7 +6,7 @@ import { db } from "./db";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
 import { gamedayAlerts } from "./nba/alerts";
-import { etDate, scoringPeriodForDate, LAST_SCORING_PERIOD } from "./nba/calendar";
+import { scoringPeriodForDate, LAST_SCORING_PERIOD, gameDate } from "./nba/calendar";
 import { loadFreeAgents, loadLeague } from "./nba/data";
 import { refreshBlend } from "./nba/accuracy";
 import { refreshPbpPlayers } from "./nba/advanced";
@@ -37,7 +37,7 @@ const AFTER_LAST_TIP_MS = 15 * 60_000;
  * touching the database unless a move is recent (Neon sleeps).
  */
 export async function gamedayJob(now = new Date()): Promise<Record<string, unknown>> {
-  const date = etDate(now);
+  const date = gameDate(now);
   const sp = scoringPeriodForDate(date);
   if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
 
@@ -207,7 +207,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
 
 /** Capture today's props and game lines (and, with `darko`, a DARKO snapshot). */
 async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<string, unknown>> {
-  const date = etDate();
+  const date = gameDate();
   const sp = scoringPeriodForDate(date);
   if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
   const data = await loadLeague(sp, date);

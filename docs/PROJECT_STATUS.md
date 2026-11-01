@@ -15,7 +15,7 @@
 
 Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 – Nov 1 (PRs #30–#49):**
+**Shipped Oct 29 – Nov 1 (PRs #30–#50):**
 
 - **Scheduler (#30):** cron-job.org job 8752774 calls `/api/cron/gameday` every 5 minutes. Settings shows "Background jobs".
 - **Speed (#31, #32):** ESPN reads memoized; trade targets precomputed; skeletons. Outlook runs take ~20 s, with the first odds in ~4 s.
@@ -37,6 +37,8 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
   - Nothing is cut: when a line is too wide, the whole board's text shrinks together (`FitGroup`, one scale for all seven days) on Matchup and Today. Matchup's scale is 100% from 412 px, 87% at 390 px and 65% at 360 px, set by the longest name with a badge. Names keep their suffixes; badges sit on the name line; tip times read "7:00 PM".
   - Other pages (Waivers, Players, Trades, League) still truncate with "…".
 - **Win probability, candidate C on 2025-26 (#46, MODEL_CARD 3b):** rebuilt from last season's daily rosters. Brier 0.0865 vs 0.0872, interval [−0.0028, +0.0017]: not shipped. Both models are overconfident at the top (95%+ won 92–94%).
+
+- **Game day on Jack's clock (#50, ADR-045):** "today" turns over at Jack's midnight (never before 3 AM ET), not at midnight ET. Past days show dropped players by name.
 
 **Data sources** (free first; paid ones on hold, see memory `nba-data-sources`):
 
@@ -69,4 +71,3 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 7. **IR-return cuts disagree:** when a player returns from IR to a full roster, the season simulator cuts the lowest per-game projection, but the quick Waivers ranking cuts whoever adds the fewest lineup points. On Nov 1 that split the two on Isaiah Jackson for Robinson vs Collins. Pick one rule for both, with a test.
 8. Replace the fixed league-average team total (115.3) with this season's average.
 9. **Days-ahead availability** (week projections still hold today's status for two days): a separate candidate.
-10. **Past days' missing names:** an opponent's player can show as "P. 5203685" on a past day of Matchup (ESPN didn't send his name). Fill names from the player pool.

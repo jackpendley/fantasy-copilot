@@ -4,6 +4,7 @@ import { parseTeams, parseSettings, type ProGame, type RosterPlayer } from "@fan
 import {
   dateForScoringPeriod,
   etDate,
+  gameDate,
   matchupPeriodOf,
   scoringPeriodForDate,
   scoringPeriodsOf,
@@ -56,6 +57,15 @@ describe("calendar", () => {
   });
   it("uses the US/Eastern date (a 10:30 PM ET tip is still that day)", () => {
     expect(etDate(new Date("2026-10-21T02:30:00Z"))).toBe("2026-10-20");
+  });
+  it("keeps the game day until Jack's own midnight, and late games until 3 AM ET", () => {
+    // Oct 28, 9:15 PM in Arizona = 12:15 AM ET Oct 29 (EDT): still Oct 28's games (the bug).
+    expect(etDate(new Date("2026-10-29T04:15:00Z"))).toBe("2026-10-29");
+    expect(gameDate(new Date("2026-10-29T04:15:00Z"))).toBe("2026-10-28");
+    // Just after midnight in Arizona it's the next day.
+    expect(gameDate(new Date("2026-10-29T07:05:00Z"))).toBe("2026-10-29");
+    // Midday: the same date everywhere.
+    expect(gameDate(new Date("2026-11-02T18:00:00Z"))).toBe("2026-11-02");
   });
   it("has a 6-day week 1, Monday weeks, the Cup week 8 and a merged All-Star week", () => {
     expect(scoringPeriodsOf(1)).toEqual([1, 2, 3, 4, 5, 6]);

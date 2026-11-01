@@ -9,7 +9,7 @@ import { fetchLeague, parseTransactions, type LeagueTransaction } from "@fantasy
 import { db } from "@/lib/db";
 import { forgetResponses } from "@/lib/fetch-memo";
 import { espnConfig } from "@/lib/env";
-import { LAST_SCORING_PERIOD, etDate, scoringPeriodForDate } from "./calendar";
+import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
 import { refreshMoveChecks } from "./move-checks";
@@ -35,7 +35,7 @@ export function recentMove(moveAt: number | null, now: number): boolean {
  */
 export async function recentLeagueMoves(now = new Date()): Promise<LeagueTransaction[]> {
   if (process.env.ESPN_LEAGUE_FILE) return [];
-  const sp = Math.min(Math.max(scoringPeriodForDate(etDate(now)), 1), LAST_SCORING_PERIOD);
+  const sp = Math.min(Math.max(scoringPeriodForDate(gameDate(now)), 1), LAST_SCORING_PERIOD);
   const cfg = espnConfig();
   const periods = sp < LAST_SCORING_PERIOD ? [sp, sp + 1] : [sp];
   const lists = await Promise.all(
@@ -70,7 +70,7 @@ export async function outlookRunning(): Promise<boolean> {
 async function describeMoves(since: Date, sincePeriod: number): Promise<string | null> {
   const last = await latestOutlook();
   const now = new Date();
-  const sp = Math.min(Math.max(scoringPeriodForDate(etDate(now)), 1), LAST_SCORING_PERIOD);
+  const sp = Math.min(Math.max(scoringPeriodForDate(gameDate(now)), 1), LAST_SCORING_PERIOD);
   const moves = await leagueMovesBetween(since, now, sincePeriod, sp + 1).catch(() => []);
   if (!moves.length) return null;
   const teamName = new Map((last?.results ?? []).map((t) => [t.teamId, t.name]));

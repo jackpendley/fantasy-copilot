@@ -15,7 +15,7 @@
 
 Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 – Nov 1 (PRs #30–#45):**
+**Shipped Oct 29 – Nov 1 (PRs #30–#46):**
 
 - **Scheduler (#30):** cron-job.org job 8752774 calls `/api/cron/gameday` every 5 minutes. Settings shows "Background jobs".
 - **Speed (#31, #32):** ESPN reads memoized; trade targets precomputed; skeletons. Outlook runs take ~20 s, with the first odds in ~4 s.
@@ -32,7 +32,9 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
   - Fitted play chances from three seasons of the NBA's official injury reports failed the held-out gate. They beat today's app (ESPN day-to-day = 0.75) but not fixed per-status chances.
   - The official statuses with the existing priors are now **tested forward**. The 5-minute job logs each new official report (table `official_status`) and ESPN's whole injury feed, from 9 AM ET on game days.
 
-- **Win-probability logging (#45, ADR-039):** each matchup-morning now logs both sides' variance still to come, summed over projected starts (`matchup_states.*_start_var`). Candidate C is tested on it (MODEL_CARD, Pre-registration 3). Phone matchup rows fit their content.
+- **Win-probability logging (#45, ADR-039):** each matchup-morning now logs both sides' variance still to come, summed over projected starts (`matchup_states.*_start_var`). Candidate C is tested on it (MODEL_CARD, Pre-registration 3).
+- **Phone matchup rows (#46, ADR-040):** a fixed 58 px, every line on one line; stats in phone form ("24p 5r 2a 1s 1b 2 3pm").
+- **Win probability, candidate C on 2025-26 (#46, MODEL_CARD 3b):** rebuilt from last season's daily rosters. Brier 0.0865 vs 0.0872, interval [−0.0028, +0.0017]: not shipped. Both models are overconfident at the top (95%+ won 92–94%).
 
 **Data sources** (free first; paid ones on hold, see memory `nba-data-sources`):
 
@@ -60,8 +62,9 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
    - if it passes, the day board and week projections use official statuses for listed players.
 3. **Props blend test** and **DARKO blend test:** they run nightly. Check `/nba/model` once 7 game days and 800 games are in.
 4. **Rest-of-season value with streaming** for the quick Waivers ranking.
-5. **Win probability, candidate C:** after week 7's finals (Dec 6), write the evaluation and run it **once** on weeks 3–7 (Pre-registration 3). Check from Nov 2 that `home_start_var` is filled.
+5. **Win probability, candidate C:** after week 7's finals (Dec 6), write the evaluation and run it **once** on weeks 3–7 (Pre-registration 3). Check from Nov 2 that `home_start_var` is filled. It failed the 2025-26 rebuilt test (3b), so the forward test decides.
 6. **Win-probability recalibration** after week 13 (Pre-registration 2), against whichever model is live.
 7. **IR-return cuts disagree:** when a player returns from IR to a full roster, the season simulator cuts the lowest per-game projection, but the quick Waivers ranking cuts whoever adds the fewest lineup points. On Nov 1 that split the two on Isaiah Jackson for Robinson vs Collins. Pick one rule for both, with a test.
 8. Replace the fixed league-average team total (115.3) with this season's average.
 9. **Days-ahead availability** (week projections still hold today's status for two days): a separate candidate.
+10. **Past days' missing names:** an opponent's player can show as "P. 5203685" on a past day of Matchup (ESPN didn't send his name). Fill names from the player pool.

@@ -6,6 +6,7 @@ import { fmtPts, fmtTip } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SlotChip } from "./bits";
 import { TrendMark } from "./trend-mark";
+import { FitText } from "./fit-text";
 import { PlayerAvatar } from "./player-avatar";
 import { PlayerCardButton } from "./player-card";
 import { Pill, StatusPill } from "./status-pill";
@@ -75,13 +76,15 @@ export function PlayerRow({
   return (
     <div
       className={cn(
-        "flex h-[76px] items-center gap-2 pr-3 pl-2 sm:gap-3",
+        // Phones narrower than 390 px get a smaller photo (none under 340 px) and tighter spacing, so
+        // names keep their room.
+        "flex h-[76px] items-center gap-2 pr-3 pl-2 max-[389px]:gap-1.5 max-[389px]:pr-2 max-[389px]:pl-1 sm:gap-3",
         moved && "bg-primary/5",
         inProgress && "bg-success/5",
         !row.game && "opacity-55",
       )}
     >
-      <div className="w-11 shrink-0 text-center">
+      <div className="w-11 shrink-0 text-center max-[389px]:w-9">
         <SlotChip
           slot={showMoves ? row.currentSlot : (live?.slot ?? row.currentSlot)}
           to={moved ? row.recommendedSlot : undefined}
@@ -89,28 +92,49 @@ export function PlayerRow({
       </div>
       <PlayerCardButton
         id={row.player.id}
-        className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-md"
+        className="flex h-full min-w-0 flex-1 items-center gap-3 rounded-md max-[389px]:gap-2"
       >
-        <PlayerAvatar id={row.player.id} name={row.player.name} size={44} className="shrink-0" />
+        <PlayerAvatar
+          id={row.player.id}
+          name={row.player.name}
+          size={44}
+          className="shrink-0 max-[389px]:size-8! max-[339px]:hidden"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1 sm:gap-1.5">
             <TeamLogo abbr={row.player.proTeam} size={14} />
-            <span className="truncate text-sm font-medium sm:text-base">
-              <span className="sm:hidden">{shortName(row.player.name)}</span>
-              <span className="hidden sm:inline">{row.player.name}</span>
-            </span>
+            {/* Shrinks to fit rather than being cut (phones: the short name). */}
+            <FitText className="text-sm font-medium sm:hidden">
+              {shortName(row.player.name)}
+            </FitText>
+            <FitText className="hidden text-base font-medium sm:block">{row.player.name}</FitText>
             <span className="shrink-0 text-[10px] text-muted-foreground sm:text-[11px]">
               {row.player.positions.join("/")}
             </span>
-            <StatusPill status={row.status} note={row.injuryNote} />
+            {/* Phones: short badges, so the name keeps its room. */}
+            <StatusPill
+              status={row.status}
+              note={row.injuryNote}
+              short
+              className="h-4 px-1 text-[9.5px] sm:hidden"
+            />
+            <StatusPill
+              status={row.status}
+              note={row.injuryNote}
+              className="hidden sm:inline-flex"
+            />
             {!started && row.nba?.starter && (
               <Pill
                 tone="success"
                 title={
                   row.nba.confirmed ? "Confirmed starter (NBA.com)" : "Expected starter (NBA.com)"
                 }
+                className="h-4 px-1 text-[9.5px] sm:h-5 sm:px-1.5 sm:text-[11px]"
               >
-                {row.nba.confirmed ? "Starting" : "Exp. start"}
+                <span className="sm:hidden">{row.nba.confirmed ? "Start" : "Exp"}</span>
+                <span className="hidden sm:inline">
+                  {row.nba.confirmed ? "Starting" : "Exp. start"}
+                </span>
               </Pill>
             )}
             {row.locked && (
@@ -120,14 +144,14 @@ export function PlayerRow({
               />
             )}
           </div>
-          <div
+          <FitText
             className={cn(
-              "truncate text-xs text-muted-foreground",
+              "text-xs text-muted-foreground",
               inProgress && "font-medium text-success",
             )}
           >
             {row.back ?? <GameLine row={row} live={live} />}
-          </div>
+          </FitText>
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.
             <div className="line-clamp-2 text-[11px] leading-[14px] text-foreground/80 tabular-nums sm:line-clamp-1 sm:text-xs sm:leading-4">
@@ -135,13 +159,13 @@ export function PlayerRow({
             </div>
           ) : (
             row.injuryNote && (
-              <div className="hidden truncate text-xs text-muted-foreground sm:block">
+              <FitText className="hidden text-xs text-muted-foreground sm:block">
                 {row.injuryNote}
-              </div>
+              </FitText>
             )
           )}
         </div>
-        <div className="w-16 shrink-0 text-right">
+        <div className="w-12 shrink-0 text-right sm:w-16">
           <div
             className={cn(
               "text-lg leading-tight font-semibold tabular-nums",

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /** Lineup slot label. `to` shows a recommended move (from → to). */
 export function SlotChip({ slot, to }: { slot: string; to?: string }) {
   const base =
-    "inline-flex h-6 min-w-11 items-center justify-center rounded-md px-1.5 font-mono text-[11px] font-semibold";
+    "inline-flex h-6 min-w-11 items-center justify-center rounded-md px-1.5 font-mono text-[11px] font-semibold max-[389px]:min-w-9 max-[389px]:px-1";
   if (to && to !== slot) {
     return (
       <span className="inline-flex flex-col items-center gap-0.5">

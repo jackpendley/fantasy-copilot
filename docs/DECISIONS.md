@@ -475,3 +475,21 @@
   - Difference by matchup-week −0.0005 [−0.0028, +0.0017].
   - **Not shipped.** The app keeps the current model.
 - **Both models are overconfident at the top:** 95%+ won 92–94% of the time. The weeks 3–7 forward test of C and Pre-registration 2 (which has a shared-surprise term) still run.
+
+## ADR-042: one-line text shrinks to fit instead of being cut (Today and Matchup) (2026-11-01)
+
+- **Why:** Jack wants the full stat labels ("24 PTS 5 REB 2 AST"), not ADR-040's one-letter forms, and nothing cut off on any phone. A fixed font can't do both: the longest stat line needs about 200 px at 10.5 px, and a phone cell has 131–160 px.
+- **`FitText`** (`components/fc/fit-text.tsx`): a one-line span that, when its text is wider than its space, shrinks its font until it fits. It re-fits when the space changes (rotation, resizing).
+- **Used for:**
+  - **Matchup phone cells:** name, game, stats;
+  - **Today rows:** name, game line, injury note;
+  - **Matchup scoreboard:** team names.
+- **More room on narrow phones:**
+  - **Matchup:** the board is 4 px from the screen edges; cell padding 2 px; stat labels drawn at 85% of the numbers; tight letter spacing on stats; ESPN's short status badges (O, D, Q, DTD, P).
+  - **Today:** short badges on phones ("Start"/"Exp", O/D/Q); a 48 px points column. Under 390 px the photo is 32 px, with a narrower slot chip and tighter gaps; under 340 px there's no photo.
+- **Measured** (week 2's Matchup days, Today on Nov 1):
+  - **Cut text:** none at 320–932 px.
+  - **Today:** everything stays at full size from 320 px up.
+  - **Matchup, 375 px and up:** names ≥ 9 px; game and stats ≥ 9.8 px.
+  - **Matchup, 360 px:** one name at 7.7 px.
+  - **Matchup, 320 px:** long names and stat lines go down to 4–8 px.

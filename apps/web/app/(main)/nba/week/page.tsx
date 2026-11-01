@@ -38,6 +38,7 @@ import { bestPerGame } from "@/lib/nba/best";
 import { matchupView } from "@/lib/nba/matchup";
 import { winChanceLabel } from "@/lib/nba/week";
 import { cn } from "@/lib/utils";
+import { FitText } from "@/components/fc/fit-text";
 import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
@@ -67,7 +68,7 @@ function Scoreboard({
 }) {
   const side = (name: string, pts: number, final: number, right: boolean) => (
     <div className={cn("min-w-0", right && "text-right")}>
-      <div className="truncate text-xs font-medium text-muted-foreground sm:text-sm">{name}</div>
+      <FitText className="text-xs font-medium text-muted-foreground sm:text-sm">{name}</FitText>
       <div className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
         {fmtPts(pts)}
       </div>

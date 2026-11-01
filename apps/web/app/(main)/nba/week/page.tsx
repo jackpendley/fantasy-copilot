@@ -38,7 +38,6 @@ import { bestPerGame } from "@/lib/nba/best";
 import { matchupView } from "@/lib/nba/matchup";
 import { winChanceLabel } from "@/lib/nba/week";
 import { cn } from "@/lib/utils";
-import { FitText } from "@/components/fc/fit-text";
 import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
@@ -68,7 +67,7 @@ function Scoreboard({
 }) {
   const side = (name: string, pts: number, final: number, right: boolean) => (
     <div className={cn("min-w-0", right && "text-right")}>
-      <FitText className="text-xs font-medium text-muted-foreground sm:text-sm">{name}</FitText>
+      <div className="text-xs font-medium break-words text-muted-foreground sm:text-sm">{name}</div>
       <div className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
         {fmtPts(pts)}
       </div>
@@ -79,9 +78,10 @@ function Scoreboard({
   );
   return (
     <div className="rounded-xl border bg-card p-4 sm:p-5">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+      {/* A long team name wraps rather than shrinking; the scores line up along the bottom. */}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
         {side(me, myBanked, myFinal, false)}
-        <div className="flex flex-col items-center gap-1">
+        <div className="flex flex-col items-center gap-1 self-center">
           <span className="text-xs font-semibold text-muted-foreground">VS</span>
           {live && <Pill tone="success">Live</Pill>}
         </div>

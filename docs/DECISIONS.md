@@ -493,3 +493,28 @@
   - **Matchup, 375 px and up:** names ≥ 9 px; game and stats ≥ 9.8 px.
   - **Matchup, 360 px:** one name at 7.7 px.
   - **Matchup, 320 px:** long names and stat lines go down to 4–8 px.
+
+## ADR-043: one text scale per board, not per line (2026-11-01)
+
+- **Why:** with ADR-042, each line shrank on its own, so one long name came out smaller than every other name. Jack wants every row to look the same: if one line must shrink, the rest match.
+- **`FitGroup`** (`components/fc/fit-text.tsx`):
+  - it finds the single scale at which every `FitText` inside it fits, and sets it as `--fit`;
+  - the group's phone font sizes are `calc(Npx * var(--fit, 1))`, so names, positions, badges, game and stat lines, scores and slot labels shrink together.
+  - **Matchup:** one group covers all seven days (the days not shown are laid out invisibly, `inert`, phones only), so switching days never changes the scale.
+  - **Today:** one group covers all rows.
+- **Less shrinking needed:**
+  - short names drop generational suffixes ("T. Murphy III" → "T. Murphy"; the card keeps the full name);
+  - on phone Matchup cells, the status badge leads the game line at the outer edge instead of sitting on the name line;
+  - the score's two numbers sit level with the name and game lines.
+- **Scoreboard:** a long team name wraps to a second line instead of shrinking; both scores line up along the bottom.
+- **Measured** (week 2):
+
+  | Width         | Matchup scale | Today scale |
+  | ------------- | ------------- | ----------- |
+  | 412 px and up | 100%          | 100%        |
+  | 390 px        | 98%           | 100%        |
+  | 375 px        | 94%           | 100%        |
+  | 360 px        | 90%           | 100%        |
+  | 320 px        | 70%           | 100%        |
+
+  No cut text, overlaps or horizontal scroll at 320–932 px; slot labels stay inside their column.

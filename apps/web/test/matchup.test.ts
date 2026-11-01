@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FantasyTeam, Matchup, ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { matchupView, weekPointsThroughToday } from "@/lib/nba/matchup";
+import { startSd } from "@/lib/nba/week";
 
 // Synthetic league: two teams, one matchup in week 1 (days 1-6). Pro team 1 plays every day.
 // Tip times are far in the future so nothing counts as started.
@@ -108,5 +109,13 @@ describe("matchupView with moves that take effect tomorrow", () => {
     // Nothing has started: live 50 + today's projection 30 (and 20 + 30 for the opponent).
     expect(pts.get(1)).toBeCloseTo(80);
     expect(pts.get(2)).toBeCloseTo(50);
+  });
+
+  it("sums each remaining start's spread into the week's variance", () => {
+    const v = matchupView(league([player(1, 30)], [player(1, 30)]), 1);
+    // One starter, a game every day: today (from the day board) plus five days ahead.
+    expect(startSd(30)).toBeCloseTo(15.4);
+    expect(v.mine.startVar).toBeCloseTo(6 * 15.4 ** 2, 1);
+    expect(v.theirs!.startVar).toBeCloseTo(6 * 15.4 ** 2, 1);
   });
 });

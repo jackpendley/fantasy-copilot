@@ -9,7 +9,7 @@ import { buildDayBoard, type DayRow } from "./day";
 import { absences } from "./availability";
 import { gameElapsed, isStarting } from "./live";
 import { pendingMoves, weekRoster, type PendingMoves } from "./roster";
-import { projectTeamWeek, winProbability, type TeamWeek, type WeekInputs } from "./week";
+import { projectTeamWeek, startSd, winProbability, type TeamWeek, type WeekInputs } from "./week";
 
 type LeagueData = Awaited<ReturnType<typeof loadLeague>>;
 
@@ -92,11 +92,13 @@ export function matchupView(
   const mine = projectTeamWeek(myWeek.roster, {
     ...weekInputs,
     todayRemaining: remainingToday(myToday, scoreboard),
+    todayVar: remainingTodayVar(myToday, scoreboard),
   });
   const theirs = oppWeek
     ? projectTeamWeek(oppWeek.roster, {
         ...weekInputs,
         todayRemaining: remainingToday(oppToday!, scoreboard),
+        todayVar: remainingTodayVar(oppToday!, scoreboard),
       })
     : null;
   const pWin = theirs
@@ -126,13 +128,31 @@ export function matchupView(
  * cover the part already played).
  */
 export function remainingToday(rows: DayRow[], scoreboard: Map<number, ScoreboardGame>): number {
-  return rows.reduce((a, r) => {
-    if (!r.locked) return a + (isStarting(r.recommendedSlot) ? r.value : 0);
+  return todayLeft(rows, scoreboard).reduce((a, x) => a + x.value * x.left, 0);
+}
+
+/**
+ * The same starts' variance still to come: each player's spread (startSd) squared, scaled by
+ * the share of his game left (MODEL_CARD.md, candidate C).
+ */
+export function remainingTodayVar(rows: DayRow[], scoreboard: Map<number, ScoreboardGame>): number {
+  return todayLeft(rows, scoreboard).reduce((a, x) => a + startSd(x.value) ** 2 * x.left, 0);
+}
+
+/** Today's starters still to play: their full-game projection and the share of it left. */
+function todayLeft(rows: DayRow[], scoreboard: Map<number, ScoreboardGame>) {
+  const out: { value: number; left: number }[] = [];
+  for (const r of rows) {
+    if (!r.locked) {
+      if (isStarting(r.recommendedSlot) && r.value > 0) out.push({ value: r.value, left: 1 });
+      continue;
+    }
     const g = r.game && scoreboard.get(r.game.gameId);
-    return g && g.state === "in" && isStarting(r.currentSlot)
-      ? a + r.value * (1 - gameElapsed(g))
-      : a;
-  }, 0);
+    if (g && g.state === "in" && isStarting(r.currentSlot) && r.value > 0) {
+      out.push({ value: r.value, left: 1 - gameElapsed(g) });
+    }
+  }
+  return out;
 }
 
 /**

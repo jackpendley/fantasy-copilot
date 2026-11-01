@@ -1,8 +1,8 @@
 "use client";
 
-// ESPN-style head-to-head board: one fixed-height row per lineup slot (your player left, theirs
-// right, both scores next to the slot), then the bench and IL, padded to the league's slot
-// counts so the board is the same size every day. Tap a player for his card.
+// ESPN-style head-to-head board: one row per lineup slot (your player left, theirs right, both
+// scores next to the slot), then the bench and IL, padded to the league's slot counts so every
+// day has the same rows. Tap a player for his card.
 
 import { compactStatus, fmtPts, keepStatsTogether, shortName } from "@/lib/display";
 import type { H2HCell, H2HGame, H2HRow } from "@/lib/nba/h2h";
@@ -16,8 +16,9 @@ import { TeamLogo } from "./team-logo";
 
 // Each side is laid out like a Today row, mirrored: photo, then three lines (name with logo and
 // positions, the day's game, his stats), then points over the projection by the slot column.
-// Phones in portrait have no room for the photo, so they show the same thing without it.
-const ROW = "h-[92px] sm:h-[76px]";
+// Phones in portrait have no room for the photo, so they show the same thing without it, and a
+// row is as tall as its taller side (fixed height from sm up).
+const ROW = "min-h-[52px] sm:h-[76px]";
 
 function GameText({ game }: { game: H2HGame | null }) {
   if (!game) return <span>No game</span>;
@@ -125,7 +126,7 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
           row line up; a long game or stat line wraps rather than being cut. */}
       <div
         className={cn(
-          "flex min-w-0 flex-1 items-start gap-1 self-start pt-2 sm:hidden",
+          "flex min-w-0 flex-1 items-start gap-1 self-start py-2 sm:hidden",
           right && "flex-row-reverse text-right",
         )}
       >

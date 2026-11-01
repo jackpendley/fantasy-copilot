@@ -192,6 +192,20 @@ Reliability on the test weeks, P(home wins) bucket → actual:
 - **Test:** weeks 8–13.
 - **Ships:** whichever candidate has the lower Brier score than the current model on the test weeks (if both, the lower). Report its reliability table.
 
+### Pre-registration 3 (2026-11-01): candidate C, each remaining start's own spread
+
+- **Problem:** on Nov 1 (the last day of week 2) Jack led by 72.5 with 78 points to come against 111: a projected margin of +39.5 with 3 starters against 5. The current model's spread is 0.14 × points to come per side (±19), so it showed 98%. One game swings far more than 14%.
+- **Exploration** (2024-25 and 2025-26 player game logs, 29,700 games at a projection of 10+; no matchup results used): a player's fantasy points around his previous-20-game average have an SD of 11.5 at a 10–12.5 average, 13.2 at 20–22.5, 15.4 at 30–32.5 and about 20 at 45+. A weighted line: **SD = 8.8 + 0.22 × projection** (`scripts/fit-start-sd.ts`).
+  - For Nov 1 that gives ±40 for the margin and about 84%, not 98%.
+- **Candidate C** (no parameter fitted on matchups):
+  - each side's variance still to come = Σ over its projected starts of (8.8 + 0.22 × the start's projection)²;
+  - today's starters come from the day board; a game in progress counts its variance × the share of the game left;
+  - P(home wins) = Φ((margin so far + home to come − away to come) ÷ √(home variance + away variance)), with the same points to come as the current model.
+- **Logging:** `matchup_states.home_start_var` / `away_start_var` (migration 0015), each morning from Nov 2, beside the current model's `p_home`.
+- **Test:** every logged matchup-morning of weeks 3–7 (Nov 2 – Dec 6); finals from ESPN. Evaluated **once**, after week 7's finals.
+- **Ships if** candidate C's Brier score is lower than the current model's on those rows. Also reported: Brier on the last two days of each week, and the reliability table.
+- If C ships, Pre-registration 2 (weeks 8–13) compares its candidates against C instead of the 0.14 model.
+
 ## Teammate role boost (2026-10-27): no gain, not shipped
 
 - **Hypothesis:** when regular teammates sit, the remaining players get more minutes and shots. The minutes trend only catches that after a few games.

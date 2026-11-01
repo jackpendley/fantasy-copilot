@@ -20,6 +20,11 @@ export interface TeamWeek {
   gamesByDay: Map<number, Set<number>>;
   projectedByDay: Map<number, number>;
   remaining: number;
+  /**
+   * Variance of the points still to come: each projected start's own spread (startSd), summed.
+   * Logged for the win-probability test (MODEL_CARD.md, candidate C); not used yet.
+   */
+  startVar: number;
 }
 
 export interface WeekInputs {
@@ -31,6 +36,8 @@ export interface WeekInputs {
   injuries: InjuryReport[];
   /** Today's points are partly banked; projected remaining for today comes from the day board. */
   todayRemaining?: number;
+  /** Today's remaining variance from the day board (remainingTodayVar), with todayRemaining. */
+  todayVar?: number;
   /** First scoring period a player can be used (a pending waiver claim, or a game already tipped). */
   availableFrom?: Map<number, number>;
   /** Last scoring period a player can be used (dropped, but the drop takes effect tomorrow). */
@@ -66,6 +73,7 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
     return playChance(injuries.get(p.id) ?? p.injuryStatus ?? "ACTIVE", ahead);
   };
   let remaining = 0;
+  let startVar = 0;
   for (const sp of input.periods) {
     const dayGames = input.games.filter((g) => g.scoringPeriodId === sp);
     const teams = new Set(dayGames.flatMap((g) => [g.homeProTeamId, g.awayProTeamId]));
@@ -106,13 +114,23 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
     );
     startsByDay.set(sp, starts);
     slotsByDay.set(sp, new Map([...starts].map((id) => [id, best.slotOf.get(id)!])));
-    const pts =
-      sp === input.fromPeriod && input.todayRemaining != null ? input.todayRemaining : best.points;
+    const fromBoard = sp === input.fromPeriod && input.todayRemaining != null;
+    const pts = fromBoard ? input.todayRemaining! : best.points;
     projectedByDay.set(sp, pts);
     remaining += pts;
+    startVar += fromBoard
+      ? (input.todayVar ?? 0)
+      : players.reduce((a, x) => a + (starts.has(x.id) ? startSd(x.value) ** 2 : 0), 0);
   }
-  return { startsByDay, slotsByDay, gamesByDay, projectedByDay, remaining };
+  return { startsByDay, slotsByDay, gamesByDay, projectedByDay, remaining, startVar };
 }
+
+/**
+ * Spread (SD) of one player's fantasy points in a game around his projection: 8.8 + 0.22 x
+ * projection, fitted on 2024-25 and 2025-26 game logs (each game vs his previous 20). Fixed for
+ * the pre-registered test (MODEL_CARD.md, "Weekly win probability", candidate C).
+ */
+export const startSd = (proj: number) => 8.8 + 0.22 * proj;
 
 // Weekly score spread calibrated on 2025-26 (CV ~0.13 for active managers), applied to
 // the part of the week still to be played.

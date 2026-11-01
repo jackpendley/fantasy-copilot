@@ -439,3 +439,10 @@
   - A first backfill burst (~16,000 guessed file names) got this machine refused by the league's CDN for about an hour.
   - The harness now requests only files that should exist, one every 2 seconds, and never caches a miss.
   - The live job reads at most one new report per 15 minutes.
+
+## ADR-039: win probability: log each start's spread for a quicker test; matchup rows fit their content on phones (2026-11-01)
+
+- **Why:** the last day of week 2 showed 98% for a +39.5 projected margin with 3 starters against 5. The model's spread (0.14 × points to come) suits a whole week but is far too narrow for one day: one game swings ±11–20 points.
+- **Candidate C** (MODEL_CARD.md, Pre-registration 3): each projected start contributes (8.8 + 0.22 × projection)² of variance, a line fitted on two seasons of player game logs, not on matchup results. With no parameter to fit on matchups, it can be tested on weeks 3–7 (evaluated once, after Dec 6) instead of waiting for weeks 8–13.
+- **Logging:** `projectTeamWeek` returns `startVar`; `remainingTodayVar` covers today's board (games in progress by the share left). `matchup_states` gains `home_start_var` / `away_start_var` (migration 0015). The app still shows the current model until C passes.
+- **Matchup rows on phones:** a row is as tall as its taller side (`min-h-[52px]`), not a fixed 92 px, so short blocks have no empty space under them. Both sides share the row, so they stay level. From `sm` up rows keep their fixed 76 px.

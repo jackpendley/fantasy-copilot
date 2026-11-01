@@ -49,6 +49,8 @@ export async function recordMatchupStates(now = new Date()) {
       away_points: v.oppBanked,
       home_remaining: v.mine.remaining,
       away_remaining: v.theirs.remaining,
+      home_start_var: v.mine.startVar,
+      away_start_var: v.theirs.startVar,
       p_home: v.pWin,
     });
   }

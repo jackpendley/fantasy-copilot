@@ -518,3 +518,12 @@
   | 320 px        | 70%           | 100%        |
 
   No cut text, overlaps or horizontal scroll at 320–932 px; slot labels stay inside their column.
+
+## ADR-044: full short names, badges on the name line, "7:00 PM" (2026-11-01)
+
+- **Jack's call, replacing two parts of ADR-043:**
+  - short names keep generational suffixes ("T. Murphy III");
+  - the status badge goes back on the name line (short form on phones);
+  - tip times read "7:00 PM", not "7:00p" (`compactClock`).
+- **Cost:** the tightest Matchup line is again a long name with a badge. The board's one scale is 100% from 412 px, 87% at 390 px, 75% at 375 px, 65% at 360 px and 34% at 320 px. Nothing is cut or overlapping at 320–932 px. Today stays at 100% at every width.
+- **Side notes fit alone:** a long injury note on Today (landscape and desktop) shrinks on its own (`FitText alone`) instead of shrinking every row. Today's desktop sizes are on the shared scale too, so a too-long name there shrinks all rows rather than being cut.

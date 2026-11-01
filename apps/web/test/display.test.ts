@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compactClock, compactGame, keepStatsTogether, shortName } from "@/lib/display";
+import { compactClock, compactGame, keepStatsTogether } from "@/lib/display";
 
 describe("compact phone labels", () => {
   it("compacts ESPN's game status", () => {
@@ -10,12 +10,13 @@ describe("compact phone labels", () => {
     expect(compactClock("2:01 - 2OT")).toBe("OT2 2:01");
     expect(compactClock("End of 3rd")).toBe("End Q3");
     expect(compactClock("Halftime")).toBe("Half");
-    expect(compactClock("7:00 PM")).toBe("7:00p");
+    expect(compactClock("7:00 PM")).toBe("7:00 PM");
+    expect(compactClock("7:30PM")).toBe("7:30 PM");
   });
 
   const g = { opponent: "BOS", home: false, detail: "", score: null };
   it("formats a game in one short line", () => {
-    expect(compactGame({ ...g, state: "pre", when: "7:00 PM" })).toBe("@ BOS 7:00p");
+    expect(compactGame({ ...g, state: "pre", when: "7:00 PM" })).toBe("@ BOS 7:00 PM");
     expect(
       compactGame({ ...g, state: "in", detail: "10:37 - 4th", score: { us: 82, them: 77 } }),
     ).toBe("@ BOS 82-77 Q4 10:37");
@@ -47,15 +48,5 @@ describe("compact phone labels", () => {
 describe("keepStatsTogether", () => {
   it("joins each number to its label, so a wrapped line never strands one", () => {
     expect(keepStatsTogether("21 PTS 3 REB 3 3PM")).toBe("21\u00a0PTS 3\u00a0REB 3\u00a03PM");
-  });
-});
-
-describe("shortName", () => {
-  it("abbreviates the first name and drops generational suffixes", () => {
-    expect(shortName("Jalen Duren")).toBe("J. Duren");
-    expect(shortName("Trey Murphy III")).toBe("T. Murphy");
-    expect(shortName("Jaren Jackson Jr.")).toBe("J. Jackson");
-    expect(shortName("Shai Gilgeous-Alexander")).toBe("S. Gilgeous-Alexander");
-    expect(shortName("Nene")).toBe("Nene");
   });
 });

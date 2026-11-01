@@ -8,18 +8,15 @@ export const slotRank = (slot: string) => {
   return i === -1 ? SLOT_ORDER.length : i;
 };
 
-const SUFFIX = /^(jr\.?|sr\.?|ii|iii|iv|v)$/i;
-
 /** "J. Duren" for tight phone columns. */
 export const shortName = (name: string) => {
-  // Generational suffixes go too ("Trey Murphy III" -> "T. Murphy"): the full name is on his card.
-  const [first, ...rest] = name.split(" ").filter((w, i) => i < 2 || !SUFFIX.test(w));
+  const [first, ...rest] = name.split(" ");
   return rest.length ? `${first![0]}. ${rest.join(" ")}` : name;
 };
 
 /**
  * ESPN's short game status, compacted for phones: "5:12 - 3rd" -> "Q3 5:12",
- * "2:01 - OT" -> "OT 2:01", "End of 3rd" -> "End Q3", "Halftime" -> "Half", "7:00 PM" -> "7:00p".
+ * "2:01 - OT" -> "OT 2:01", "End of 3rd" -> "End Q3", "Halftime" -> "Half"; tip times stay "7:00 PM".
  */
 export function compactClock(detail: string): string {
   const d = detail.trim();
@@ -31,7 +28,7 @@ export function compactClock(detail: string): string {
   if (m) return `End Q${m[1]}`;
   if (/^halftime$/i.test(d)) return "Half";
   m = d.match(/^(\d{1,2}:\d{2}) ?([AP])M$/i);
-  if (m) return `${m[1]}${m[2]!.toLowerCase()}`;
+  if (m) return `${m[1]} ${m[2]!.toUpperCase()}M`;
   return d;
 }
 
@@ -45,7 +42,7 @@ interface GameLike {
 }
 
 /**
- * The game's state after the opponent, compacted for phones: "7:00p", "82-77 Q4 10:37",
+ * The game's state after the opponent, compacted for phones: "7:00 PM", "82-77 Q4 10:37",
  * "W 121-113".
  */
 export function compactStatus(g: GameLike): string {
@@ -55,7 +52,7 @@ export function compactStatus(g: GameLike): string {
   return `${score} ${compactClock(g.detail || g.when || "")}`.replace(/\s+/g, " ").trim();
 }
 
-/** One short line: "@ BOS 7:00p", "@ BOS 82-77 Q4 10:37", "vs PHI Final 121-113". */
+/** One short line: "@ BOS 7:00 PM", "@ BOS 82-77 Q4 10:37", "vs PHI Final 121-113". */
 export function compactGame(g: GameLike | null): string {
   if (!g) return "No game";
   return `${g.home ? "vs" : "@"} ${g.opponent} ${compactStatus(g)}`;

@@ -114,22 +114,12 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       <span className="shrink-0 text-[length:calc(9px*var(--fit,1))] text-muted-foreground sm:text-[10px] md:text-[11px]">
         {c.player.positions.join("/")}
       </span>
-      {!phone && (
-        <StatusPill
-          status={c.status}
-          className="h-4 px-1 text-[9.5px] md:h-5 md:px-1.5 md:text-[11px]"
-        />
-      )}
+      <StatusPill
+        status={c.status}
+        short={phone}
+        className="h-4 px-1 text-[length:calc(9.5px*var(--fit,1))] md:h-5 md:px-1.5 md:text-[11px]"
+      />
     </div>
-  );
-  // Phones: the status leads the game line on the outer edge ("DTD @ BOS 7:00p"), so the name
-  // line keeps its room.
-  const pill = (
-    <StatusPill
-      status={c.status}
-      short
-      className="h-[13px] px-1 align-[1px] text-[length:calc(9px*var(--fit,1))]"
-    />
   );
   return (
     <PlayerCardButton
@@ -150,7 +140,7 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
         <div className={cn(right ? "pl-[34px]" : "pr-[34px]")}>
           {nameLine(true)}
           <FitText className="text-[length:calc(10px*var(--fit,1))] leading-[13px] text-muted-foreground tabular-nums">
-            {!right && pill} {c.back ?? <PhoneGame game={c.game} />} {right && pill}
+            {c.back ?? <PhoneGame game={c.game} />}
           </FitText>
         </div>
         {stats && (

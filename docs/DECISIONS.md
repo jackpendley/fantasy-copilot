@@ -446,3 +446,32 @@
 - **Candidate C** (MODEL_CARD.md, Pre-registration 3): each projected start contributes (8.8 + 0.22 × projection)² of variance, a line fitted on two seasons of player game logs, not on matchup results. With no parameter to fit on matchups, it can be tested on weeks 3–7 (evaluated once, after Dec 6) instead of waiting for weeks 8–13.
 - **Logging:** `projectTeamWeek` returns `startVar`; `remainingTodayVar` covers today's board (games in progress by the share left). `matchup_states` gains `home_start_var` / `away_start_var` (migration 0015). The app still shows the current model until C passes.
 - **Matchup rows on phones:** a row is as tall as its taller side (`min-h-[52px]`), not a fixed 92 px, so short blocks have no empty space under them. Both sides share the row, so they stay level. From `sm` up rows keep their fixed 76 px.
+
+## ADR-040: phone matchup rows: fixed 58 px, every line on one line (2026-11-01)
+
+- **Why:** Jack wants every box the same size with no space below, and the stats on one line (replaces ADR-039's content-height rows).
+- **Layout** (phones in portrait, below `sm`):
+  - three single lines: name with logo, positions and pill; the game; the stats;
+  - the score sits in the corner beside the name and game, so the stats line gets the cell's full width;
+  - stats in phone form, `compactStatSummary`: "24p 5r 2a 1s 1b 2 3pm".
+- **Room for names:** the slot column is 26 px (was 30), the board is wider than the page gutter by 8 px a side (was 4), the name line's gaps are 2 px, an empty status pill takes no gap, and names are 12 px.
+- **Measured** on week 2's boards (181 player cells a width):
+
+  | Width      | Names cut         | Game or stats cut |
+  | ---------- | ----------------- | ----------------- |
+  | 320 px     | 104               | 0                 |
+  | 360 px     | 28                | 0                 |
+  | 375 px     | 8                 | 0                 |
+  | 390–414 px | 1 (T. Murphy III) | 0                 |
+  | 430 px     | 0                 | 0                 |
+
+  Every row is 58 px (59 with its divider).
+
+## ADR-041: win probability: candidate C tested on 2025-26 now, not shipped (2026-11-01)
+
+- **Why now:** C needs each remaining day's projected starters. They weren't logged last season, but ESPN still serves this league's 2025-26 rosters for every day. So the test was rebuilt instead of waiting for this season's logs (MODEL_CARD Pre-registration 3b, committed before the run; `scripts/backtest-win-prob.ts`).
+- **Result:**
+  - 834 matchup-mornings: Brier 0.0865 (C) vs 0.0872 (current); last two days 0.0493 vs 0.0516.
+  - Difference by matchup-week −0.0005 [−0.0028, +0.0017].
+  - **Not shipped.** The app keeps the current model.
+- **Both models are overconfident at the top:** 95%+ won 92–94% of the time. The weeks 3–7 forward test of C and Pre-registration 2 (which has a shared-surprise term) still run.

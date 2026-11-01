@@ -99,18 +99,27 @@ export function sortLive(rows: LiveRow[]): LiveRow[] {
 
 /** The scoring stats on one line, zeros left out: "22 PTS 9 REB 1 AST 1 STL 1 BLK". */
 export function statSummary(line: Record<string, number> | null): string | null {
+  return summarize(line, "full");
+}
+
+/** The same in phone form: "19p 7r 11a 1s 3b 1 3pm" (always one line in a Matchup cell). */
+export function compactStatSummary(line: Record<string, number> | null): string | null {
+  return summarize(line, "compact");
+}
+
+const SUMMARY_STATS = [
+  ["PTS", "p"],
+  ["REB", "r"],
+  ["AST", "a"],
+  ["STL", "s"],
+  ["BLK", "b"],
+  ["3PM", "\u00a03pm"],
+] as const;
+
+function summarize(line: Record<string, number> | null, form: "full" | "compact") {
   if (!line) return null;
-  const parts = (
-    [
-      ["PTS", "PTS"],
-      ["REB", "REB"],
-      ["AST", "AST"],
-      ["STL", "STL"],
-      ["BLK", "BLK"],
-      ["3PM", "3PM"],
-    ] as const
-  )
-    .filter(([k]) => (line[k] ?? 0) !== 0)
-    .map(([k, label]) => `${line[k]} ${label}`);
-  return parts.length ? parts.join(" ") : "0 PTS";
+  const parts = SUMMARY_STATS.filter(([k]) => (line[k] ?? 0) !== 0).map(([k, short]) =>
+    form === "full" ? `${line[k]} ${k}` : `${line[k]}${short}`,
+  );
+  return parts.length ? parts.join(" ") : form === "full" ? "0 PTS" : "0p";
 }

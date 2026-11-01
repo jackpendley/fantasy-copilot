@@ -224,6 +224,36 @@ The forward test above waits for this season's logs. Last season can be tested n
 - **If it passes:** the app's win chance uses candidate C (the line fitted on both seasons, as in the code). The weeks 3–7 forward test still runs, as a check. **If it fails:** nothing changes, and the forward test decides on Dec 6.
 - **Script:** `scripts/backtest-win-prob.ts`.
 
+### Result 3b (2026-11-01): candidate C does not pass on 2025-26
+
+Per-start SD refit on 2024-25 only: 8.16 + 0.247 × projection (14,108 games). 2025-26: 139 days of rosters, 226 players, **834 matchup-mornings in 114 matchup-weeks**.
+
+| Model                    |  Brier | Brier, last 2 days |
+| ------------------------ | -----: | -----------------: |
+| current (0.14 × to come) | 0.0872 |             0.0516 |
+| candidate C              | 0.0865 |             0.0493 |
+
+C − current, by matchup-week: **−0.0005 [−0.0028, +0.0017]**. The interval includes 0, so **C doesn't ship.**
+
+Reliability, P(home wins) bucket → actual:
+
+| Predicted | current: n, actual | candidate C: n, actual |
+| --------- | -----------------: | ---------------------: |
+| 0–5%      |            234, 0% |                259, 1% |
+| 5–20%     |             84, 7% |                 72, 8% |
+| 20–40%    |            49, 29% |                40, 43% |
+| 40–60%    |            52, 58% |                45, 49% |
+| 60–80%    |            81, 79% |                63, 84% |
+| 80–95%    |            98, 84% |                86, 81% |
+| 95–100%   |           236, 94% |               269, 92% |
+
+**Reading:**
+
+- C is a little better, mostly on the last two days (0.0493 vs 0.0516), but too little to tell apart from noise over 114 matchup-weeks.
+- Both models are overconfident at the top: "95–100%" won 92–94% of the time. A leader the app shows at 95%+ has lost about 1 time in 15.
+- C doesn't fix that. Per-start noise alone misses the shared surprises (late scratches, a manager's lineup misses), so C is too narrow early in a week, even as it widens the last days.
+- The weeks 3–7 forward test (Pre-registration 3) still runs and decides on Dec 6; Pre-registration 2 (weeks 8–13) still includes the variance form a·E + b·E², which has a shared term.
+
 ## Teammate role boost (2026-10-27): no gain, not shipped
 
 - **Hypothesis:** when regular teammates sit, the remaining players get more minutes and shots. The minutes trend only catches that after a few games.

@@ -6,18 +6,20 @@
 //   node --env-file=.env.local --conditions=react-server --import tsx scripts/fit-start-sd.ts
 
 import { readdirSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { fetchLeague, parseSettings } from "@fantasy-copilot/espn";
-import { fantasyPoints, withDerived } from "@fantasy-copilot/fantasy-core";
+import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
 import { espnConfig } from "../lib/env";
 
 const CACHE = new URL("../data/local/backtest/", import.meta.url);
 const BUCKET = 2.5;
 
-async function main() {
-  const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
+/** SD = a + b x projection, from the cached game logs of `seasons` (named by end year). */
+export function fitStartSd(scoring: ScoringMap, seasons: number[], print = false) {
+  const files = new RegExp(`-(${seasons.join("|")})\\.json$`);
   const buckets = new Map<number, { n: number; sse: number }>();
-  for (const f of readdirSync(CACHE).filter((f) => /-202[56]\.json$/.test(f))) {
+  for (const f of readdirSync(CACHE).filter((f) => files.test(f))) {
     const raw: unknown = JSON.parse(readFileSync(new URL(f, CACHE), "utf8"));
     if (!Array.isArray(raw)) continue;
     const fps = (raw as GameLogEntry[])
@@ -44,20 +46,26 @@ async function main() {
   for (const [b, r] of [...buckets].sort((p, q) => p[0] - q[0])) {
     const mid = b + BUCKET / 2;
     const sd = Math.sqrt(r.sse / r.n);
-    console.log(`${b}-${b + BUCKET}`.padEnd(10), String(r.n).padStart(6), sd.toFixed(1));
+    if (print) console.log(`${b}-${b + BUCKET}`.padEnd(10), String(r.n).padStart(6), sd.toFixed(1));
     w += r.n;
     x += r.n * mid;
     y += r.n * sd;
     xx += r.n * mid * mid;
     xy += r.n * mid * sd;
   }
-  const slope = (w * xy - x * y) / (w * xx - x * x);
-  console.log(
-    `games ${w}; SD = ${((y - slope * x) / w).toFixed(2)} + ${slope.toFixed(3)} x projection`,
-  );
+  const b = (w * xy - x * y) / (w * xx - x * x);
+  return { a: (y - b * x) / w, b, games: w };
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+async function main() {
+  const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
+  const { a, b, games } = fitStartSd(scoring, [2025, 2026], true);
+  console.log(`games ${games}; SD = ${a.toFixed(2)} + ${b.toFixed(3)} x projection`);
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]!).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

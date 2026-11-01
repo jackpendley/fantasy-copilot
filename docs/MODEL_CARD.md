@@ -206,6 +206,24 @@ Reliability on the test weeks, P(home wins) bucket → actual:
 - **Ships if** candidate C's Brier score is lower than the current model's on those rows. Also reported: Brier on the last two days of each week, and the reliability table.
 - If C ships, Pre-registration 2 (weeks 8–13) compares its candidates against C instead of the 0.14 model.
 
+### Pre-registration 3b (2026-11-01, before any matchup data is read): candidate C on 2025-26, rebuilt
+
+The forward test above waits for this season's logs. Last season can be tested now: ESPN still serves this league's 2025-26 rosters for every day (lineup slots and each day's points), and projections can be rebuilt from game logs.
+
+- **Data:** every regular-season matchup of 2025-26 (weeks 1–19), each morning of each matchup week. Weeks 11–19 were the test weeks of the first comparison (above); candidate C was never fitted or tried on them.
+- **Rebuilt each morning, point in time, the same for both models:**
+  - **margin so far:** the two teams' daily points before that day (ESPN);
+  - **roster:** each team's roster that day (ESPN); IR-slot players don't play;
+  - **projection:** a player's average league fantasy points over his last 20 games before that day (2025-26 games, filled with 2024-25 games while he has fewer than 20), scored with the league's 2025-26 settings;
+  - **out:** a player whose team has played 2+ games since his last game is out for the rest of that week;
+  - **points to come:** for each remaining day of the week, the best lineup (the app's optimizer, the league's slots) among his roster's players with a game; the sum of the starters' projections;
+  - **candidate C's variance:** the same starters, Σ (a + b × projection)², with a and b refit by `scripts/fit-start-sd.ts` on **2024-25 game logs only**, so the test season's games don't shape it.
+- **Models:** current, P = Φ(mean ÷ (0.14 × √(E_home² + E_away²))); candidate C, P = Φ(mean ÷ √(V_home + V_away)); mean = margin so far + E_home − E_away for both. Ties are dropped.
+- **Gate:** C ships if its Brier score is lower **and** the 95% interval of the Brier difference (mean of per-matchup-week differences ± 1.96 SE, matchup-weeks as the unit) is entirely below 0.
+- **Also reported:** Brier on the last two days of each week; the reliability table for both models.
+- **If it passes:** the app's win chance uses candidate C (the line fitted on both seasons, as in the code). The weeks 3–7 forward test still runs, as a check. **If it fails:** nothing changes, and the forward test decides on Dec 6.
+- **Script:** `scripts/backtest-win-prob.ts`.
+
 ## Teammate role boost (2026-10-27): no gain, not shipped
 
 - **Hypothesis:** when regular teammates sit, the remaining players get more minutes and shots. The minutes trend only catches that after a few games.

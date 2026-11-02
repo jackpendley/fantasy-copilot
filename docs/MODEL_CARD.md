@@ -563,3 +563,70 @@ A3 beats B0 but not B1, so it fails the gate.
 **Metric:** per-player mean Brier difference, candidate − baseline, with a 95% interval.
 
 **Ships only if** the interval is entirely below 0. The first evaluation runs once there are ≥1,500 non-Out rows; one evaluation, no peeking before then.
+
+## Pre-registration: day-to-day players on later days (2026-11-02, before any run)
+
+**Question:** how likely is a player listed day-to-day today to play his team's games on the next few days?
+
+**Today's rule (week projections and the season simulation):**
+- A day-to-day player (ESPN shows the official report's probable, questionable and doubtful all as day-to-day) plays with probability 0.75 today and tomorrow, then 1.
+- Ruled-out players are unchanged by this test: they sit until ESPN's estimated return date, which historical reports don't carry.
+
+**Data:**
+- The NBA's official injury reports for 2023-24, 2024-25 and 2025-26 (cached by `scripts/backtest-availability.ts`).
+- The harness is a new mode of that script (`DAYS_AHEAD=1`).
+
+**Rows:**
+- For each day D with games, the latest report published at or before 1 PM ET.
+- Every listed player with status Probable, Questionable or Doubtful, matched to an ESPN player in the projection pool.
+- One row per game his listed team plays on days D+1 to D+6.
+- **Label:** he played (minutes > 0 in his ESPN game log).
+- Player-seasons with no logged games are left out.
+
+**Baseline B0 (today):** 0.75 for a game on D+1, 1 for later days.
+
+**Candidate C1 (the only one):** the play rate by days ahead (1, 2, 3, 4–6) on the fit season, smoothed toward B0 with 10 pseudo-rows.
+
+**Procedure:**
+- **Exploration:** fit on 2023-24, score 2024-25 (reported, not a gate).
+- **Held out, judged once:** fit on 2024-25, score 2025-26.
+- **Metric:** per-player mean Brier difference (C1 − B0) with a 95% interval.
+- **Ships only if** the held-out interval is entirely below 0, with at least 2,000 rows.
+
+**If it ships:**
+- `playChance` in `lib/nba/week.ts` uses the table refit on 2025-26 for day-to-day players on later days (today unchanged).
+- The season simulator's injury chain is not changed by this test.
+
+## Pre-registration: manager activity from lineups (2026-11-02, before any run)
+
+**Question:** how should the season simulation estimate how often a manager sets a lineup (`act`)?
+
+**Today:**
+- `act` is ESPN's count of moves to an active slot ÷ (2.5 moves × days so far).
+- It's blended with last season's count when the same ESPN owner returns (new owners start at 0.7, 21-day prior weight).
+- A deep, healthy roster needs few moves and can look inactive.
+
+**Target:** what `act` means in the simulator, the share of days a manager's lineup is set.
+- A **set day** for a team: no bench player with a game that day sat while a starting slot he could fill was empty or held by a player without a game.
+- The realized share of set days in a later window is the truth to predict.
+
+**Data:**
+- 2025-26 (this league): each team's roster and lineup slots on every day (cached by `scripts/backtest-win-prob.ts`, `data/local/winprob-2026/`).
+- Games from the cached ESPN game logs (a player "had a game" if his team played).
+- **Moves to active** are counted from day-to-day slot changes (bench or IR to a starting slot), as ESPN counts them.
+
+**Predictions:** at the end of each regular-season week k = 2–18, for each team, predict its set-day share in weeks k+1 to k+3:
+- **A (today):** the move-count formula on weeks 1..k (2.5 moves per active day, capped at 1). The prior is the neutral 0.7 with 21-day weight (last season's counts aren't in the cache).
+- **B (candidate):** the set-day share in weeks 1..k, shrunk toward the league's share in weeks 1..k with 14 pseudo-days.
+- **C (candidate):** everyone 1.0.
+
+**Metric:** mean absolute error, clustered by team: each team's mean |error| over its k, then a mean ± 95% interval over the 12 teams of B − A and of C − A.
+
+**Ships:**
+- The better of B and C, only if its interval is entirely below 0 against A.
+- If neither passes, `act` stays as it is.
+
+**If B ships:**
+- `act` comes from this season's set days (nightly, from ESPN's daily lineups), with the same shrinkage.
+- Last season is no longer used.
+- The Outlook's "Active" column shows it as "Lineups set".

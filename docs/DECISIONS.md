@@ -597,3 +597,12 @@
   - `/nba/outlook` → League;
   - old `/nba/players?q=` → Trends.
 - No computation changed.
+
+## ADR-050: this season's league team total in the game-environment factor (2026-11-02)
+
+- **Mismatch:** the tested game-environment model (MODEL_CARD) divided each team's implied total by the league's average implied team total from games before that day, once 40 team-games were in. The app used the fixed 2025-26 value, 115.3.
+- **Now:** `leagueTeamTotal()` (`lib/nba/league-total.ts`) averages this season's stored lines (`game_lines`; closing line first) for games before the day, cached 3 hours. `loadLeague` and the market-data capture attach it to every game line (`GameLine.leagueTotal`). Below 40 team-games, 115.3 stands in.
+- **Effect today:**
+  - ESPN's closing lines for the season's first 92 games average 115.42.
+  - Projections change by under 0.1%; start/sit choices and head-to-head odds don't move.
+  - It keeps the factor right if league scoring drifts during the season.

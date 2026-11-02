@@ -15,6 +15,7 @@ import {
   type PropLine,
 } from "@fantasy-copilot/nba-data";
 import { db } from "@/lib/db";
+import { leagueTeamTotal } from "./league-total";
 import { defenseTable } from "./defense-table";
 import {
   gameEnvironment,
@@ -72,7 +73,13 @@ export async function collectMarketData(
   now = new Date(),
   projections?: ProjectionContext,
 ): Promise<{ games: number; props: number }> {
-  const board = await fetchScoreboard(yyyymmdd);
+  const [raw, leagueTotal] = await Promise.all([
+    fetchScoreboard(yyyymmdd),
+    leagueTeamTotal(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6)}`).catch(
+      () => null,
+    ),
+  ]);
+  const board = raw.map((g) => ({ ...g, leagueTotal }));
   if (projections && projections.defense === undefined)
     projections = { ...projections, defense: await defenseTable().catch(() => null) };
   const pre = games.filter((g) => {

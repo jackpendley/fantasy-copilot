@@ -538,3 +538,15 @@
 - **Dropped players on past days** showed as "Player 5203685": they're on no roster now.
   - ESPN sends each player with that day's roster entry (`LiveEntry.player`).
   - Matchup looks such players up by id (`loadPlayersById`) for their positions and projection, and falls back to the entry's player.
+
+## ADR-046: Waivers shows exact numbers; any drop can be chosen (2026-11-02)
+
+- **Jack's call:** no "about even" or "≈ even" words. Each recommended add shows a table: title, playoffs, #1 seed and expected wins "Now → With move → Change ± margin", plus this week's matchup win chance.
+- **"Now" is the latest Outlook** (2,000 seasons, the Outlook page's numbers). "With move" adds the season simulation's paired change (same random draws with and without the move), so the two pages agree. ± is two standard errors of that change.
+- **Ranking is unchanged:** a clear title change first, then a clear expected-wins change (ADR-033). Only the words went.
+- **Any drop:** the points estimate already tried every possible drop for each add. It now keeps all of them (`waiverAnalysis().dropOptions`), and the card's drop menu shows each one's numbers. The add button uses the chosen drop; the server re-checks it as before.
+- **Labels:**
+  - "Quick estimate" → "Points estimate".
+  - "Later" → "rest of season". Its points now use the same playoff-weighted points its wins come from; before, the label printed unweighted points beside weighted wins.
+  - A "How to read these numbers" disclosure replaces hover-only tooltips, which iPhones never show.
+- **Free agents table:** G and F filters (any guard, any forward) and sorting by every column, all in the browser over the 250-player pool. `?pos=` and `?sort=` stay in the URL.

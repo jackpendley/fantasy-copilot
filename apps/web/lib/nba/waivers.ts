@@ -91,6 +91,8 @@ export interface StreamOption {
   netWins: number;
   /** The rest-of-season part of netWins (after this week). */
   laterWins: number;
+  /** The lineup points behind laterWins: after this week, playoff days counted double. */
+  laterPts: number;
 }
 
 const MAX_CANDIDATES = 45;
@@ -118,6 +120,8 @@ export function waiverAnalysis(a: WaiverInputs): {
   thisWeek: StreamOption[];
   /** Moves that add rest-of-season value, best first (with the drop that keeps the most value). */
   longTerm: StreamOption[];
+  /** Every way to make room for each evaluated add (by player id), best expected wins first. */
+  dropOptions: Map<number, StreamOption[]>;
 } {
   const { week } = a;
   const lastWeekDay = Math.max(...week.periods);
@@ -235,6 +239,7 @@ export function waiverAnalysis(a: WaiverInputs): {
   };
 
   const best: StreamOption[] = [];
+  const dropOptions = new Map<number, StreamOption[]>();
   const thisWeek: StreamOption[] = [];
   const longTerm: StreamOption[] = [];
   for (const c of shortlist.values()) {
@@ -266,14 +271,18 @@ export function waiverAnalysis(a: WaiverInputs): {
         ...seasonOf(c, d),
         netWins: 0,
         laterWins: 0,
+        laterPts: 0,
       });
       const o = options.at(-1)!;
       // Season points include this week's; count those once, through the win chance.
-      o.laterWins = winsPerPoint * (o.seasonScore - o.deltaPts);
+      o.laterPts = o.seasonScore - o.deltaPts;
+      o.laterWins = winsPerPoint * o.laterPts;
       o.netWins = (o.deltaWin ?? 0) + o.laterWins;
     }
     // Ties (bench players who'd start nothing either way): keep the better depth piece.
-    const top = [...options].sort((x, y) => y.netWins - x.netWins || x.dropRos - y.dropRos)[0];
+    const ranked = [...options].sort((x, y) => y.netWins - x.netWins || x.dropRos - y.dropRos);
+    dropOptions.set(c.player.id, ranked);
+    const top = ranked[0];
     if (top && top.netWins > 0.01) best.push(top);
     const bestWeek = bestForWeek(options);
     if (bestWeek && bestWeek.deltaPts > 0.5) thisWeek.push(bestWeek);
@@ -289,7 +298,7 @@ export function waiverAnalysis(a: WaiverInputs): {
   );
   longTerm.sort((x, y) => y.seasonScore - x.seasonScore || y.deltaPts - x.deltaPts);
   best.sort((x, y) => y.netWins - x.netWins);
-  return { baseWin, candidates, best, winsPerPoint, thisWeek, longTerm };
+  return { baseWin, candidates, best, winsPerPoint, thisWeek, longTerm, dropOptions };
 }
 
 /**

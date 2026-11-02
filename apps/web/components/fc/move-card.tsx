@@ -1,0 +1,247 @@
+"use client";
+
+// One recommended add on the Waivers page: what it does to the title odds, playoffs, #1 seed,
+// expected wins and this week's matchup, with exact numbers. The drop can be swapped for any
+// other player on the roster; the numbers follow the choice.
+
+import { useState } from "react";
+import { AddDropButton } from "@/components/add-drop-button";
+import { cn } from "@/lib/utils";
+
+export interface MoveOption {
+  /** addId:dropId:ilId (lib/nba/move-checks.ts moveKey). */
+  key: string;
+  dropId: number | null;
+  dropName: string | null;
+  /** Moved to IL instead of a drop. */
+  ilName: string | null;
+  /** This week: projected lineup points and change in win chance (null on a bye). */
+  deltaPts: number;
+  deltaWin: number | null;
+  /** After this week: lineup points (playoff days count double) and their worth in wins. */
+  laterPts: number;
+  laterWins: number;
+  /** This week's win-chance change plus laterWins. */
+  netWins: number;
+  addStarts: number | null;
+  addGames: number | null;
+  dropStarts: number | null;
+  /** Rest-of-season points given up, for the confirm dialog. */
+  rosCost: number;
+}
+
+export interface Delta {
+  d: number;
+  se: number;
+}
+
+export interface MoveSim {
+  title: Delta;
+  playoffs: Delta;
+  seed1: Delta;
+  wins: Delta;
+  seasons: number;
+}
+
+export interface Outlook {
+  title: number;
+  playoffs: number;
+  seed1: number;
+  wins: number;
+}
+
+const signed = (n: number, digits = 1) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
+const pct = (p: number) => `${(p * 100).toFixed(1)}%`;
+const tone = (n: number, eps: number) =>
+  n > eps ? "text-success" : n < -eps ? "text-danger" : "text-muted-foreground";
+
+export function MoveCard({
+  who,
+  addId,
+  addName,
+  claim,
+  claimNote,
+  addsLeft,
+  addsCap,
+  options,
+  initialKey,
+  sims,
+  outlook,
+  weekWin,
+  checking,
+}: {
+  who: React.ReactNode;
+  addId: number;
+  addName: string;
+  claim: boolean;
+  claimNote: string | null;
+  addsLeft: number;
+  addsCap: number;
+  /** Every way to make room for him, best first. */
+  options: MoveOption[];
+  initialKey: string;
+  /** Season-simulation results by move key (the moves checked so far). */
+  sims: Record<string, MoveSim>;
+  /** The latest Outlook for Jack's team ("Now"); null before the first run. */
+  outlook: Outlook | null;
+  /** This week's win chance now (null on a bye). */
+  weekWin: number | null;
+  /** The simulation is re-checking the top moves. */
+  checking: boolean;
+}) {
+  const [key, setKey] = useState(initialKey);
+  const o = options.find((x) => x.key === key) ?? options[0]!;
+  const sim = sims[o.key];
+  const last = (name: string) => name.split(" ").at(-1);
+
+  // Season rows: Outlook now, with the move (now + the simulated change), the change ± margin.
+  const seasonRow = (
+    label: string,
+    now: number | undefined,
+    d: Delta | undefined,
+    wins = false,
+  ) => {
+    const fmt = (x: number) => (wins ? x.toFixed(2) : pct(x));
+    const k = wins ? 1 : 100;
+    return (
+      <tr key={label}>
+        <th className="py-1 pr-2 text-left font-normal text-muted-foreground">{label}</th>
+        <td className="px-1 py-1 text-right tabular-nums">{now != null ? fmt(now) : "—"}</td>
+        <td className="px-1 py-1 text-right font-medium tabular-nums">
+          {now != null && d ? fmt(now + d.d) : "—"}
+        </td>
+        <td className="py-1 pl-1 text-right tabular-nums">
+          {d ? (
+            <>
+              <span className={cn("font-semibold", tone(d.d * k, wins ? 0.005 : 0.05))}>
+                {signed(d.d * k, wins ? 2 : 1)}
+              </span>
+              <span className="ml-1 text-[11px] text-muted-foreground">
+                ±{(2 * d.se * k).toFixed(wins ? 2 : 1)}
+              </span>
+            </>
+          ) : (
+            "—"
+          )}
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <div className="space-y-2.5 px-3 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">{who}</div>
+        {o.ilName ? (
+          <p className="max-w-40 text-right text-xs text-muted-foreground">
+            Move {last(o.ilName)} to IL in the ESPN app first, then add here.
+          </p>
+        ) : (
+          <AddDropButton
+            move={{
+              addId,
+              addName,
+              dropId: o.dropId,
+              dropName: o.dropName,
+              claim,
+              claimNote,
+              addsLeft,
+              addsCap,
+              rosCost: o.rosCost,
+            }}
+          />
+        )}
+      </div>
+
+      <label className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-[50px] text-xs">
+        <span className={cn("font-medium", o.ilName ? "text-warning" : "text-danger")}>
+          {o.ilName ? "Move to IL" : "Drop"}
+        </span>
+        <select
+          value={o.key}
+          onChange={(e) => setKey(e.target.value)}
+          className="min-w-0 max-w-full rounded-md border bg-background px-2 py-1 text-xs text-foreground"
+          aria-label={`Who to drop for ${addName} (points estimate in wins; ✓ = simulated)`}
+        >
+          {options.map((x) => (
+            <option key={x.key} value={x.key}>
+              {x.ilName ? `${x.ilName} to IL` : (x.dropName ?? "Nobody (open spot)")}
+              {` · ${signed(x.netWins, 2)}`}
+              {sims[x.key] ? " ✓" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {o.addStarts != null && o.addGames != null && (
+        <p className="pl-[50px] text-xs text-muted-foreground">
+          Starts ~{o.addStarts} of his {o.addGames} games left for you
+          {o.dropName && o.dropStarts != null && (
+            <>
+              {" "}
+              · {last(o.dropName)} would have started {o.dropStarts}
+            </>
+          )}
+        </p>
+      )}
+
+      <div className="ml-[50px] overflow-hidden rounded-lg border">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40 text-[11px] text-muted-foreground">
+              <th className="py-1 pr-2 pl-2 text-left font-medium">
+                {sim ? `Season sim (${sim.seasons.toLocaleString("en-US")})` : "Season"}
+              </th>
+              <th className="px-1 py-1 text-right font-medium">Now</th>
+              <th className="px-1 py-1 text-right font-medium">With move</th>
+              <th className="py-1 pr-2 pl-1 text-right font-medium">Change</th>
+            </tr>
+          </thead>
+          <tbody className="[&_td:last-child]:pr-2 [&_th:first-child]:pl-2">
+            {seasonRow("Title", outlook?.title, sim?.title)}
+            {seasonRow("Playoffs", outlook?.playoffs, sim?.playoffs)}
+            {seasonRow("#1 seed", outlook?.seed1, sim?.seed1)}
+            {seasonRow("Expected wins", outlook?.wins, sim?.wins, true)}
+            <tr className="border-t">
+              <th className="py-1 pr-2 text-left font-normal text-muted-foreground">
+                This week&apos;s matchup
+              </th>
+              <td className="px-1 py-1 text-right tabular-nums">
+                {weekWin != null ? pct(weekWin) : "—"}
+              </td>
+              <td className="px-1 py-1 text-right font-medium tabular-nums">
+                {weekWin != null && o.deltaWin != null ? pct(weekWin + o.deltaWin) : "—"}
+              </td>
+              <td className="py-1 pl-1 text-right tabular-nums">
+                {o.deltaWin != null ? (
+                  <span className={cn("font-semibold", tone(o.deltaWin * 100, 0.05))}>
+                    {signed(o.deltaWin * 100)}
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {!sim && (
+          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+            {checking && o.key === initialKey
+              ? "The season simulation is checking this move…"
+              : "The season simulation hasn't checked this drop (it checks the top moves automatically)."}
+          </p>
+        )}
+      </div>
+
+      <p className="pl-[50px] text-xs text-muted-foreground tabular-nums">
+        Lineup points: this week{" "}
+        <span className={tone(o.deltaPts, 0.5)}>{signed(o.deltaPts, 0)}</span> · rest of season{" "}
+        <span className={tone(o.laterPts, 0.5)}>{signed(o.laterPts, 0)}</span>
+        {" · "}points estimate{" "}
+        <span className={cn("font-medium", tone(o.netWins, 0.005))}>
+          {signed(o.netWins, 2)} wins
+        </span>
+      </p>
+    </div>
+  );
+}

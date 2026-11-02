@@ -1,4 +1,6 @@
-import { PageHeader, SectionTitle } from "@/components/fc/bits";
+import Link from "next/link";
+import { DateNav, PageHeader, SectionTitle } from "@/components/fc/bits";
+import { TeamTabs } from "@/components/fc/team-tabs";
 import { MatchupDays, type MatchupDay } from "@/components/fc/matchup-days";
 import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -28,21 +30,23 @@ import {
   startingSlots,
   type Placed,
 } from "@/lib/nba/h2h";
-import { liveRows } from "@/lib/nba/live";
+import { isStarting, liveRows } from "@/lib/nba/live";
 import { absences, returnLabel } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
-import { matchupHistory } from "@/lib/nba/matchup-snapshots";
+import { matchupHistory, matchupStatesHistory } from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { bestPerGame } from "@/lib/nba/best";
-import { matchupView } from "@/lib/nba/matchup";
+import { asTeam, leagueMatchups, matchupView, type LeagueMatchup } from "@/lib/nba/matchup";
 import { winChanceLabel } from "@/lib/nba/week";
 import { cn } from "@/lib/utils";
-import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
+import { PRO_TEAM_BY_ID, type FantasyTeam, type RosterPlayer } from "@fantasy-copilot/espn";
 
 const STARTING_SLOTS = 9;
 
 /** The score at the top: points so far (big), projected finals, and the win chance. */
+type Mode = "past" | "now" | "later";
+
 function Scoreboard({
   me,
   opp,
@@ -53,6 +57,7 @@ function Scoreboard({
   pWin,
   live,
   decided,
+  mode,
 }: {
   me: string;
   opp: string;
@@ -64,18 +69,21 @@ function Scoreboard({
   live: boolean;
   /** Nothing left to play this week. */
   decided: boolean;
+  /** A past week shows its final; a later week its projection. */
+  mode: Mode;
 }) {
   const side = (name: string, pts: number, final: number, right: boolean) => (
     <div className={cn("min-w-0", right && "text-right")}>
       <div className="text-xs font-medium break-words text-muted-foreground sm:text-sm">{name}</div>
       <div className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
-        {fmtPts(pts)}
+        {fmtPts(mode === "later" ? final : pts)}
       </div>
       <div className="text-xs text-muted-foreground tabular-nums sm:text-sm">
-        proj {fmtPts(final)}
+        {mode === "now" ? `proj ${fmtPts(final)}` : mode === "past" ? "final" : "projected"}
       </div>
     </div>
   );
+  const result = (p: number) => (p > 0.5 ? "Won" : p < 0.5 ? "Lost" : "Tied");
   return (
     <div className="rounded-xl border bg-card p-4 sm:p-5">
       {/* A long team name wraps rather than shrinking; the scores line up along the bottom. */}
@@ -89,18 +97,185 @@ function Scoreboard({
       </div>
       <div className="mt-4">
         <div className="mb-1.5 flex justify-between text-xs font-semibold tabular-nums sm:text-sm">
-          <span className="text-primary">{winChanceLabel(pWin, decided)} to win</span>
-          <span className="text-muted-foreground">{winChanceLabel(1 - pWin, decided)}</span>
+          <span className="text-primary">
+            {mode === "past" ? result(pWin) : `${winChanceLabel(pWin, decided)} to win`}
+          </span>
+          <span className="text-muted-foreground">
+            {mode === "past" ? result(1 - pWin) : winChanceLabel(1 - pWin, decided)}
+          </span>
         </div>
         <div className="flex h-2.5 overflow-hidden rounded-full bg-muted">
           <div className="bg-primary" style={{ width: `${pWin * 100}%` }} />
         </div>
       </div>
       <p className="mt-3 text-xs text-muted-foreground">
-        Big numbers are points so far{live ? " (updating every minute)" : ""}. Projected finals
-        assume both teams set their best lineup every day; the win chance uses 2025-26 weekly
-        volatility.
+        {mode === "past"
+          ? "Final scores."
+          : mode === "later"
+            ? "Projected from today's rosters: each team's best lineup every day, injured players back from their estimated returns. The win chance uses 2025-26 weekly volatility."
+            : `Big numbers are points so far${live ? " (updating every minute)" : ""}. Projected finals assume both teams set their best lineup every day; the win chance uses 2025-26 weekly volatility.`}
       </p>
+    </div>
+  );
+}
+
+/** Every matchup of the week: score (or projection) and win chance; tap one to open it. */
+function LeagueStrip({
+  matchups,
+  names,
+  viewed,
+  mode,
+  href,
+  jack,
+}: {
+  matchups: LeagueMatchup[];
+  names: Map<number, string>;
+  viewed: number;
+  mode: Mode;
+  href: (teamId: number) => string;
+  /** Jack's team: his matchup always opens from his side. */
+  jack: number;
+}) {
+  // Which side a matchup opens from: Jack's, else the team being viewed, else the home team.
+  const side = (m: LeagueMatchup) =>
+    [jack, viewed].find((id) => id === m.homeId || id === m.awayId) ?? m.homeId;
+  const isOpen = (m: LeagueMatchup) => m.homeId === viewed || m.awayId === viewed;
+  const line = (id: number, pts: number, final: number, p: number | null, won: boolean) => (
+    <div className="flex items-baseline gap-2">
+      <span
+        className={cn(
+          "min-w-0 flex-1 text-xs leading-tight break-words",
+          won ? "font-semibold" : "font-medium",
+        )}
+      >
+        {names.get(id) ?? `Team ${id}`}
+      </span>
+      <span className="text-xs font-semibold tabular-nums">
+        {fmtPts(mode === "later" ? final : pts)}
+      </span>
+      {mode !== "past" && p != null && (
+        <span className="w-8 text-right text-[11px] text-muted-foreground tabular-nums">
+          {winChanceLabel(p, false)}
+        </span>
+      )}
+    </div>
+  );
+  return (
+    <section className="space-y-1.5">
+      <SectionTitle
+        aside={mode === "past" ? "Finals" : mode === "later" ? "Projected" : "Score · win chance"}
+      >
+        League matchups
+      </SectionTitle>
+      {/* A swipeable row on phones (the open matchup first), a grid from tablet width. */}
+      <div className="-mx-3 flex snap-x gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0">
+        {[...matchups]
+          .sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))
+          .map((m) => {
+            const open = isOpen(m);
+            const homeWon = mode === "past" && m.home > m.away;
+            const awayWon = mode === "past" && m.away > m.home;
+            return (
+              <Link
+                key={m.id}
+                href={href(side(m))}
+                aria-current={open ? "true" : undefined}
+                className={cn(
+                  "w-44 shrink-0 snap-start space-y-1 rounded-lg border bg-card px-2.5 py-2 transition-colors sm:w-auto",
+                  open ? "border-primary ring-1 ring-primary" : "hover:bg-muted/50",
+                )}
+              >
+                {line(m.homeId, m.home, m.homeFinal, m.pHome, homeWon)}
+                {line(m.awayId, m.away, m.awayFinal, m.pHome == null ? null : 1 - m.pHome, awayWon)}
+              </Link>
+            );
+          })}
+      </div>
+    </section>
+  );
+}
+
+/** One team's games this week, highlighted where it starts (projected, or actual for a past week). */
+function ScheduleTable({
+  rows,
+  startsByDay,
+  days,
+  sp,
+  dim,
+  statusOf,
+  opponentOf,
+}: {
+  rows: RosterPlayer[];
+  startsByDay: Map<number, Set<number>>;
+  days: { sp: number; date: string }[];
+  sp: number;
+  /** Fade days already played (this week only). */
+  dim: boolean;
+  statusOf: (p: RosterPlayer) => string;
+  opponentOf: (proTeamId: number, day: number) => { abbr: string; home: boolean } | null;
+}) {
+  const starts = (id: number) => [...startsByDay.values()].filter((s) => s.has(id)).length;
+  const sorted = [...rows].sort((a, b) => starts(b.id) - starts(a.id));
+  return (
+    <div className="overflow-x-auto rounded-xl border bg-card">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b text-xs text-muted-foreground">
+            <th className="sticky left-0 z-10 bg-card px-3 py-2 text-left font-medium">Player</th>
+            {days.map((d) => (
+              <th
+                key={d.sp}
+                className={cn("px-1 py-2 text-center font-medium", d.sp === sp && "text-primary")}
+              >
+                {shortDay(d.date).split(" ")[0]}
+              </th>
+            ))}
+            <th className="px-3 py-2 text-right font-medium">Starts</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {sorted.map((p) => (
+            <tr key={p.id}>
+              <td className="sticky left-0 z-10 bg-card px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <PlayerAvatar id={p.id} name={p.name} size={28} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1">
+                      <span className="max-w-32 truncate font-medium sm:max-w-none">{p.name}</span>
+                      <StatusPill status={statusOf(p)} />
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">{p.positions.join("/")}</div>
+                  </div>
+                </div>
+              </td>
+              {days.map((d) => {
+                const o = opponentOf(p.proTeamId, d.sp);
+                const starting = startsByDay.get(d.sp)?.has(p.id);
+                return (
+                  <td
+                    key={d.sp}
+                    className={cn("px-1 py-1.5 text-center", dim && d.sp < sp && "opacity-40")}
+                  >
+                    {o && (
+                      <span
+                        className={cn(
+                          "inline-flex flex-col items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] font-medium",
+                          starting ? "bg-primary/15 text-foreground" : "text-muted-foreground",
+                        )}
+                      >
+                        <TeamLogo abbr={o.abbr} size={16} />
+                        {o.home ? "" : "@"}
+                        {o.abbr}
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
+              <td className="px-3 py-2 text-right font-semibold tabular-nums">{starts(p.id)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -108,20 +283,42 @@ function Scoreboard({
 export default async function WeekPage({
   searchParams,
 }: {
-  searchParams: Promise<{ day?: string }>;
+  searchParams: Promise<{ day?: string; week?: string; team?: string }>;
 }) {
   const today = gameDate();
   const sp = Math.min(Math.max(scoringPeriodForDate(today), 1), LAST_SCORING_PERIOD);
-  const mp = matchupPeriodOf(sp);
-  const periods = scoringPeriodsOf(mp);
+  const thisWeek = matchupPeriodOf(sp);
 
-  let data;
+  let league;
   try {
-    data = await loadLeague(sp, today);
+    league = await loadLeague(sp, today);
   } catch (e) {
     if (e instanceof SetupError) return <SetupNotice message={e.message} />;
     return <ErrorNotice title="Couldn't load the league" message={(e as Error).message} />;
   }
+  const params = await searchParams;
+
+  // ?week= any matchup week (past: finals; later: projected); ?team= any team in it.
+  const scheduled = league.matchups.filter((m) => m.awayTeamId != null);
+  const lastWeek = Math.max(thisWeek, ...scheduled.map((m) => m.period));
+  const mp = Math.min(Math.max(Number(params.week) || thisWeek, 1), lastWeek);
+  const mode: Mode = mp < thisWeek ? "past" : mp > thisWeek ? "later" : "now";
+  const periods = scoringPeriodsOf(mp);
+  const inWeek = (id: number) =>
+    league.matchups.some((m) => m.period === mp && (m.homeTeamId === id || m.awayTeamId === id));
+  const viewedId =
+    [Number(params.team), league.me.id].find(inWeek) ??
+    scheduled.find((m) => m.period === mp)?.homeTeamId ??
+    league.me.id;
+  const mineIsJack = viewedId === league.me.id;
+  // The league as the viewed team sees it: it's "me" below (Jack's own team by default).
+  const data = asTeam(league, viewedId);
+  const href = (week: number, team = viewedId) => {
+    const q = new URLSearchParams();
+    if (week !== thisWeek) q.set("week", String(week));
+    if (team !== league.me.id) q.set("team", String(team));
+    return `/nba/week${q.size ? `?${q}` : ""}`;
+  };
 
   // The props blend for players with Vegas lines, once it has passed its test (else ours).
   const perGame = await bestPerGame([...data.teams.flatMap((t) => t.roster)], data, sp);
@@ -137,10 +334,30 @@ export default async function WeekPage({
     myPending,
     oppPending,
     myWeekRoster,
-  } = matchupView(data, sp, perGame);
+    oppWeekRoster,
+  } = matchupView(data, sp, perGame, mp);
+  const weekMatchups = leagueMatchups(league, sp, mp, perGame);
+  const names = new Map(league.teams.map((t) => [t.id, t.name]));
+  const matchup = data.matchups.find(
+    (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
+  );
+  const iAmHome = matchup?.homeTeamId === data.me.id;
+  // Win chances before each day: Jack's own snapshots for his matchups, the league-wide
+  // morning log for the rest. Seen from the viewed team.
+  const jackPlays =
+    matchup && (matchup.homeTeamId === league.me.id || matchup.awayTeamId === league.me.id);
+  const loadHistory = async () => {
+    if (!dbConfigured() || !matchup || mode === "later") return [];
+    if (jackPlays) {
+      const rows = await matchupHistory(mp);
+      return rows.map((h) => ({ sp: h.scoring_period, p: mineIsJack ? h.p_win : 1 - h.p_win }));
+    }
+    const rows = await matchupStatesHistory(mp, matchup.homeTeamId);
+    return rows.map((h) => ({ sp: h.scoring_period, p: iAmHome ? h.p_home : 1 - h.p_home }));
+  };
   const [live, history] = await Promise.all([
-    loadLiveRosters(sp, mp).catch(() => null),
-    dbConfigured() ? matchupHistory(mp).catch(() => []) : Promise.resolve([]),
+    mode === "now" ? loadLiveRosters(sp, mp).catch(() => null) : Promise.resolve(null),
+    loadHistory().catch(() => []),
   ]);
   const myLive = liveRows(myToday, live?.get(data.me.id), data.scoreboard);
   const oppLive = opp && oppToday ? liveRows(oppToday, live?.get(opp.id), data.scoreboard) : null;
@@ -151,8 +368,8 @@ export default async function WeekPage({
   );
   const winPoints = [
     ...history.map((h) => ({
-      label: shortDay(dateForScoringPeriod(h.scoring_period)).split(" ")[0]!,
-      pWin: h.p_win,
+      label: shortDay(dateForScoringPeriod(h.sp)).split(" ")[0]!,
+      pWin: h.p,
     })),
     ...(pWin != null && started ? [{ label: "Now", pWin }] : []),
   ];
@@ -161,8 +378,11 @@ export default async function WeekPage({
 
   // Every day of the week head to head, rendered together so switching days is instant:
   // past days from ESPN's finals, today live, days ahead projected. ?day= picks the first one.
-  const { day: dayParam } = await searchParams;
-  const initialDay = periods.includes(Number(dayParam)) ? Number(dayParam) : sp;
+  const initialDay = periods.includes(Number(params.day))
+    ? Number(params.day)
+    : mode === "now"
+      ? sp
+      : periods[0]!;
   const statusOf = new Map(data.injuries.map((i) => [i.playerId, i]));
   const statusFor = (p: { id: number; injuryStatus?: string | null }) =>
     statusOf.get(p.id)?.status ?? p.injuryStatus ?? "ACTIVE";
@@ -174,7 +394,7 @@ export default async function WeekPage({
     await Promise.all(
       periods
         .filter((d) => d < sp)
-        .map(async (d) => [d, await loadLiveRosters(d, mp).catch(() => null)] as const),
+        .map(async (d) => [d, await loadLiveRosters(d, mp, true).catch(() => null)] as const),
     ),
   );
   const notRostered = [
@@ -229,8 +449,9 @@ export default async function WeekPage({
     const outThatDay = (p: { id: number }) => (out.get(p.id)?.outUntil ?? 0) > day;
     const projAhead = (p: Parameters<typeof perGameProjection>[0]) =>
       outThatDay(p) ? 0 : perGameProjection(p, sp).fppg;
+    // A later week shows only who's ruled out: today's day-to-day tags don't reach it.
     const statusAhead = (p: Parameters<typeof perGameProjection>[0]) =>
-      outThatDay(p) ? "OUT" : out.has(p.id) ? "ACTIVE" : statusFor(p);
+      outThatDay(p) ? "OUT" : out.has(p.id) || mode === "later" ? "ACTIVE" : statusFor(p);
     const backAhead = (p: { id: number }) => {
       const a = out.get(p.id);
       return a && outThatDay(p) ? returnLabel(a) : null;
@@ -242,10 +463,6 @@ export default async function WeekPage({
       oppAhead && theirs ? ahead(oppAhead.roster, theirs.slotsByDay.get(day)) : [],
     ];
   };
-  const matchup = data.matchups.find(
-    (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
-  );
-  const iAmHome = matchup?.homeTeamId === data.me.id;
   const dayBoards: MatchupDay[] = days.map((d) => {
     const [minePlaced, theirsPlaced] = placedFor(d.sp);
     const b = pairBySlot(slots, labeled(minePlaced), labeled(theirsPlaced));
@@ -289,17 +506,64 @@ export default async function WeekPage({
     const home = g.homeProTeamId === proTeamId;
     return { abbr: PRO_TEAM_BY_ID[home ? g.awayProTeamId : g.homeProTeamId] ?? "?", home };
   };
-  const starts = (id: number) => [...mine.startsByDay.values()].filter((s) => s.has(id)).length;
-  // Everyone who plays for you this week, including moves that take effect tomorrow.
-  const rows = [...myWeekRoster].sort((a, b) => starts(b.id) - starts(a.id));
-  const totalStarts = [...mine.startsByDay.values()].reduce((a, s) => a + s.size, 0);
+  // Each side's schedule: everyone who plays for it this week (moves that take effect tomorrow
+  // included) and its projected starts; a past week's actual lineups and starts.
+  const played = (team: FantasyTeam | undefined) => {
+    const rows = new Map<number, RosterPlayer>();
+    const startsByDay = new Map<number, Set<number>>();
+    for (const [day, byTeam] of pastFinals) {
+      const started = new Set<number>();
+      for (const e of (team && byTeam?.get(team.id)) ?? []) {
+        const p = people.get(e.playerId) ?? dropped.get(e.playerId) ?? e.player ?? undefined;
+        if (!p) continue;
+        rows.set(p.id, p);
+        if (isStarting(e.slot) && opponentOf(p.proTeamId, day)) started.add(p.id);
+      }
+      startsByDay.set(day, started);
+    }
+    return { rows: [...rows.values()], startsByDay };
+  };
+  const schedules = [
+    mode === "past"
+      ? { team: data.me, ...played(data.me) }
+      : { team: data.me, rows: myWeekRoster, startsByDay: mine.startsByDay },
+    ...(opp
+      ? [
+          mode === "past"
+            ? { team: opp, ...played(opp) }
+            : {
+                team: opp,
+                rows: oppWeekRoster ?? [],
+                startsByDay: theirs?.startsByDay ?? new Map(),
+              },
+        ]
+      : []),
+  ];
+  // Badges: today's statuses this week; a later week only who's ruled out when it starts; none
+  // for a past week (today's injuries say nothing about then).
+  const scheduleStatus = (p: RosterPlayer) =>
+    mode === "now"
+      ? statusFor(p)
+      : mode === "later" && (out.get(p.id)?.outUntil ?? 0) > periods[0]!
+        ? "OUT"
+        : "ACTIVE";
+  const startsOn = (side: number, day: number) => schedules[side]?.startsByDay.get(day)?.size ?? 0;
+  const totalStarts = periods.reduce((a, d) => a + startsOn(0, d), 0);
 
   return (
     <>
       <PageHeader
         title={`Week ${mp}`}
         subtitle={`${shortDay(days[0]!.date)} – ${shortDay(days.at(-1)!.date)}${opp ? "" : " · no matchup (bye week)"}`}
-      />
+      >
+        <DateNav
+          unit="week"
+          todayLabel="This week"
+          prev={mp > 1 ? href(mp - 1) : undefined}
+          next={mp < lastWeek ? href(mp + 1) : undefined}
+          today={mode === "now" ? undefined : href(thisWeek)}
+        />
+      </PageHeader>
 
       {opp && theirs && pWin != null && (
         <Scoreboard
@@ -311,11 +575,25 @@ export default async function WeekPage({
           oppFinal={oppBanked + theirs.remaining}
           pWin={pWin}
           live={gamesLive}
-          decided={mine.remaining + theirs.remaining < 0.5}
+          decided={mode === "past" || (mode === "now" && mine.remaining + theirs.remaining < 0.5)}
+          mode={mode}
         />
       )}
 
-      <PendingMovesNote mine={myPending} theirs={oppPending} opponent={opp?.name} />
+      {weekMatchups.length > 1 && (
+        <LeagueStrip
+          matchups={weekMatchups}
+          names={names}
+          viewed={viewedId}
+          mode={mode}
+          href={(team) => href(mp, team)}
+          jack={league.me.id}
+        />
+      )}
+
+      {mode === "now" && mineIsJack && (
+        <PendingMovesNote mine={myPending} theirs={oppPending} opponent={opp?.name} />
+      )}
 
       <LiveRefresh active={gamesLive} />
 
@@ -330,8 +608,12 @@ export default async function WeekPage({
 
       {winPoints.length > 1 && (
         <section className="space-y-1.5">
-          <SectionTitle aside="Before each day's games, then live">
-            Win chance this week
+          <SectionTitle
+            aside={
+              mode === "now" ? "Before each day's games, then live" : "Before each day's games"
+            }
+          >
+            {mode === "now" ? "Win chance this week" : "Win chance during the week"}
           </SectionTitle>
           <div className="rounded-xl border bg-card p-3">
             <WinChart points={winPoints} />
@@ -340,17 +622,21 @@ export default async function WeekPage({
       )}
 
       <section className="space-y-1.5">
-        <SectionTitle aside={`${totalStarts} projected starts`}>Starts by day</SectionTitle>
+        <SectionTitle aside={`${totalStarts} ${mode === "past" ? "starts" : "projected starts"}`}>
+          Starts by day
+        </SectionTitle>
         <div
           className="grid gap-1.5"
           style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
         >
           {days.map((d) => {
-            const past = d.sp < sp;
+            // This week's played days fade; a past week shows each day's actual starts.
+            const past = mode === "now" && d.sp < sp;
+            const done = mode === "past";
             const games = mine.gamesByDay.get(d.sp)?.size ?? 0;
-            const s = mine.startsByDay.get(d.sp)?.size ?? 0;
-            const crunch = games > STARTING_SLOTS;
-            const open = !past && s < STARTING_SLOTS;
+            const s = startsOn(0, d.sp);
+            const crunch = !done && games > STARTING_SLOTS;
+            const open = !past && !done && s < STARTING_SLOTS;
             return (
               <div
                 key={d.sp}
@@ -364,9 +650,9 @@ export default async function WeekPage({
                   {shortDay(d.date).split(" ")[0]}
                 </div>
                 <div className="text-lg font-semibold tabular-nums">{past ? "–" : s}</div>
-                {theirs && !past && (
+                {opp && !past && (
                   <div className="text-[10px] text-muted-foreground tabular-nums">
-                    opp {theirs.startsByDay.get(d.sp)?.size ?? 0}
+                    opp {startsOn(1, d.sp)}
                   </div>
                 )}
                 <div
@@ -375,7 +661,7 @@ export default async function WeekPage({
                     crunch ? "text-warning" : open ? "text-info" : "text-muted-foreground",
                   )}
                 >
-                  {past
+                  {past || done
                     ? ""
                     : crunch
                       ? `${games - STARTING_SLOTS} sit`
@@ -390,84 +676,27 @@ export default async function WeekPage({
       </section>
 
       <section className="space-y-1.5">
-        <SectionTitle>Your schedule</SectionTitle>
-        <div className="overflow-x-auto rounded-xl border bg-card">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b text-xs text-muted-foreground">
-                <th className="sticky left-0 z-10 bg-card px-3 py-2 text-left font-medium">
-                  Player
-                </th>
-                {days.map((d) => (
-                  <th
-                    key={d.sp}
-                    className={cn(
-                      "px-1 py-2 text-center font-medium",
-                      d.sp === sp && "text-primary",
-                    )}
-                  >
-                    {shortDay(d.date).split(" ")[0]}
-                  </th>
-                ))}
-                <th className="px-3 py-2 text-right font-medium">Starts</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {rows.map((p) => (
-                <tr key={p.id}>
-                  <td className="sticky left-0 z-10 bg-card px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <PlayerAvatar id={p.id} name={p.name} size={28} />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className="max-w-32 truncate font-medium sm:max-w-none">
-                            {p.name}
-                          </span>
-                          <StatusPill
-                            status={statusOf.get(p.id)?.status ?? p.injuryStatus ?? "ACTIVE"}
-                          />
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {p.positions.join("/")}
-                        </div>
-                      </div>
-                    </div>
-                  </td>
-                  {days.map((d) => {
-                    const o = opponentOf(p.proTeamId, d.sp);
-                    const starting = mine.startsByDay.get(d.sp)?.has(p.id);
-                    const past = d.sp < sp;
-                    return (
-                      <td
-                        key={d.sp}
-                        className={cn("px-1 py-1.5 text-center", past && "opacity-40")}
-                      >
-                        {o && (
-                          <span
-                            className={cn(
-                              "inline-flex flex-col items-center gap-0.5 rounded-md px-1 py-0.5 text-[10px] font-medium",
-                              starting ? "bg-primary/15 text-foreground" : "text-muted-foreground",
-                            )}
-                          >
-                            <TeamLogo abbr={o.abbr} size={16} />
-                            {o.home ? "" : "@"}
-                            {o.abbr}
-                          </span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  <td className="px-3 py-2 text-right font-semibold tabular-nums">
-                    {starts(p.id)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <SectionTitle>Schedule</SectionTitle>
+        <TeamTabs
+          tabs={schedules.map((x) => ({
+            label: x.team.id === league.me.id ? "Your team" : x.team.name,
+            content: (
+              <ScheduleTable
+                rows={x.rows}
+                startsByDay={x.startsByDay}
+                days={days}
+                sp={sp}
+                dim={mode === "now"}
+                statusOf={scheduleStatus}
+                opponentOf={opponentOf}
+              />
+            ),
+          }))}
+        />
         <p className="px-1 text-xs text-muted-foreground">
-          Highlighted = projected to start. “Sit” days have more of your players playing than slots;
-          “open” days have empty slots a streamer could fill.
+          {mode === "past"
+            ? "Highlighted = started that day."
+            : "Highlighted = projected to start. “Sit” days have more players playing than slots; “open” days have empty slots a streamer could fill."}
         </p>
       </section>
     </>

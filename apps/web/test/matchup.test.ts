@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FantasyTeam, Matchup, ProGame, RosterPlayer } from "@fantasy-copilot/espn";
-import { matchupView, weekPointsThroughToday } from "@/lib/nba/matchup";
+import { asTeam, leagueMatchups, matchupView, weekPointsThroughToday } from "@/lib/nba/matchup";
 import { startSd } from "@/lib/nba/week";
 
 // Synthetic league: two teams, one matchup in week 1 (days 1-6). Pro team 1 plays every day.
@@ -117,5 +117,51 @@ describe("matchupView with moves that take effect tomorrow", () => {
     expect(startSd(30)).toBeCloseTo(15.4);
     expect(v.mine.startVar).toBeCloseTo(6 * 15.4 ** 2, 1);
     expect(v.theirs!.startVar).toBeCloseTo(6 * 15.4 ** 2, 1);
+  });
+});
+
+describe("matchupView for other weeks and teams", () => {
+  // Two weeks: week 1 (days 1-6) is over, week 2 is days 7-13; pro team 1 plays every day.
+  function twoWeeks(meRoster: RosterPlayer[]) {
+    const base = league(meRoster, meRoster);
+    const allGames: ProGame[] = Array.from({ length: 13 }, (_, i) => ({
+      gameId: i + 1,
+      scoringPeriodId: i + 1,
+      date: Date.parse("2030-01-01T23:00:00Z") + i * 86_400_000,
+      homeProTeamId: 1,
+      awayProTeamId: 2,
+    }));
+    const week1: Matchup = { ...matchup, homePoints: 500, awayPoints: 450, winner: "HOME" };
+    const week2: Matchup = { ...matchup, id: 2, period: 2, homeLive: 0, awayLive: 0 };
+    return { ...base, games: allGames, matchups: [week1, week2] };
+  }
+
+  it("shows a past week's final", () => {
+    const v = matchupView(twoWeeks([player(1, 30)]), 8, undefined, 1);
+    expect(v.mp).toBe(1);
+    expect([v.myBanked, v.oppBanked]).toEqual([500, 450]);
+    expect(v.mine.remaining).toBe(0);
+    expect(v.pWin).toBe(1);
+  });
+
+  it("projects a later week from today, with today's day-to-day status faded", () => {
+    const hurt = { ...player(1, 30), injuryStatus: "DAY_TO_DAY" };
+    const v = matchupView(twoWeeks([hurt]), 1, undefined, 2);
+    expect(v.mp).toBe(2);
+    expect(v.myBanked).toBe(0);
+    expect(v.myToday.some((r) => r.game)).toBe(false); // today's games aren't this week's
+    // Seven games at 30: by next week a day-to-day status no longer discounts him.
+    expect(v.mine.remaining).toBeCloseTo(210, 0);
+    expect(v.mine.startsByDay.get(7)).toEqual(new Set([1]));
+  });
+
+  it("sees any team's matchup, and every matchup of the week", () => {
+    const data = twoWeeks([player(1, 30)]);
+    const v = matchupView(asTeam(data, 2), 8);
+    expect(v.opp?.id).toBe(1);
+    const all = leagueMatchups(data, 8, 2);
+    expect(all).toHaveLength(1);
+    expect(all[0]!.homeId).toBe(1);
+    expect(all[0]!.pHome).toBeCloseTo(0.5, 1); // 30 a game each, nothing banked yet
   });
 });

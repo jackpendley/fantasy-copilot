@@ -1,5 +1,6 @@
-// This week's head-to-head: banked points, projected remaining for both sides, win chance.
-// Shared by /nba/week and /nba/waivers so both use the same baseline.
+// A week's head-to-head: banked points, projected remaining for both sides, win chance.
+// Shared by /nba/week and /nba/waivers so both use the same baseline. This week is live; a
+// past week is its final; a later week is projected from today's rosters and injuries.
 
 import type { FantasyTeam } from "@fantasy-copilot/espn";
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
@@ -32,19 +33,35 @@ export interface MatchupView {
    */
   weekInputs: WeekInputs;
   myWeekRoster: FantasyTeam["roster"];
+  oppWeekRoster: FantasyTeam["roster"] | null;
   mine: TeamWeek;
   theirs: TeamWeek | null;
   pWin: number | null;
 }
 
-/** `perGame`: today's projections to use instead of our model's (the props blend, lib/nba/best.ts). */
+/** The league as seen by another team: it becomes `me` (as in recordMatchupStates). */
+export function asTeam(data: LeagueData, teamId: number): LeagueData {
+  const me = data.teams.find((t) => t.id === teamId);
+  const ahead = data.ahead.teams.find((t) => t.id === teamId);
+  if (!me || !ahead) return data;
+  return { ...data, me, ahead: { ...data.ahead, me: ahead } };
+}
+
+/**
+ * `perGame`: today's projections to use instead of our model's (the props blend,
+ * lib/nba/best.ts). `week`: another matchup week than today's (past: final; later: projected).
+ */
 export function matchupView(
   data: LeagueData,
   sp: number,
   perGame?: Map<number, number>,
+  week?: number,
 ): MatchupView {
-  const mp = matchupPeriodOf(sp);
+  const now = matchupPeriodOf(sp);
+  const mp = week ?? now;
   const periods = scoringPeriodsOf(mp);
+  const past = mp < now;
+  const later = mp > now;
   const matchup = data.matchups.find(
     (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
   );
@@ -52,10 +69,18 @@ export function matchupView(
   const oppId = matchup ? (iAmHome ? matchup.awayTeamId : matchup.homeTeamId) : null;
   const opp = data.teams.find((t) => t.id === oppId);
   const oppAhead = data.ahead.teams.find((t) => t.id === oppId);
-  const myBanked = matchup ? (iAmHome ? matchup.homeLive : (matchup.awayLive ?? 0)) : 0;
-  const oppBanked = matchup ? (iAmHome ? (matchup.awayLive ?? 0) : matchup.homeLive) : 0;
+  // Live totals this week; a past week's finals; nothing yet in a later week.
+  const banked = (home: boolean) =>
+    !matchup || later
+      ? 0
+      : past
+        ? ((home ? matchup.homePoints : matchup.awayPoints) ?? 0)
+        : ((home ? matchup.homeLive : matchup.awayLive) ?? 0);
+  const myBanked = banked(iAmHome);
+  const oppBanked = banked(!iAmHome);
 
-  const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
+  // Today's games only count in today's week.
+  const todayGames = past || later ? [] : data.games.filter((g) => g.scoringPeriodId === sp);
   const scoreboard = new Map(data.scoreboard.map((g) => [g.gameId, g]));
   const boardOf = (team: FantasyTeam) =>
     buildDayBoard({
@@ -75,7 +100,9 @@ export function matchupView(
   const oppWeek = opp && oppAhead ? weekRoster(opp.roster, oppAhead.roster, sp) : null;
   const weekInputs: WeekInputs = {
     periods,
-    fromPeriod: sp,
+    // A past week has nothing left to project; a later week starts on its first day.
+    fromPeriod: past ? periods.at(-1)! + 1 : later ? periods[0]! : sp,
+    asOf: sp,
     games: data.games,
     slotCounts: data.settings.slotCounts,
     injuries: data.injuries,
@@ -89,17 +116,16 @@ export function matchupView(
       ),
     ),
   };
-  const mine = projectTeamWeek(myWeek.roster, {
-    ...weekInputs,
-    todayRemaining: remainingToday(myToday, scoreboard),
-    todayVar: remainingTodayVar(myToday, scoreboard),
-  });
+  const today = (rows: DayRow[]) =>
+    past || later
+      ? {}
+      : {
+          todayRemaining: remainingToday(rows, scoreboard),
+          todayVar: remainingTodayVar(rows, scoreboard),
+        };
+  const mine = projectTeamWeek(myWeek.roster, { ...weekInputs, ...today(myToday) });
   const theirs = oppWeek
-    ? projectTeamWeek(oppWeek.roster, {
-        ...weekInputs,
-        todayRemaining: remainingToday(oppToday!, scoreboard),
-        todayVar: remainingTodayVar(oppToday!, scoreboard),
-      })
+    ? projectTeamWeek(oppWeek.roster, { ...weekInputs, ...today(oppToday!) })
     : null;
   const pWin = theirs
     ? winProbability(myBanked, mine.remaining, oppBanked, theirs.remaining)
@@ -116,6 +142,7 @@ export function matchupView(
     oppToday,
     weekInputs,
     myWeekRoster: myWeek.roster,
+    oppWeekRoster: oppWeek?.roster ?? null,
     mine,
     theirs,
     pWin,
@@ -186,4 +213,44 @@ export function weekPointsThroughToday(data: LeagueData, sp: number): Map<number
     }
   }
   return out;
+}
+
+/** One league matchup in a week, from the home side: points, projected finals, win chance. */
+export interface LeagueMatchup {
+  id: number;
+  homeId: number;
+  awayId: number;
+  home: number;
+  away: number;
+  homeFinal: number;
+  awayFinal: number;
+  pHome: number | null;
+  /** Nothing left to play. */
+  decided: boolean;
+}
+
+/** Every matchup in `week` (byes skipped), each seen from its home team. */
+export function leagueMatchups(
+  data: LeagueData,
+  sp: number,
+  week: number,
+  perGame?: Map<number, number>,
+): LeagueMatchup[] {
+  return data.matchups
+    .filter((m) => m.period === week && m.awayTeamId != null)
+    .map((m) => {
+      const v = matchupView(asTeam(data, m.homeTeamId), sp, perGame, week);
+      const left = v.mine.remaining + (v.theirs?.remaining ?? 0);
+      return {
+        id: m.id,
+        homeId: m.homeTeamId,
+        awayId: m.awayTeamId!,
+        home: v.myBanked,
+        away: v.oppBanked,
+        homeFinal: v.myBanked + v.mine.remaining,
+        awayFinal: v.oppBanked + (v.theirs?.remaining ?? 0),
+        pHome: v.pWin,
+        decided: left < 0.5 && week <= matchupPeriodOf(sp),
+      };
+    });
 }

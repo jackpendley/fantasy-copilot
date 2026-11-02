@@ -38,6 +38,8 @@ const LEAGUE_FETCH = memoFetch(20_000);
 const LIVE_FETCH = memoFetch(15_000);
 const FEED_FETCH = memoFetch(60_000);
 const LINEUPS_FETCH = memoFetch(5 * 60_000);
+// A finished day's fantasy points don't change: keep them for hours.
+const SETTLED_FETCH = memoFetch(6 * 3600_000);
 
 // The NBA schedule is ~400 KB and changes rarely: keep it in memory for 6 hours.
 let scheduleCache: { at: number; games: ProGame[] } | null = null;
@@ -153,14 +155,21 @@ export async function loadPlayersById(ids: number[], scoringPeriodId: number) {
   return new Map(parsePlayerPool(raw, cfg.season).map((p) => [p.id, p]));
 }
 
-/** Today's fantasy points per player for every team in this matchup period (live during games). */
-export async function loadLiveRosters(scoringPeriodId: number, matchupPeriod: number) {
+/**
+ * A day's fantasy points per player for every team in this matchup period (live during games).
+ * `settled`: a day already over, whose points can be kept longer.
+ */
+export async function loadLiveRosters(
+  scoringPeriodId: number,
+  matchupPeriod: number,
+  settled = false,
+) {
   if (process.env.ESPN_LEAGUE_FILE) return new Map<number, never[]>();
   const cfg = espnConfig();
   const raw = await fetchLeague(cfg, ["mMatchupScore", "mBoxscore"], {
     filter: { schedule: { filterMatchupPeriodIds: { value: [matchupPeriod] } } },
     scoringPeriodId,
-    fetchImpl: LIVE_FETCH,
+    fetchImpl: settled ? SETTLED_FETCH : LIVE_FETCH,
   });
   return parseLiveRosters(raw, matchupPeriod);
 }

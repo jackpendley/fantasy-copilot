@@ -620,3 +620,18 @@
   - ESPN's closing lines for the season's first 92 games average 115.42.
   - Projections change by under 0.1%; start/sit choices and head-to-head odds don't move.
   - It keeps the factor right if league scoring drifts during the season.
+
+## ADR-051: the quick ranking stays as is; the simulation checks 6 moves (2026-11-02)
+
+- **Question:** should the quick Waivers ranking (the points estimate) add the value of streaming free agents, as the season simulation does?
+- **Test first** (`scripts/experiment-quick-vs-sim.ts`, Nov 2):
+  - The top 15 quick-ranked moves (any add, any drop) were simulated, 800 seasons × 10 playoff replays each.
+  - Rank agreement with the simulation: Spearman −0.18 for expected wins, −0.01 for title odds.
+  - The simulation's best move by wins was 10th by the quick estimate; by title, 12th.
+  - Nearly every move's simulated change was within its margin (title ±1.2–1.5, wins ±0.10–0.15).
+- **Reading:** among close calls the quick estimate's order isn't meaningful, with or without streaming.
+  - A streaming credit would add several made-up knobs (replacement value, add budget, which slots) that one day's data can't validate. Not built.
+  - The simulation is what decides. Checked moves are already ranked by it (ADR-033, ADR-046).
+- **Change:** the simulation checks the top 6 moves instead of 4, so a move the quick estimate undersells has more chance to be checked.
+  - Cost: two more single-batch runs per refresh (~8 s each on Vercel).
+  - Any drop can still be simulated on request.

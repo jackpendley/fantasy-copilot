@@ -5,6 +5,7 @@ import type { FantasyTeam, Matchup, ProGame, RosterPlayer } from "@fantasy-copil
 import type { Position, SimInput, SimPlayer, SimTeam } from "@fantasy-copilot/fantasy-core";
 import { LAST_SCORING_PERIOD, matchupPeriodOf } from "./calendar";
 import { perGameProjection } from "./projection";
+import { teamValue, valueContext } from "./trade";
 
 /** A daily manager makes ~2.5 lineup moves per day (2025-26: ~400 over the season). */
 const MOVES_PER_ACTIVE_DAY = 2.5;
@@ -90,13 +91,30 @@ export function buildOutlookInput(a: OutlookArgs): {
   const currentPeriod = matchupPeriodOf(a.fromDay);
   const previous = new Map((a.previousTeams ?? []).map((t) => [t.id, t]));
   const activity = new Map<number, Activity>();
+  // An IR return to a full roster cuts whoever adds the fewest lineup points from that day on:
+  // the same rule as the Waivers ranking (teamValue), decided once per team here.
+  const ctx = valueContext(
+    a.games,
+    a.slotCounts,
+    a.fromDay,
+    LAST_SCORING_PERIOD,
+    a.regularWeeks,
+    a.injured,
+  );
+  const irCutOf = (t: FantasyTeam) => {
+    const reserve = t.roster.find((p) => p.slot === "IR");
+    if (!reserve) return undefined;
+    const back = teamValue(t.roster, ctx).activations.find((x) => x.player.id === reserve.id);
+    return back?.drop?.id;
+  };
   const teams: SimTeam[] = a.teams.map((t) => {
     const prev = previous.get(t.id);
     const sameOwner = prev && prev.ownerId && prev.ownerId === t.ownerId ? prev.activity : null;
     const act = managerActivity(t.activity, sameOwner, a.fromDay - 1);
     activity.set(t.id, act);
     const sim = (p: RosterPlayer) => toSimPlayer(p, a.injured?.get(p.id)?.outUntil);
-    return { id: t.id, roster: t.roster.map(sim), ...act };
+    const irCut = irCutOf(t);
+    return { id: t.id, roster: t.roster.map(sim), ...act, ...(irCut != null ? { irCut } : {}) };
   });
 
   const gameDays = new Map<number, Set<number>>();

@@ -1,309 +1,257 @@
-import Link from "next/link";
 import { PlayerCardButton } from "@/components/fc/player-card";
-import type { RosterPlayer } from "@fantasy-copilot/espn";
-import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
+import { IlPlanNote } from "@/components/fc/il-plan-note";
+import { ilReturnPlan } from "@/lib/nba/il-plan";
+import { Callout, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
-import { fmtPts } from "@/lib/format";
-import { loadPlayerPool } from "@/lib/nba/pool";
-import { perGameProjection } from "@/lib/nba/projection";
-import { hotAndCold, injuryOpenings, ownershipRisers, type PoolPlayer } from "@/lib/nba/trends";
-import { searchPlayers } from "@/lib/player-search";
-import { PlayerSearch } from "@/components/fc/player-search";
-import { TeamTabs } from "@/components/fc/team-tabs";
-import { cn } from "@/lib/utils";
+import { fmtPts, fmtTip } from "@/lib/format";
+import { loadWaiverView } from "@/lib/nba/waivers-view";
+import { LiveRefresh } from "@/components/live-refresh";
+import { moveChecks, moveKey, type MoveChecks } from "@/lib/nba/move-checks";
+import type { MoveEffect } from "@/lib/nba/move-sim";
+import { MoveCard, type MoveOption, type MoveSim } from "@/components/fc/move-card";
+import { PlayersNav } from "@/components/fc/players-nav";
+import { redirect } from "next/navigation";
+import { latestOutlook } from "@/lib/nba/outlook-run";
+import { dbConfigured } from "@/lib/db";
+import { winChanceLabel } from "@/lib/nba/week";
+import type { StreamOption, WaiverCandidate } from "@/lib/nba/waivers";
 
-const signed = (n: number) => `${n >= 0 ? "+" : ""}${fmtPts(n)}`;
+const clearsAt = (ms: number) =>
+  `${new Date(ms).toLocaleDateString("en-US", { weekday: "short", timeZone: process.env.DISPLAY_TZ || "America/Phoenix" })} ${fmtTip(new Date(ms).toISOString())}`;
 
-/** A player link: headshot, name, status, team and owner, with a value on the right. */
-function PlayerLink({
-  player,
-  owner,
-  mine,
-  available,
-  right,
-  sub,
-}: {
-  player: RosterPlayer;
-  owner?: string;
-  mine?: boolean;
-  available?: boolean;
-  right?: React.ReactNode;
-  sub?: React.ReactNode;
-}) {
+function Who({ c }: { c: WaiverCandidate }) {
   return (
-    <PlayerCardButton
-      id={player.id}
-      className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-muted/50"
-    >
-      <PlayerAvatar id={player.id} name={player.name} size={36} />
-      <div className="min-w-0 flex-1">
+    <PlayerCardButton id={c.player.id} className="flex min-w-0 items-center gap-2.5 rounded-md">
+      <PlayerAvatar id={c.player.id} name={c.player.name} size={40} />
+      <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="truncate font-medium">{player.name}</span>
-          <StatusPill status={player.injuryStatus ?? "ACTIVE"} />
+          <span className="truncate font-medium">{c.player.name}</span>
+          <StatusPill status={c.player.injuryStatus ?? "ACTIVE"} />
+          {c.status === "WAIVERS" && <Pill tone="info">Waivers</Pill>}
         </div>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-          <TeamLogo abbr={player.proTeam} size={12} />
-          <span className="truncate">
-            {player.positions.join("/")}
-            {owner && (
-              <>
-                {" · "}
-                <span className={cn(mine && "font-medium text-success", available && "text-info")}>
-                  {mine ? "Your team" : owner}
-                </span>
-              </>
-            )}
-            {sub && <> · {sub}</>}
-          </span>
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <TeamLogo abbr={c.player.proTeam} size={14} />
+          {c.player.positions.join("/")} · {fmtPts(c.fppg)} FP/G · {c.weekGames} game
+          {c.weekGames === 1 ? "" : "s"} left this week
         </div>
       </div>
-      {right && <div className="shrink-0 text-right tabular-nums">{right}</div>}
     </PlayerCardButton>
   );
 }
 
-const List = ({ children }: { children: React.ReactNode }) => (
-  <div className="divide-y overflow-hidden rounded-xl border bg-card">{children}</div>
-);
+/** Checked moves first: clear title gains, then clear win gains, even, unchecked, and losses. */
+function rankByChecks(options: StreamOption[], checks: MoveChecks | null): StreamOption[] {
+  if (!checks?.byKey.size) return options;
+  const group = (e: MoveEffect | undefined) =>
+    !e
+      ? 3
+      : e.verdict === "better"
+        ? e.decidedBy === "title"
+          ? 0
+          : 1
+        : e.verdict === "even"
+          ? 2
+          : 4;
+  // Within "even" (and unchecked) the quick ranking's order stands: the differences are noise.
+  const size = (e: MoveEffect | undefined) =>
+    !e || e.verdict === "even" ? 0 : e.decidedBy === "title" ? e.title.d : e.wins.d;
+  return [...options].sort((x, y) => {
+    const ex = checks.byKey.get(moveKey(x));
+    const ey = checks.byKey.get(moveKey(y));
+    return group(ex) - group(ey) || size(ey) - size(ex);
+  });
+}
 
-/** Running hot and running cold, side by side from tablet width. */
-function Streaks({ hot, cold }: ReturnType<typeof hotAndCold>) {
-  if (!hot.length && !cold.length)
-    return (
-      <Callout tone="info">
-        Hot and cold streaks appear once players have 2+ games in the last 7 days.
-      </Callout>
-    );
+/** What each number on a move means (a disclosure, so phones see it too). */
+function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
   return (
-    <div className="grid gap-3 md:grid-cols-2">
-      {[
-        { title: "Running hot", rows: hot },
-        { title: "Running cold", rows: cold },
-      ].map(({ title, rows }) => (
-        <div key={title} className="space-y-1">
-          <div className="px-1 text-xs font-medium">{title}</div>
-          <List>
-            {rows.map((r) => (
-              <PlayerLink
-                key={r.entry.player.id}
-                {...r.entry}
-                right={
-                  <>
-                    <div
-                      className={cn("font-semibold", r.delta > 0 ? "text-success" : "text-danger")}
-                    >
-                      {signed(r.delta)}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {fmtPts(r.recent)} in {r.games} g
-                    </div>
-                  </>
-                }
-              />
-            ))}
-          </List>
-        </div>
-      ))}
-    </div>
+    <details className="group rounded-lg border bg-card px-3 py-2 text-xs text-muted-foreground">
+      <summary className="cursor-pointer list-none font-medium text-foreground [&::-webkit-details-marker]:hidden">
+        How to read these numbers
+        <span className="ml-1 inline-block transition-transform group-open:rotate-180">▾</span>
+      </summary>
+      <ul className="mt-2 list-disc space-y-1.5 pl-4">
+        <li>
+          <b className="text-foreground">Season sim</b>: the Outlook&apos;s season simulation,
+          played out with and without the move on the same random draws; each season&apos;s playoffs
+          are replayed 10 times so the title odds aren&apos;t swamped by playoff luck.
+          &ldquo;Now&rdquo; is your latest Outlook; &ldquo;With move&rdquo; adds the simulated
+          change. ± is the margin of error (two standard errors): a change smaller than it could be
+          chance. Close calls get a second batch of seasons for a tighter margin.
+        </li>
+        <li>
+          <b className="text-foreground">This week&apos;s matchup</b>: your win chance against this
+          week&apos;s opponent, now and with the move (the Matchup page&apos;s model).
+        </li>
+        <li>
+          <b className="text-foreground">Lineup points</b>: projected starting-lineup points gained
+          or lost, this week and over the rest of the season (playoff days count double). Only
+          starts count: a player who&apos;d sit on your bench adds nothing.
+        </li>
+        <li>
+          <b className="text-foreground">Points estimate</b>: a fast estimate in expected wins: this
+          week&apos;s change in win chance plus the rest of the season&apos;s points at ~
+          {(winsPerPoint * 100).toFixed(2)} wins per 100. It ranks every add against every possible
+          drop and picks which moves the simulation checks. Unlike the simulation, it assumes your
+          roster stays as it is (no future pickups).
+        </li>
+        <li>
+          <b className="text-foreground">Drop</b>: the best drop is picked for you; choose another
+          player to see that move&apos;s numbers. The number after each name is its points estimate;
+          ✓ marks drops the simulation has checked (it checks the top moves automatically).
+        </li>
+      </ul>
+    </details>
   );
 }
 
-export default async function PlayersPage({
+/** A move as the card shows it, from the analysis' option for one drop. */
+function optionOf(o: StreamOption): MoveOption {
+  return {
+    key: moveKey(o),
+    dropId: o.drop?.id ?? null,
+    dropName: o.drop?.name ?? null,
+    ilId: o.il?.id ?? null,
+    ilName: o.il?.name ?? null,
+    deltaPts: o.deltaPts,
+    deltaWin: o.deltaWin,
+    laterPts: o.laterPts,
+    laterWins: o.laterWins,
+    netWins: o.netWins,
+    addStarts: o.addUsage?.starts ?? null,
+    addGames: o.addUsage?.games ?? null,
+    dropStarts: o.dropStarts,
+    rosCost: Math.max(0, -o.rosDelta),
+  };
+}
+
+/** Players → Moves (was Waivers): the best adds, each checked with the season simulation. */
+export default async function MovesPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const q = ((await searchParams).q ?? "").trim();
+  // Old links: /nba/players?q= searched here; search results live under Trends now.
+  const { q } = await searchParams;
+  if (q) redirect(`/nba/players/trends?q=${encodeURIComponent(q)}`);
 
   let v;
   try {
-    v = await loadPlayerPool();
+    v = await loadWaiverView();
   } catch (e) {
     if (e instanceof SetupError) return <SetupNotice message={e.message} />;
-    return <ErrorNotice title="Couldn't load players" message={(e as Error).message} />;
+    return <ErrorNotice title="Couldn't load waivers" message={(e as Error).message} />;
   }
-  const { data, freeAgents, pool } = v;
-  // ?q= (the search box without JavaScript, or Enter): the same ranking as search as you type.
-  const byId = new Map(pool.map((e) => [e.player.id, e]));
-  const results: PoolPlayer[] = q
-    ? searchPlayers(
-        pool.map((e) => ({
-          id: e.player.id,
-          name: e.player.name,
-          team: e.player.proTeam,
-          positions: e.player.positions,
-          owner: e.owner,
-          mine: e.mine,
-          available: e.available,
-          status: e.player.injuryStatus ?? "ACTIVE",
-          fppg: perGameProjection(e.player).fppg,
-          owned: e.player.percentOwned ?? 0,
-        })),
-        q,
-        25,
-      ).map((h) => byId.get(h.player.id)!)
-    : [];
-  const streaks = hotAndCold(pool);
-  const freeStreaks = hotAndCold(pool.filter((e) => e.available));
-  const risers = ownershipRisers(freeAgents, 8);
-  const openings = injuryOpenings(
-    pool.map((e) => e.player),
-    data.injuries,
-    freeAgents,
-  ).slice(0, 6);
-  const mine = [...data.me.roster].sort(
-    (a, b) => perGameProjection(b).fppg - perGameProjection(a).fppg,
+  const { analysis, view, addsCap, addsUsed } = v;
+  const addsLeft = Math.max(0, addsCap - addsUsed);
+  const onWaivers = v.freeAgents.filter((f) => f.status === "WAIVERS");
+  const nextClear = onWaivers
+    .map((f) => f.waiverUntil ?? 0)
+    .filter(Boolean)
+    .sort((a, b) => a - b)[0];
+  const [checks, outlookRun] = await Promise.all([
+    moveChecks(v).catch(() => null),
+    dbConfigured() ? latestOutlook().catch(() => null) : Promise.resolve(null),
+  ]);
+  const myOutlook = outlookRun?.results.find((t) => t.teamId === v.data.me.id);
+  const outlook = myOutlook
+    ? {
+        title: myOutlook.champ,
+        playoffs: myOutlook.playoffs,
+        seed1: myOutlook.seed1,
+        wins: myOutlook.expWins,
+      }
+    : null;
+  const sims: Record<string, MoveSim> = Object.fromEntries(
+    [...(checks?.byKey ?? [])].map(([k, e]: [string, MoveEffect]) => [
+      k,
+      {
+        title: e.title,
+        playoffs: e.playoffs,
+        seed1: e.seed1,
+        wins: e.wins,
+        seasons: e.seasons ?? checks!.seasons,
+      },
+    ]),
   );
-
+  const card = (o: StreamOption) => {
+    const options = (analysis.dropOptions.get(o.add.player.id) ?? [o]).map(optionOf);
+    return (
+      <MoveCard
+        key={o.add.player.id}
+        who={<Who c={o.add} />}
+        addId={o.add.player.id}
+        addName={o.add.player.name}
+        claim={o.add.status === "WAIVERS"}
+        claimNote={o.add.waiverUntil ? `Claims process ${clearsAt(o.add.waiverUntil)}.` : null}
+        addsLeft={addsLeft}
+        addsCap={addsCap}
+        options={options}
+        initialKey={moveKey(o)}
+        sims={sims}
+        outlook={outlook}
+        weekWin={analysis.baseWin}
+        checking={!!checks && !checks.fresh}
+      />
+    );
+  };
+  const best = rankByChecks(analysis.best.slice(0, 8), checks);
+  const shown = new Set(best.map((o) => o.add.player.id));
+  // Streams that help this week but cost more later than they gain now.
+  const streams = analysis.thisWeek
+    .filter((o) => !shown.has(o.add.player.id) && (o.deltaWin ?? 0) > 0.005)
+    .slice(0, 5);
   return (
     <>
-      <PageHeader
-        title="Players & trends"
-        subtitle="Every rostered player and free agent in your league"
+      <PlayersNav
+        view="moves"
+        subtitle={`Week ${view.mp} · ${addsLeft} of ${addsCap} adds left${
+          analysis.baseWin != null ? ` · ${winChanceLabel(analysis.baseWin, false)} to win now` : ""
+        }`}
       />
 
-      <PlayerSearch initial={q} />
+      <IlPlanNote plan={ilReturnPlan(v.data.ahead.me, v.data, v.sp)} />
 
-      {q ? (
-        <section className="space-y-1.5">
-          <SectionTitle aside={`${results.length} found`}>Results</SectionTitle>
-          {results.length ? (
-            <List>
-              {results.map((e) => (
-                <PlayerLink
-                  key={e.player.id}
-                  {...e}
-                  right={
-                    <>
-                      <div className="font-semibold">
-                        {fmtPts(perGameProjection(e.player).fppg)}
-                      </div>
-                      <div className="text-[11px] text-muted-foreground">proj FP/G</div>
-                    </>
-                  }
-                />
-              ))}
-            </List>
-          ) : (
-            <Callout tone="info">
-              No player matching &ldquo;{q}&rdquo; is rostered or among the 250 most-owned free
-              agents. Type in the search box to search every player.
-            </Callout>
-          )}
-        </section>
-      ) : (
-        <>
-          <section className="space-y-1.5">
-            <SectionTitle aside="Last 7 days vs projection">Hot & cold</SectionTitle>
-            <TeamTabs
-              tabs={[
-                { label: "All players", content: <Streaks {...streaks} /> },
-                { label: "Free agents", content: <Streaks {...freeStreaks} /> },
-              ]}
-            />
-          </section>
+      {onWaivers.length > 0 && nextClear && (
+        <Callout tone="info">
+          {onWaivers.length === v.freeAgents.length
+            ? "Every available player is"
+            : `${onWaivers.length} players are`}{" "}
+          on waivers until {clearsAt(nextClear)}. Claims process then (in waiver order); after that,
+          free agents can be added instantly.
+        </Callout>
+      )}
 
-          {openings.length > 0 && (
-            <section className="space-y-1.5">
-              <SectionTitle aside="Free agents behind a key player who's out">
-                Minutes opening up
-              </SectionTitle>
-              <List>
-                {openings.map((o) => (
-                  <div key={o.proTeam} className="px-3 py-2.5">
-                    <div className="space-y-1">
-                      {o.outs.map(({ player: out, note }) => (
-                        <div
-                          key={out.id}
-                          className="flex items-center gap-1.5 text-xs text-muted-foreground"
-                        >
-                          <TeamLogo abbr={out.proTeam} size={14} />
-                          <Link
-                            href={`/nba/players/${out.id}`}
-                            className="shrink-0 font-medium text-foreground hover:underline"
-                          >
-                            {out.name}
-                          </Link>
-                          <Pill tone="danger">Out</Pill>
-                          {note && <span className="truncate">{note}</span>}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="mt-1.5 -mx-3 divide-y">
-                      {o.beneficiaries.map((f) => (
-                        <PlayerLink
-                          key={f.player.id}
-                          player={f.player}
-                          owner={f.status === "WAIVERS" ? "Waivers" : "Free agent"}
-                          available
-                          right={
-                            <>
-                              <div className="font-semibold">
-                                {fmtPts(perGameProjection(f.player).fppg)}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">proj FP/G</div>
-                            </>
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </List>
-            </section>
-          )}
+      <section className="space-y-1.5">
+        <SectionTitle aside="Checked with the season simulation: title odds first">
+          Best moves
+        </SectionTitle>
+        <HowToRead winsPerPoint={analysis.winsPerPoint} />
+        {checks && !checks.fresh && <LiveRefresh active seconds={15} />}
+        {best.length ? (
+          <div className="divide-y overflow-hidden rounded-xl border bg-card">{best.map(card)}</div>
+        ) : (
+          <Callout tone="info">
+            No add improves your expected wins right now: every free agent either wouldn&apos;t
+            crack your lineup or costs more later than it gains this week.
+          </Callout>
+        )}
+      </section>
 
-          {risers.length > 0 && (
-            <section className="space-y-1.5">
-              <SectionTitle aside="Ownership change across ESPN, last 7 days">
-                Free agents being added
-              </SectionTitle>
-              <List>
-                {risers.map((f) => (
-                  <PlayerLink
-                    key={f.player.id}
-                    player={f.player}
-                    owner={f.status === "WAIVERS" ? "Waivers" : "Free agent"}
-                    available
-                    sub={`${fmtPts(perGameProjection(f.player).fppg)} proj FP/G`}
-                    right={
-                      <>
-                        <div className="font-semibold text-success">
-                          +{fmtPts(f.player.percentChange ?? 0)}%
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">
-                          {Math.round(f.player.percentOwned ?? 0)}% owned
-                        </div>
-                      </>
-                    }
-                  />
-                ))}
-              </List>
-            </section>
-          )}
-
-          <section className="space-y-1.5">
-            <SectionTitle>Your roster</SectionTitle>
-            <List>
-              {mine.map((p) => (
-                <PlayerLink
-                  key={p.id}
-                  player={p}
-                  right={
-                    <>
-                      <div className="font-semibold">{fmtPts(perGameProjection(p).fppg)}</div>
-                      <div className="text-[11px] text-muted-foreground">proj FP/G</div>
-                    </>
-                  }
-                />
-              ))}
-            </List>
-          </section>
-        </>
+      {streams.length > 0 && (
+        <details className="group">
+          <summary className="cursor-pointer list-none px-1 text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            This-week-only streams ({streams.length}): they help now but cost more later
+            <span className="ml-1 inline-block transition-transform group-open:rotate-180">▾</span>
+          </summary>
+          <div className="mt-1.5 divide-y overflow-hidden rounded-xl border bg-card">
+            {streams.map(card)}
+          </div>
+        </details>
       )}
     </>
   );

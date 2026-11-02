@@ -117,10 +117,10 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
           {fa.status === "WAIVERS" ? "On waivers." : "Free agent."} See how he&apos;d fit your week
           on{" "}
           <Link
-            href="/nba/waivers"
+            href="/nba/players"
             className="font-medium text-primary underline-offset-2 hover:underline"
           >
-            Waivers
+            Players → Moves
           </Link>
           .
         </Callout>

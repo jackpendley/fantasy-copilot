@@ -11,6 +11,7 @@ import {
   shortDay,
 } from "@/lib/nba/calendar";
 import { buildDayBoard } from "@/lib/nba/day";
+import { fmtDayTime } from "@/lib/format";
 import {
   minutesTrend,
   perGameProjection,
@@ -66,6 +67,11 @@ describe("calendar", () => {
     expect(gameDate(new Date("2026-10-29T07:05:00Z"))).toBe("2026-10-29");
     // Midday: the same date everywhere.
     expect(gameDate(new Date("2026-11-02T18:00:00Z"))).toBe("2026-11-02");
+  });
+  it("dates job runs in Arizona, not UTC", () => {
+    // 7:10 PM Nov 1 in Arizona is already Nov 2 in UTC.
+    expect(fmtDayTime(new Date("2026-11-02T02:10:00Z"))).toBe("11-01 7:10 PM");
+    expect(fmtDayTime("2026-11-02T11:03:00Z")).toBe("11-02 4:03 AM");
   });
   it("has a 6-day week 1, Monday weeks, the Cup week 8 and a merged All-Star week", () => {
     expect(scoringPeriodsOf(1)).toEqual([1, 2, 3, 4, 5, 6]);

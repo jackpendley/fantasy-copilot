@@ -2,6 +2,7 @@ import "server-only";
 // Scheduled jobs, called by /api/cron/[job]. Each logs one refresh_log row.
 
 import { EspnError } from "@fantasy-copilot/espn";
+import { fetchDarko } from "@fantasy-copilot/nba-data";
 import { db } from "./db";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
@@ -23,6 +24,42 @@ import { refreshTradeTargets } from "./nba/trade-view";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
+}
+
+/** An error's message plus its cause, which fetch hides ("fetch failed: ECONNRESET"). */
+export function errorText(e: unknown): string {
+  const err = e as Error & { cause?: { code?: string; message?: string } };
+  const cause = err.cause?.code ?? err.cause?.message;
+  return cause && !err.message.includes(cause) ? `${err.message}: ${cause}` : err.message;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One step of a scheduled job: its result (or "ok") or its error goes to refresh_log under
+ * its own name, so Settings shows each step's latest state. A failure returns null and never
+ * stops the job. `retries` are waits in ms before each retry.
+ */
+async function step<T>(
+  job: string,
+  run: () => Promise<T>,
+  retries: number[] = [],
+): Promise<T | null> {
+  for (let i = 0; ; i++) {
+    try {
+      const out = await run();
+      const detail = out == null || typeof out === "boolean" ? "ok" : JSON.stringify(out);
+      await log(job, "ok", detail.slice(0, 2000)).catch(() => {});
+      return out;
+    } catch (e) {
+      if (i < retries.length) {
+        await sleep(retries[i]!);
+        continue;
+      }
+      await log(job, "error", errorText(e)).catch(() => {});
+      return null;
+    }
+  }
 }
 
 /** Window around today's games when the 5-minute checks do real work. */
@@ -58,14 +95,24 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
         url: "/nba/today",
       });
     }
-    await log("gameday", "error", (e as Error).message);
+    await log("gameday", "error", errorText(e));
     throw e;
   }
 
+  // DARKO publishes once a day at no fixed time: look hourly, game day or not.
+  const darko = await darkoCheck(now, data, sp).catch(async (e: Error) => {
+    await log("darko", "error", errorText(e)).catch(() => {});
+    return null;
+  });
+
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
-  if (!games.length) return { ...watch, skipped: "no games today" };
+  if (!games.length) return { ...watch, darko, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
+
+  // Today's win-chance point, if the nightly job couldn't record it (before the first tip only,
+  // so it's still a pregame snapshot).
+  if (t < Math.min(...tips) && etHour(now) >= 8) await snapshotIfMissing(sp, now);
 
   // Availability forward test (MODEL_CARD 2026-10-30): the official injury report and ESPN's
   // feed for every listed player, from 9 AM on game days (its midday snapshot comes long before
@@ -89,7 +136,13 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
 
   if (t < Math.min(...tips) - BEFORE_FIRST_TIP_MS || t > Math.max(...tips) + AFTER_LAST_TIP_MS) {
     const trades = morningNews ? await refreshTrades() : null;
-    return { ...watch, availability, tradesRefreshed: trades, skipped: "outside game window" };
+    return {
+      ...watch,
+      darko,
+      availability,
+      tradesRefreshed: trades,
+      skipped: "outside game window",
+    };
   }
 
   const { events, newEvents } = await logStatusEvents(data, date);
@@ -121,11 +174,19 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   const alerts = gamedayAlerts(board, date, now, fmtTip);
   let sent = 0;
   for (const a of alerts) {
-    if (await sendAlertOnce(a.key, { title: a.title, body: a.body, url: a.url })) sent++;
+    // A push failure is logged; it never stops the checks.
+    const ok = await sendAlertOnce(a.key, { title: a.title, body: a.body, url: a.url }).catch(
+      async (e: Error) => {
+        await log("push", "error", errorText(e)).catch(() => {});
+        return false;
+      },
+    );
+    if (ok) sent++;
   }
   const result = {
     date,
     ...watch,
+    darko,
     closingProps: market?.props ?? 0,
     tradesRefreshed: trades,
     events: events.length,
@@ -141,49 +202,23 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
 /** Once a day, before the games: re-run the season outlook with yesterday's results. */
 export async function nightlyJob(): Promise<Record<string, unknown>> {
   try {
-    // Before today's games: this week's win chance, for the matchup page's chart. A failure
-    // here is logged but doesn't stop the season outlook.
-    // One retry: a transient ESPN or database error would otherwise leave a day off the chart.
-    const matchup = await recordMatchupSnapshot()
-      .catch(async () => {
-        await new Promise((r) => setTimeout(r, 10_000));
-        return recordMatchupSnapshot();
-      })
-      .catch(async (e: Error) => {
-        await log("matchup-snapshot", "error", e.message);
-        return null;
-      });
+    // Before today's games: this week's win chance, for the matchup page's chart. Two retries
+    // (a transient ESPN or network error would otherwise leave a day off the chart); the
+    // 5-minute job tries again before the first tip if it's still missing.
+    const matchup = await step("matchup-snapshot", () => recordMatchupSnapshot(), [20_000, 60_000]);
     // Every league matchup's state, for calibrating the weekly win probability.
-    const states = await recordMatchupStates().catch(async (e: Error) => {
-      await log("matchup-states", "error", e.message);
-      return null;
-    });
+    const states = await step("matchup-states", () => recordMatchupStates(), [20_000]);
     const { scoringPeriod, teams } = await runOutlook();
     // A new day's projections: have the trade ideas ready for the first visit.
-    const trades = await refreshTradeTargets().catch(async (e: Error) => {
-      await log("trade-targets", "error", e.message);
-      return null;
-    });
-    const moves = await refreshMoveChecks().catch(async (e: Error) => {
-      await log("move-checks", "error", e.message);
-      return null;
-    });
+    const trades = await step("trade-targets", () => refreshTradeTargets());
+    const moves = await step("move-checks", () => refreshMoveChecks());
     // PBP Stats season numbers for the player cards (this season and last).
     const season = Number(process.env.ESPN_SEASON || 2027);
-    const pbp = await refreshPbpPlayers([season, season - 1]).catch(async (e: Error) => {
-      await log("pbp-players", "error", e.message);
-      return null;
-    });
+    const pbp = await step("pbp-players", () => refreshPbpPlayers([season, season - 1]));
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
-    const market = await collectToday("morning", true).catch(async (e: Error) => {
-      await log("market-data", "error", e.message);
-      return null;
-    });
+    const market = await step("market-data", () => collectToday("morning", true));
     // Opponent defense by position from every result so far (after yesterday's box scores).
-    const defense = await refreshDefense().catch(async (e: Error) => {
-      await log("defense", "error", e.message);
-      return null;
-    });
+    const defense = await step("defense", () => refreshDefense());
     const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
     const result = {
       scoringPeriod,
@@ -200,7 +235,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     await log("nightly", "ok", JSON.stringify(result));
     return result;
   } catch (e) {
-    await log("nightly", "error", (e as Error).message);
+    await log("nightly", "error", errorText(e));
     throw e;
   }
 }
@@ -251,6 +286,32 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
   };
 }
 
+/** Scoring periods whose win-chance snapshot is known to exist (per server instance). */
+const snapshotted = new Set<number>();
+
+async function snapshotIfMissing(sp: number, now: Date) {
+  if (snapshotted.has(sp)) return;
+  const [row] = await db()`select 1 from matchup_snapshots where scoring_period = ${sp} limit 1`;
+  if (!row) await step("matchup-snapshot", () => recordMatchupSnapshot(now));
+  snapshotted.add(sp);
+}
+
+/** DARKO's latest as-of date seen by this server instance (saves a database check). */
+let darkoSeen: string | null = null;
+
+/** Once an hour from 6 AM ET: snapshot DARKO's projections when it has published a new run. */
+async function darkoCheck(now: Date, data: Awaited<ReturnType<typeof loadLeague>>, sp: number) {
+  if (now.getUTCMinutes() >= 5 || etHour(now) < 6) return null;
+  const fetched = await fetchDarko();
+  if (!fetched.asOf || fetched.asOf === darkoSeen) return null;
+  const free = await loadFreeAgents(sp).catch(() => []);
+  const players = [...data.ahead.teams.flatMap((t) => t.roster), ...free.map((f) => f.player)];
+  const out = await snapshotDarko(players, fetched);
+  darkoSeen = fetched.asOf;
+  if ("matched" in out) await log("darko", "ok", JSON.stringify(out));
+  return out.darko;
+}
+
 /** Early evening, before most tips: the pregame snapshot of props and game lines. */
 export async function pregameJob(): Promise<Record<string, unknown>> {
   try {
@@ -258,7 +319,7 @@ export async function pregameJob(): Promise<Record<string, unknown>> {
     await log("pregame", "ok", JSON.stringify(result));
     return result;
   } catch (e) {
-    await log("pregame", "error", (e as Error).message);
+    await log("pregame", "error", errorText(e));
     throw e;
   }
 }

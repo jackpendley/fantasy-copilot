@@ -154,8 +154,11 @@ export async function collectMarketData(
  * Save today's DARKO projections, matched to ESPN ids by name (then team). Skipped when
  * DARKO hasn't published a new as-of date since the last snapshot.
  */
-export async function snapshotDarko(players: RosterPlayer[]) {
-  const { asOf, players: darko } = await fetchDarko();
+export async function snapshotDarko(
+  players: RosterPlayer[],
+  fetched?: Awaited<ReturnType<typeof fetchDarko>>,
+) {
+  const { asOf, players: darko } = fetched ?? (await fetchDarko());
   if (!asOf) return { darko: "no data" };
   const seen = await db()`
     select 1 from projection_snapshots where source = 'darko' and as_of = ${asOf} limit 1

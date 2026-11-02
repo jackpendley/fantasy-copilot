@@ -15,6 +15,8 @@ import { db, dbConfigured } from "@/lib/db";
 import { memoFetch } from "@/lib/fetch-memo";
 
 const SLOW = memoFetch(6 * 3600_000);
+// DARKO publishes once a day at no fixed time: look again hourly.
+const HOURLY = memoFetch(3600_000);
 
 /** "Ja'Kobe Walter Jr." and "Jakobe Walter" both become "jakobe walter". */
 export function nameKey(name: string): string {
@@ -206,7 +208,7 @@ export interface DarkoView {
 }
 
 export async function darkoView(name: string, team: string, scoring: ScoringMap) {
-  const res = await SLOW("https://www.darko.app/projections/__data.json");
+  const res = await HOURLY("https://www.darko.app/projections/__data.json");
   if (!res.ok) return null;
   const { asOf, players } = parseDarko(await res.json());
   const d = byName(players, name, team, (x) => [x.name, x.team]);

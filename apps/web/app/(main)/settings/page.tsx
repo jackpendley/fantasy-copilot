@@ -5,7 +5,7 @@ import { PushSettings } from "@/components/push-settings";
 import { PageHeader } from "@/components/fc/bits";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { db, dbConfigured } from "@/lib/db";
-import { fmtTip } from "@/lib/format";
+import { fmtDayTime } from "@/lib/format";
 
 type JobRow = { job: string; status: string; detail: string | null; ran_at: Date };
 
@@ -26,7 +26,7 @@ async function jobStatus() {
   `;
 }
 
-const when = (d: Date) => `${d.toISOString().slice(5, 10)} ${fmtTip(d.toISOString())}`;
+const when = (d: Date) => fmtDayTime(d);
 
 export default async function SettingsPage() {
   const [jobs, status] = await Promise.all([
@@ -76,7 +76,8 @@ export default async function SettingsPage() {
           <CardTitle>Background jobs</CardTitle>
           <CardDescription>
             Game-day checks run every 5 minutes (cron-job.org) and only log when they do work: a
-            roster move or the window around games. Nightly and pregame run once a day.
+            roster move, a new DARKO run or the window around games. Nightly and pregame run once a
+            day, and each step of the nightly run shows its own latest result.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-1 text-sm">

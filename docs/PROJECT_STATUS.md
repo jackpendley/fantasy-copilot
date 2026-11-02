@@ -1,44 +1,57 @@
-# Project status (2026-11-01)
+# Project status (2026-11-02)
 
 ## Where things stand
 
-**Live** at **https://fantasycopilot.vercel.app**, on Vercel Hobby with Neon Postgres. Pages:
+**Live** at **https://fantasycopilot.vercel.app**, on Vercel Hobby with Neon Postgres. Four tabs:
 
-- Today
-- Matchup (`/nba/week`)
-- Waivers
-- Players
-- League / Trades
-- Outlook
-- Model (`/nba/model`)
-- Settings
+- **Today**
+- **Matchup** (`/nba/week`):
+  - any week (`?week=`) and any team (`?team=`);
+  - every league matchup with its win chance;
+  - both teams' schedules.
+- **Players** (`/nba/players`):
+  - Moves (was Waivers);
+  - Free agents;
+  - Trends (was Players);
+  - search as you type.
+- **League** (`/nba/league`): your odds, what changed, the odds chart (was Outlook), standings with strength and odds, Trades.
 
-Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
+Settings and Model accuracy are reached from the header. Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 
-**Shipped Oct 29 – Nov 1 (PRs #30–#50):**
+**Shipped Nov 2 (PRs #51–#61):**
 
-- **Scheduler (#30):** cron-job.org job 8752774 calls `/api/cron/gameday` every 5 minutes. Settings shows "Background jobs".
-- **Speed (#31, #32):** ESPN reads memoized; trade targets precomputed; skeletons. Outlook runs take ~20 s, with the first odds in ~4 s.
-- **Simulator IR fix (#33), waivers checked by the simulation (#34).**
-- **Projection:** minutes × rate (#35); opponent defense by position (#37); unprojected players' minutes × rate (#40).
-- **Player card v2 (#36).**
-- **Player rows (#38, #39, #41–#43):**
-  - Today and Matchup rows have three lines: logo, name and positions; the day's game, with the opponent's logo; his stats. Finished games read "Final 121-113" (no W/L).
-  - Matchup sides mirror a Today row: points over projection by the slot column.
-  - Phones in portrait have no headshots on Matchup (a side is ~150 px, no room beside a name and the score); landscape and desktop do.
-  - Long game and stat lines wrap instead of being cut; both sides are top-aligned.
-  - Checked at 320–1280 px: no horizontal scroll. The top nav moves to the bottom tab bar below 1024 px.
-- **Availability (#44, ADR-038):**
-  - Fitted play chances from three seasons of the NBA's official injury reports failed the held-out gate. They beat today's app (ESPN day-to-day = 0.75) but not fixed per-status chances.
-  - The official statuses with the existing priors are now **tested forward**. The 5-minute job logs each new official report (table `official_status`) and ESPN's whole injury feed, from 9 AM ET on game days.
-
-- **Win-probability logging (#45, ADR-039):** each matchup-morning now logs both sides' variance still to come, summed over projected starts (`matchup_states.*_start_var`). Candidate C is tested on it (MODEL_CARD, Pre-registration 3).
-- **Phone matchup rows (#46–#49; ADR-040, ADR-042–044):** a fixed 58 px, every line on one line, with full stat labels.
-  - Nothing is cut: when a line is too wide, the whole board's text shrinks together (`FitGroup`, one scale for all seven days) on Matchup and Today. Matchup's scale is 100% from 412 px, 87% at 390 px and 65% at 360 px, set by the longest name with a badge. Names keep their suffixes; badges sit on the name line; tip times read "7:00 PM".
-  - Other pages (Waivers, Players, Trades, League) still truncate with "…".
-- **Win probability, candidate C on 2025-26 (#46, MODEL_CARD 3b):** rebuilt from last season's daily rosters. Brier 0.0865 vs 0.0872, interval [−0.0028, +0.0017]: not shipped. Both models are overconfident at the top (95%+ won 92–94%).
-
-- **Game day on Jack's clock (#50, ADR-045):** "today" turns over at Jack's midnight (never before 3 AM ET), not at midnight ET. Past days show dropped players by name.
+- **Jobs and push (#51):**
+  - Nightly steps log their own results (the Oct 29 matchup-snapshot "fetch failed" was a one-off).
+  - Errors keep their cause; the snapshot retries.
+  - Settings dates are in Arizona time.
+  - Push survives a bad device, and an alert is only marked sent once delivered.
+  - DARKO is checked hourly.
+  - Jack rotated the VAPID keys; push works on his iPhone.
+- **Matchup (#52):**
+  - Past weeks show finals; later weeks are projected.
+  - A league scoreboard of all matchups with win chances; `matchup_states` drives other matchups' charts.
+  - Schedule tabs for both teams.
+  - The boards are unchanged.
+- **Waivers, now Moves (#53, ADR-046):**
+  - Exact numbers: Outlook now → with move → change ± margin, plus this week's matchup.
+  - Any drop can be chosen and simulated on request.
+  - Clearer labels; the "Later" points fix.
+  - Free agents sort by any column, with G/F filters.
+- **Players search (#54):** the whole player list (~1,100) is searched in the browser as you type, with a ranked matcher. Hot & Cold has a free-agents toggle.
+- **Simulation precision (#55, ADR-047):**
+  - Playoff replays: title odds are ~2.4× as precise per CPU second.
+  - Waiver checks run in 400-season batches; close calls get a second batch within a 2-minute daily budget. Title change is ±1.3–1.4 (was ±3.2).
+  - Trades use replays too.
+  - Simulation CPU is logged and shown on Settings.
+- **Four tabs (#56, ADR-048):** Players and League merges, with redirects from old links.
+- **Fixes:**
+  - IR-return cuts follow one rule everywhere (#57, ADR-049).
+  - No cut-off text on the remaining pages (#58).
+  - This season's league team total in the game-environment factor (#59, ADR-050: 115.42 vs 115.3, effect under 0.1% today).
+  - Six simulated moves per refresh; the quick ranking keeps no streaming credit (#61, ADR-051: it doesn't track the simulation among close calls).
+- **Tests (#60, MODEL_CARD):**
+  - **Day-to-day players on later days passed and shipped.** They play ~59% tomorrow and ~70–75% after (the old rule was 75%, then 100%).
+  - **Manager activity from lineups:** neither candidate passed; `act` is unchanged.
 
 **Data sources** (free first; paid ones on hold, see memory `nba-data-sources`):
 
@@ -48,26 +61,35 @@ Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
 - PBP Stats;
 - the NBA official injury report (`ak-static.cms.nba.com`).
 
-**Read the injury report politely.** A burst of ~16,000 guessed file names got this machine refused for about an hour on Oct 29. The live job makes at most one request per 5 minutes. The backfill harness spaces requests 2 s apart and never caches a miss.
+**Read the injury report politely:** at most one request per 5 minutes live; backfills space requests 2 s apart.
 
-**Compute budget:** Vercel Hobby includes 4 active CPU-hours a month. Outlook runs take ~20 s, waiver checks ~40 s, trade refreshes ~5 s, and parsing a report ~0.2 s. Check Vercel → Usage.
+**Compute budget:**
+
+- Vercel Hobby includes 4 active CPU-hours a month.
+- Settings → Simulation CPU shows the last 30 days of Outlook, move-check and trade simulations.
+- Vercel → Usage has the full total, pages included.
+- Move checks: about 8 s per batch on Vercel; second batches stop once a day's move checks pass 2 minutes.
 
 ## Waiting on Jack
 
-1. **Push notifications:** rotate the VAPID keys, then enable on the iPhone.
-2. **Vercel → Usage:** check Active CPU after a few days with the scheduler on.
+1. **Vercel → Usage:** check Active CPU after a few days with the 5-minute job and the new simulation settings. Compare with Settings → Simulation CPU.
+2. **Optional:** set `VAPID_SUBJECT` to `mailto:` plus his email (push already works).
 
 ## Next tasks
 
-1. **Watch the first production runs of the new logging.** Look at `refresh_log` "gameday" (the `availability` field, and "official-report" errors). `official_status` should fill from 9 AM ET on game days.
-2. **Official statuses forward test:**
-   - write its evaluation (rows, snapshots and gate are pre-registered in MODEL_CARD);
-   - run it **once**, when there are ≥1,500 non-Out rows (roughly 3–4 weeks);
-   - if it passes, the day board and week projections use official statuses for listed players.
-3. **Props blend test** and **DARKO blend test:** they run nightly. Check `/nba/model` once 7 game days and 800 games are in.
-4. **Rest-of-season value with streaming** for the quick Waivers ranking.
-5. **Win probability, candidate C:** after week 7's finals (Dec 6), write the evaluation and run it **once** on weeks 3–7 (Pre-registration 3). Check from Nov 2 that `home_start_var` is filled. It failed the 2025-26 rebuilt test (3b), so the forward test decides.
-6. **Win-probability recalibration** after week 13 (Pre-registration 2), against whichever model is live.
-7. **IR-return cuts disagree:** when a player returns from IR to a full roster, the season simulator cuts the lowest per-game projection, but the quick Waivers ranking cuts whoever adds the fewest lineup points. On Nov 1 that split the two on Isaiah Jackson for Robinson vs Collins. Pick one rule for both, with a test.
-8. Replace the fixed league-average team total (115.3) with this season's average.
-9. **Days-ahead availability** (week projections still hold today's status for two days): a separate candidate.
+1. **Watch the first production runs:**
+   - Settings should show matchup-snapshot "ok" after the Nov 3 nightly run.
+   - "darko" rows when DARKO publishes.
+   - move-sim CPU in Settings.
+2. **Official statuses forward test** (pre-registered): run once when there are ≥1,500 non-Out rows (~3–4 weeks of logging).
+3. **Props blend and DARKO blend tests** run nightly; check `/nba/model`.
+4. **Win probability, candidate C:** after week 7's finals (Dec 6), run the forward test once on weeks 3–7 (Pre-registration 3).
+5. **Win-probability recalibration** after week 13 (Pre-registration 2).
+6. **Outlook precision:** once the monthly CPU is known, consider playoff replays for the Outlook too (title ±0.4 instead of ±0.8 at ~1.6× its CPU).
+7. **Manager activity:** a forward retest of the lineup-based share on this season's lineups, if pre-registered (2025-26 alone was inconclusive with 12 teams).
+8. **Free agents' Vegas props on Moves:** today's games for free agents use our model only (Today and Matchup use the blend).
+9. **Roadmap** (`docs/ROADMAP.md`):
+   - own projection models (minutes, play chance, rate);
+   - opponent manager profiles and scouting;
+   - a playoff-schedule planner;
+   - NFL and MLB later.

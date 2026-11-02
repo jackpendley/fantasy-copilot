@@ -390,6 +390,58 @@ describe("season outcomes", { timeout: 30_000 }, () => {
   });
 });
 
+describe("playoff replays", { timeout: 60_000 }, () => {
+  const teams = [team(1, 40), ...[2, 3, 4, 5, 6, 7, 8].map((id) => team(id, 30))];
+
+  it("keep the odds adding up, with the regular season unchanged", () => {
+    const plain = simulateSeason(league(teams, { seasons: 200 }));
+    const replayed = simulateSeason(league(teams, { seasons: 200, playoffReplays: 8 }));
+    const sum = (res: typeof plain, k: "final" | "champ") => res.reduce((a, r) => a + r[k], 0);
+    expect(sum(replayed, "champ")).toBeCloseTo(1, 9);
+    expect(sum(replayed, "final")).toBeCloseTo(2, 9);
+    // The regular season is played once either way: same wins, playoffs and #1 seeds.
+    for (const r of replayed) {
+      const p = plain.find((x) => x.teamId === r.teamId)!;
+      expect(r.expWins).toBe(p.expWins);
+      expect(r.playoffs).toBe(p.playoffs);
+      expect(r.seed1).toBe(p.seed1);
+    }
+  });
+
+  it("report each team's share of the replays, the first being the season's own playoffs", () => {
+    const shares: number[][] = [];
+    const firsts: number[] = [];
+    const replayed = simulateSeason(
+      league(teams, {
+        seasons: 50,
+        playoffReplays: 5,
+        inspect: (_s, o) => {
+          shares.push(o.titleShares);
+          firsts.push(o.champion);
+        },
+      }),
+    );
+    const plainChamps: number[] = [];
+    simulateSeason(
+      league(teams, { seasons: 50, inspect: (_s, o) => plainChamps.push(o.champion) }),
+    );
+    expect(firsts).toEqual(plainChamps);
+    for (const s of shares) expect(s.reduce((a, x) => a + x, 0)).toBeCloseTo(1, 9);
+    const team1 = shares.reduce((a, s) => a + s[0]!, 0) / 50;
+    expect(replayed.find((r) => r.teamId === 1)!.champ).toBeCloseTo(team1, 9);
+  });
+
+  it("estimate the same title odds as plain seasons, with less noise", () => {
+    // Team 1's title odds: many plain seasons vs fewer seasons with replays.
+    const plain = simulateSeason(league(teams, { seasons: 3000, seed: 11 }));
+    const replayed = simulateSeason(league(teams, { seasons: 600, seed: 12, playoffReplays: 10 }));
+    const p = plain.find((r) => r.teamId === 1)!.champ;
+    const q = replayed.find((r) => r.teamId === 1)!.champ;
+    // Plain SE at 3,000 seasons is ~0.009; the replayed estimate is tighter than that.
+    expect(Math.abs(p - q)).toBeLessThan(0.03);
+  });
+});
+
 describe("roster size", { timeout: 30_000 }, () => {
   it("never exceeds the roster limit: an IR return drops the fill-in, or the weakest player", () => {
     const input = goldenInput();

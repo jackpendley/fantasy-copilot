@@ -73,6 +73,13 @@ export interface SimInput {
   /** Per-game noise and weekly form sd (calibrated defaults). */
   noise?: number;
   form?: number;
+  /**
+   * Play each season's playoffs this many times from where its regular season ended (default
+   * 1). Title and final odds then count each replay as a share, which removes most of the
+   * playoff luck from the estimate at a fraction of the cost of more seasons. The first replay
+   * is the season's own playoffs, so 1 is exactly the plain simulation.
+   */
+  playoffReplays?: number;
 }
 
 /** One simulated season's ending, teams in input order. */
@@ -84,6 +91,8 @@ export interface SeasonOutcome {
   champion: number;
   seed1: number;
   playoffs: number[];
+  /** Each team's share of the playoff replays it won (input order); 1 for the champion without replays. */
+  titleShares: number[];
 }
 
 export interface SimTeamResult {
@@ -421,6 +430,20 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     }));
   };
 
+  // Playoff replays start on the first playoff day, once the regular season is still to finish
+  // or just finished (not when the simulation starts inside the playoffs).
+  const REPLAYS = Math.max(1, Math.floor(input.playoffReplays ?? 1));
+  const REPLAY_SALT = 0x51ed;
+  let replayFrom = -1;
+  if (REPLAYS > 1) {
+    for (let d = fromDay; d <= lastDay; d++) {
+      if (period[d] === input.playoffWeeks[0]) {
+        replayFrom = d;
+        break;
+      }
+    }
+  }
+
   for (let s = 0; s < input.seasons; s++) {
     const seasonKey = mix(seed, s);
     for (let h = 0; h < NH; h++) playerKey[h] = mix(seasonKey, idOf[h]!);
@@ -450,8 +473,10 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     const weekPts = banked.map((b) => Float64Array.from(b));
     let curP = 0;
     const orderKey = new Float64Array(n);
+    const rosterIds = () =>
+      st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id));
 
-    for (let d = fromDay; d <= lastDay; d++) {
+    const playDay = (d: number) => {
       const p = period[d]!;
       if (p !== curP) {
         curP = p;
@@ -568,7 +593,12 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
             );
         }
       }
-    }
+    };
+
+    // The regular season, then the playoffs (replayed from the same end of the regular season
+    // when asked: input.playoffReplays).
+    const regularEnd = replayFrom >= fromDay ? replayFrom - 1 : lastDay;
+    for (let d = fromDay; d <= regularEnd; d++) playDay(d);
     // Regular season: decided weeks keep their actual winner.
     const wins = new Array<number>(n).fill(0);
     const pf = new Array<number>(n).fill(0);
@@ -599,22 +629,86 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     seeds.forEach((i) => agg[i]!.po++);
     agg[seeds[0]!]!.seed1++;
     const [qw, sw, fw] = input.playoffWeeks;
-    const winnerOf = (a: number, b: number, w: number) =>
-      weekPts[a]![w]! >= weekPts[b]![w]! ? a : b;
-    const q1 = winnerOf(seeds[2]!, seeds[5]!, qw);
-    const q2 = winnerOf(seeds[3]!, seeds[4]!, qw);
-    const s1 = winnerOf(seeds[0]!, q2, sw);
-    const s2 = winnerOf(seeds[1]!, q1, sw);
-    agg[s1]!.final++;
-    agg[s2]!.final++;
-    const champion = winnerOf(s1, s2, fw);
-    agg[champion]!.champ++;
+    const bracket = () => {
+      const winnerOf = (a: number, b: number, w: number) =>
+        weekPts[a]![w]! >= weekPts[b]![w]! ? a : b;
+      const q1 = winnerOf(seeds[2]!, seeds[5]!, qw);
+      const q2 = winnerOf(seeds[3]!, seeds[4]!, qw);
+      const s1 = winnerOf(seeds[0]!, q2, sw);
+      const s2 = winnerOf(seeds[1]!, q1, sw);
+      return { s1, s2, champion: winnerOf(s1, s2, fw) };
+    };
+    const shares = new Float64Array(n);
+    let firstChampion = -1;
+    let endRosters: number[][] = [];
+    if (replayFrom < fromDay) {
+      const b = bracket();
+      agg[b.s1]!.final++;
+      agg[b.s2]!.final++;
+      agg[b.champion]!.champ++;
+      shares[b.champion] = 1;
+      firstChampion = b.champion;
+      endRosters = rosterIds();
+    } else {
+      // Where the regular season ended: every replay starts from here.
+      const saved = {
+        ready: ready.slice(),
+        readyList: readyList.slice(),
+        readyCount,
+        mult: mult.slice(),
+        form: form.slice(),
+        q: q.slice(),
+        out: out.slice(),
+        loadMgd: loadMgd.slice(),
+        faOwner: faOwner.slice(),
+        faList: [...faList],
+        st: st.map((x) => ({ ...x })),
+        weekPts: weekPts.map((w) => w.slice()),
+        curP,
+      };
+      for (let r = 0; r < REPLAYS; r++) {
+        if (r > 0) {
+          ready.set(saved.ready);
+          readyList.set(saved.readyList);
+          readyCount = saved.readyCount;
+          mult.set(saved.mult);
+          form.set(saved.form);
+          q.set(saved.q);
+          out.set(saved.out);
+          loadMgd.set(saved.loadMgd);
+          faOwner.set(saved.faOwner);
+          faList.length = 0;
+          faList.push(...saved.faList);
+          inFaList.clear();
+          for (const f of faList) inFaList.add(f);
+          // Fresh lineup caches: a replay's roster changes refilled the shared ones.
+          st.forEach((x, i) => Object.assign(x, saved.st[i], { lineups: new Map() }));
+          weekPts.forEach((w, i) => w.set(saved.weekPts[i]!));
+          curP = saved.curP;
+          // New luck for this replay: every draw from here on is keyed by it.
+          const replayKey = mix(seasonKey, REPLAY_SALT + r);
+          for (let h = 0; h < NH; h++) playerKey[h] = mix(replayKey, idOf[h]!);
+          for (let i = 0; i < n; i++) teamKey[i] = mix(replayKey, teams[i]!.id);
+        }
+        for (let d = replayFrom; d <= lastDay; d++) playDay(d);
+        const b = bracket();
+        agg[b.s1]!.final += 1 / REPLAYS;
+        agg[b.s2]!.final += 1 / REPLAYS;
+        agg[b.champion]!.champ += 1 / REPLAYS;
+        shares[b.champion] = shares[b.champion]! + 1 / REPLAYS;
+        if (r === 0) {
+          firstChampion = b.champion;
+          endRosters = rosterIds();
+        }
+      }
+    }
     input.inspect?.(s, {
-      rosters: st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id)),
+      rosters: endRosters,
       wins,
-      champion: teams[champion]!.id,
+      champion: teams[firstChampion]!.id,
       seed1: teams[seeds[0]!]!.id,
       playoffs: seeds.map((i) => teams[i]!.id),
+      titleShares: Array.from(shares),
     });
     seasonsDone++;
     yield summary;

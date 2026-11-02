@@ -133,6 +133,7 @@ export async function runOutlook(
   `;
   const id = row!.id;
   let teams: OutlookTeam[];
+  const cpu0 = process.cpuUsage();
   try {
     // Runs in slices so the server keeps serving pages while it simulates.
     const results = await simulateSeasonAsync(input, 25, {
@@ -151,11 +152,22 @@ export async function runOutlook(
         status = 'final', updated_at = now()
       where id = ${id}
     `;
+    await logCpu("outlook-sim", cpu0, { seasons });
   } catch (e) {
     await db()`delete from outlook_runs where id = ${id}`.catch(() => {});
     throw e;
   }
   return { scoringPeriod: fromDay, teams };
+}
+
+/** A simulation's CPU seconds, for the month's total on Settings (Vercel Hobby: 4 CPU-hours). */
+async function logCpu(job: string, since: NodeJS.CpuUsage, extra: Record<string, unknown>) {
+  const used = process.cpuUsage(since);
+  const cpu = Math.round((used.user + used.system) / 1e5) / 10;
+  const detail = JSON.stringify({ cpu, ...extra });
+  await db()`insert into refresh_log (job, status, detail) values (${job}, 'ok', ${detail})`.catch(
+    () => {},
+  );
 }
 
 /** A running outlook reports its odds so far this often (seasons). */
@@ -226,7 +238,7 @@ export async function simulateTrade(
   partnerId: number,
   giveIds: number[],
   getIds: number[],
-  seasons = 500,
+  seasons = 400,
 ) {
   const { data, previousTeams, freeAgents, fromDay, bankedNow, injured } = await outlookSetup();
   const partner = data.teams.find((t) => t.id === partnerId);
@@ -271,9 +283,11 @@ export async function simulateTrade(
         ? { ...t, roster: theirs.roster }
         : t,
   );
+  const cpu0 = process.cpuUsage();
+  // Playoffs replayed 10 times per season: title odds ~2.4x as precise per CPU second (ADR-047).
   const run = (teams: FantasyTeam[]) =>
-    simulateSeasonAsync(
-      buildOutlookInput({
+    simulateSeasonAsync({
+      ...buildOutlookInput({
         teams,
         previousTeams,
         freeAgents: freeAgents.filter((f) => !taken.has(f.id)),
@@ -287,9 +301,11 @@ export async function simulateTrade(
         injured,
         seasons,
       }).input,
-    );
+      playoffReplays: 10,
+    });
   const before = await run(data.teams);
   const after = await run(traded);
+  await logCpu("trade-sim", cpu0, { seasons: 2 * seasons });
   const pick = (rs: typeof before, id: number) => {
     const r = rs.find((x) => x.teamId === id)!;
     return { playoffs: r.playoffs, champ: r.champ, expWins: r.expWins };

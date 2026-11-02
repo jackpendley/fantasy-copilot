@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/fc/bits";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { db, dbConfigured } from "@/lib/db";
 import { fmtDayTime } from "@/lib/format";
+import { DAILY_CPU_BUDGET_S } from "@/lib/nba/move-sim";
 
 type JobRow = { job: string; status: string; detail: string | null; ran_at: Date };
 
@@ -28,11 +29,30 @@ async function jobStatus() {
 
 const when = (d: Date) => fmtDayTime(d);
 
+/** Simulation CPU seconds by kind over the last 30 days, and move checks' last 24 hours. */
+async function simulationCpu() {
+  if (!dbConfigured()) return null;
+  const rows = await db()<{ job: string; cpu: number | null; day: number | null }[]>`
+    select job,
+      sum((detail::jsonb->>'cpu')::float) as cpu,
+      sum((detail::jsonb->>'cpu')::float) filter (where ran_at > now() - interval '24 hours') as day
+    from refresh_log
+    where job in ('move-sim', 'outlook-sim', 'trade-sim') and status = 'ok'
+      and ran_at > now() - interval '30 days'
+    group by job
+  `;
+  return new Map(rows.map((r) => [r.job, { month: r.cpu ?? 0, day: r.day ?? 0 }]));
+}
+const minutes = (s: number) => `${(s / 60).toFixed(s < 600 ? 1 : 0)} min`;
+
 export default async function SettingsPage() {
-  const [jobs, status] = await Promise.all([
+  const [jobs, status, cpu] = await Promise.all([
     recentJobs().catch(() => []),
     jobStatus().catch(() => []),
+    simulationCpu().catch(() => null),
   ]);
+  const cpuOf = (job: string) => cpu?.get(job) ?? { month: 0, day: 0 };
+  const cpuTotal = ["move-sim", "outlook-sim", "trade-sim"].reduce((a, j) => a + cpuOf(j).month, 0);
   return (
     <>
       <PageHeader title="Settings" />
@@ -99,6 +119,37 @@ export default async function SettingsPage() {
           ))}
         </CardContent>
       </Card>
+      {cpu && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Simulation CPU</CardTitle>
+            <CardDescription>
+              Last 30 days. Vercel Hobby includes 240 CPU minutes a month for everything (pages
+              too): Vercel → Usage has the full total. Waiver checks give close calls a second batch
+              only while today&apos;s use is under {DAILY_CPU_BUDGET_S / 60} minutes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm tabular-nums">
+            {[
+              ["Outlook runs", "outlook-sim"],
+              ["Waiver move checks", "move-sim"],
+              ["Trade simulations", "trade-sim"],
+            ].map(([label, job]) => (
+              <div key={job} className="flex justify-between gap-2">
+                <span>{label}</span>
+                <span className="text-muted-foreground">
+                  {minutes(cpuOf(job!).month)}
+                  {job === "move-sim" && ` · ${minutes(cpuOf(job).day)} today`}
+                </span>
+              </div>
+            ))}
+            <div className="flex justify-between gap-2 border-t pt-1 font-medium">
+              <span>Total</span>
+              <span>{minutes(cpuTotal)}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Recent jobs</CardTitle>

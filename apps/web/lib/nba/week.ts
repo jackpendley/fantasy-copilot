@@ -58,11 +58,19 @@ export interface WeekInputs {
   defense?: DefenseTable | null;
 }
 
-/** Rest-of-week chance a listed player plays: today's status applies to the next two days; OUT holds all week. */
-function playChance(status: string, daysAhead: number): number {
+/**
+ * Chance a player listed day-to-day today plays his team's game 1-6 days from now: play rates
+ * from the NBA's official reports, refit on 2025-26 (MODEL_CARD "day-to-day players on later
+ * days", passed held out 2026-11-02). Beyond 6 days he counts as healthy.
+ */
+export const DAY_TO_DAY_AHEAD = [0.59, 0.725, 0.705, 0.751, 0.751, 0.751];
+
+/** Chance a listed player plays a game `daysAhead` days from now (0 = today); OUT holds all week. */
+export function playChance(status: string, daysAhead: number): number {
   const p = playProbability(status);
-  if (p === 0) return 0;
-  return daysAhead <= 1 ? p : 1;
+  if (p === 0 || p === 1) return p;
+  if (daysAhead <= 0) return p;
+  return DAY_TO_DAY_AHEAD[daysAhead - 1] ?? 1;
 }
 
 export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): TeamWeek {

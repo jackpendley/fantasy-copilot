@@ -144,14 +144,15 @@ describe("matchupView for other weeks and teams", () => {
     expect(v.pWin).toBe(1);
   });
 
-  it("projects a later week from today, with today's day-to-day status faded", () => {
+  it("projects a later week from today, with today's day-to-day status fading out", () => {
     const hurt = { ...player(1, 30), injuryStatus: "DAY_TO_DAY" };
     const v = matchupView(twoWeeks([hurt]), 1, undefined, 2);
     expect(v.mp).toBe(2);
     expect(v.myBanked).toBe(0);
     expect(v.myToday.some((r) => r.game)).toBe(false); // today's games aren't this week's
-    // Seven games at 30: by next week a day-to-day status no longer discounts him.
-    expect(v.mine.remaining).toBeCloseTo(210, 0);
+    // Seven games at 30: the first is 6 days out (a day-to-day player plays ~75% of those);
+    // from 7 days on he counts fully.
+    expect(v.mine.remaining).toBeCloseTo(30 * (0.751 + 6), 1);
     expect(v.mine.startsByDay.get(7)).toEqual(new Set([1]));
   });
 
@@ -163,5 +164,17 @@ describe("matchupView for other weeks and teams", () => {
     expect(all).toHaveLength(1);
     expect(all[0]!.homeId).toBe(1);
     expect(all[0]!.pHome).toBeCloseTo(0.5, 1); // 30 a game each, nothing banked yet
+  });
+});
+
+describe("day-to-day players on later days", () => {
+  it("play at the fitted rates for six days, then count as healthy", async () => {
+    const { playChance, DAY_TO_DAY_AHEAD } = await import("@/lib/nba/week");
+    expect(playChance("DAY_TO_DAY", 0)).toBe(0.75); // today: his status's own chance
+    expect(playChance("DAY_TO_DAY", 1)).toBe(DAY_TO_DAY_AHEAD[0]);
+    expect(playChance("DAY_TO_DAY", 6)).toBe(DAY_TO_DAY_AHEAD[5]);
+    expect(playChance("DAY_TO_DAY", 7)).toBe(1);
+    expect(playChance("OUT", 3)).toBe(0);
+    expect(playChance("ACTIVE", 2)).toBe(1);
   });
 });

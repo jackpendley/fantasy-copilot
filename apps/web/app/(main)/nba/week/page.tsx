@@ -241,7 +241,9 @@ function ScheduleTable({
                   <PlayerAvatar id={p.id} name={p.name} size={28} />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1">
-                      <span className="max-w-32 truncate font-medium sm:max-w-none">{p.name}</span>
+                      <span className="max-w-32 font-medium break-words sm:max-w-none">
+                        {p.name}
+                      </span>
                       <StatusPill status={statusOf(p)} />
                     </div>
                     <div className="text-[11px] text-muted-foreground">{p.positions.join("/")}</div>

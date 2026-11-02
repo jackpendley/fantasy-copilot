@@ -813,7 +813,7 @@ function CardBody({ card }: { card: PlayerCardData }) {
       <div className="flex items-center gap-4 p-5 pr-12">
         <PlayerAvatar id={card.id} name={card.name} size={64} />
         <div className="min-w-0">
-          <DialogTitle className="truncate text-lg font-semibold">{card.name}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold break-words">{card.name}</DialogTitle>
           <DialogDescription asChild>
             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
               <TeamLogo abbr={card.proTeam} size={16} />

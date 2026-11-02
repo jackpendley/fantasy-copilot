@@ -42,12 +42,12 @@ function PlayerLink({
       <PlayerAvatar id={player.id} name={player.name} size={36} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate font-medium">{player.name}</span>
+          <span className="min-w-0 font-medium break-words">{player.name}</span>
           <StatusPill status={player.injuryStatus ?? "ACTIVE"} />
         </div>
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <TeamLogo abbr={player.proTeam} size={12} />
-          <span className="truncate">
+          <span className="min-w-0 break-words">
             {player.positions.join("/")}
             {owner && (
               <>
@@ -228,7 +228,7 @@ export default async function PlayersPage({
                             {out.name}
                           </Link>
                           <Pill tone="danger">Out</Pill>
-                          {note && <span className="truncate">{note}</span>}
+                          {note && <span className="min-w-0 break-words">{note}</span>}
                         </div>
                       ))}
                     </div>

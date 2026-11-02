@@ -28,6 +28,9 @@ interface CardApi {
 
 const CardContext = createContext<CardApi | null>(null);
 
+/** Open a player's card from anywhere inside the provider (null outside it). */
+export const usePlayerCard = () => useContext(CardContext);
+
 const FRESH_MS = 60_000;
 const LIVE_FRESH_MS = 15_000;
 const LIVE_POLL_MS = 20_000;

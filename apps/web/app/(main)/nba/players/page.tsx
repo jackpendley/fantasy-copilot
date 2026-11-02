@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { PlayerCardButton } from "@/components/fc/player-card";
-import { Search } from "lucide-react";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
-import { normalizeName } from "@fantasy-copilot/nba-data";
 import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
@@ -13,6 +11,9 @@ import { fmtPts } from "@/lib/format";
 import { loadPlayerPool } from "@/lib/nba/pool";
 import { perGameProjection } from "@/lib/nba/projection";
 import { hotAndCold, injuryOpenings, ownershipRisers, type PoolPlayer } from "@/lib/nba/trends";
+import { searchPlayers } from "@/lib/player-search";
+import { PlayerSearch } from "@/components/fc/player-search";
+import { TeamTabs } from "@/components/fc/team-tabs";
 import { cn } from "@/lib/utils";
 
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${fmtPts(n)}`;
@@ -69,6 +70,48 @@ const List = ({ children }: { children: React.ReactNode }) => (
   <div className="divide-y overflow-hidden rounded-xl border bg-card">{children}</div>
 );
 
+/** Running hot and running cold, side by side from tablet width. */
+function Streaks({ hot, cold }: ReturnType<typeof hotAndCold>) {
+  if (!hot.length && !cold.length)
+    return (
+      <Callout tone="info">
+        Hot and cold streaks appear once players have 2+ games in the last 7 days.
+      </Callout>
+    );
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {[
+        { title: "Running hot", rows: hot },
+        { title: "Running cold", rows: cold },
+      ].map(({ title, rows }) => (
+        <div key={title} className="space-y-1">
+          <div className="px-1 text-xs font-medium">{title}</div>
+          <List>
+            {rows.map((r) => (
+              <PlayerLink
+                key={r.entry.player.id}
+                {...r.entry}
+                right={
+                  <>
+                    <div
+                      className={cn("font-semibold", r.delta > 0 ? "text-success" : "text-danger")}
+                    >
+                      {signed(r.delta)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      {fmtPts(r.recent)} in {r.games} g
+                    </div>
+                  </>
+                }
+              />
+            ))}
+          </List>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default async function PlayersPage({
   searchParams,
 }: {
@@ -84,14 +127,28 @@ export default async function PlayersPage({
     return <ErrorNotice title="Couldn't load players" message={(e as Error).message} />;
   }
   const { data, freeAgents, pool } = v;
-  const needle = normalizeName(q);
+  // ?q= (the search box without JavaScript, or Enter): the same ranking as search as you type.
+  const byId = new Map(pool.map((e) => [e.player.id, e]));
   const results: PoolPlayer[] = q
-    ? pool
-        .filter((e) => normalizeName(e.player.name).includes(needle))
-        .sort((a, b) => perGameProjection(b.player).fppg - perGameProjection(a.player).fppg)
-        .slice(0, 25)
+    ? searchPlayers(
+        pool.map((e) => ({
+          id: e.player.id,
+          name: e.player.name,
+          team: e.player.proTeam,
+          positions: e.player.positions,
+          owner: e.owner,
+          mine: e.mine,
+          available: e.available,
+          status: e.player.injuryStatus ?? "ACTIVE",
+          fppg: perGameProjection(e.player).fppg,
+          owned: e.player.percentOwned ?? 0,
+        })),
+        q,
+        25,
+      ).map((h) => byId.get(h.player.id)!)
     : [];
-  const { hot, cold } = hotAndCold(pool);
+  const streaks = hotAndCold(pool);
+  const freeStreaks = hotAndCold(pool.filter((e) => e.available));
   const risers = ownershipRisers(freeAgents, 8);
   const openings = injuryOpenings(
     pool.map((e) => e.player),
@@ -109,16 +166,7 @@ export default async function PlayersPage({
         subtitle="Every rostered player and free agent in your league"
       />
 
-      <form action="/nba/players" className="relative">
-        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="Search players"
-          autoComplete="off"
-          className="h-10 w-full rounded-lg border bg-card pr-3 pl-9 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-      </form>
+      <PlayerSearch initial={q} />
 
       {q ? (
         <section className="space-y-1.5">
@@ -142,7 +190,8 @@ export default async function PlayersPage({
             </List>
           ) : (
             <Callout tone="info">
-              No player matching &ldquo;{q}&rdquo; is rostered or among the top free agents.
+              No player matching &ldquo;{q}&rdquo; is rostered or among the 250 most-owned free
+              agents. Type in the search box to search every player.
             </Callout>
           )}
         </section>
@@ -150,46 +199,12 @@ export default async function PlayersPage({
         <>
           <section className="space-y-1.5">
             <SectionTitle aside="Last 7 days vs projection">Hot & cold</SectionTitle>
-            {hot.length || cold.length ? (
-              <div className="grid gap-3 md:grid-cols-2">
-                {[
-                  { title: "Running hot", rows: hot },
-                  { title: "Running cold", rows: cold },
-                ].map(({ title, rows }) => (
-                  <div key={title} className="space-y-1">
-                    <div className="px-1 text-xs font-medium">{title}</div>
-                    <List>
-                      {rows.map((r) => (
-                        <PlayerLink
-                          key={r.entry.player.id}
-                          {...r.entry}
-                          right={
-                            <>
-                              <div
-                                className={cn(
-                                  "font-semibold",
-                                  r.delta > 0 ? "text-success" : "text-danger",
-                                )}
-                              >
-                                {signed(r.delta)}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground">
-                                {fmtPts(r.recent)} in {r.games} g
-                              </div>
-                            </>
-                          }
-                        />
-                      ))}
-                    </List>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <Callout tone="info">
-                Hot and cold streaks appear once players have 2+ games in the last 7 days. The
-                season tips off Oct 20.
-              </Callout>
-            )}
+            <TeamTabs
+              tabs={[
+                { label: "All players", content: <Streaks {...streaks} /> },
+                { label: "Free agents", content: <Streaks {...freeStreaks} /> },
+              ]}
+            />
           </section>
 
           {openings.length > 0 && (

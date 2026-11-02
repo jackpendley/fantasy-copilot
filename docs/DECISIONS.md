@@ -578,20 +578,6 @@
 - **The Outlook is unchanged (2,000 plain seasons):** its playoffs and #1-seed odds need seasons, not replays. Revisit once Settings → Simulation CPU shows the monthly budget has room.
 - **Every simulation logs its CPU seconds** (`refresh_log`: move-sim, outlook-sim, trade-sim). Settings shows the last 30 days.
 
-## ADR-049: one IR-return rule for the simulation and Waivers (2026-11-02)
-
-- **Disagreement:** when a player came back from the IR slot to a full roster:
-  - the season simulation cut the lowest per-game projection;
-  - the quick ranking (`teamValue`) and the IR plan note cut whoever would add the fewest lineup points from his return on (playoff days ×2).
-  - On Nov 1 that split them on Isaiah Jackson (Robinson vs Collins).
-- **Rule kept: fewest lineup points.**
-  - It sees positions and schedules.
-  - A low-projection guard who starts every night is worth more than a fifth center who never plays.
-- **How:** `buildOutlookInput` decides each team's cut with `teamValue` and passes it to the simulator (`SimTeam.irCut`). The simulator falls back to the lowest projection only if that player has already been streamed away.
-- **Tests:**
-  - the builder picks the benched center, not the starting guard;
-  - the simulator cuts the designated player.
-
 ## ADR-048: four tabs: Players (Waivers + Players) and League (Outlook + League) (2026-11-02)
 
 - **Jack's call, after weighing pros and cons:** merge both pairs.
@@ -611,6 +597,20 @@
   - `/nba/outlook` → League;
   - old `/nba/players?q=` → Trends.
 - No computation changed.
+
+## ADR-049: one IR-return rule for the simulation and Waivers (2026-11-02)
+
+- **Disagreement:** when a player came back from the IR slot to a full roster:
+  - the season simulation cut the lowest per-game projection;
+  - the quick ranking (`teamValue`) and the IR plan note cut whoever would add the fewest lineup points from his return on (playoff days ×2).
+  - On Nov 1 that split them on Isaiah Jackson (Robinson vs Collins).
+- **Rule kept: fewest lineup points.**
+  - It sees positions and schedules.
+  - A low-projection guard who starts every night is worth more than a fifth center who never plays.
+- **How:** `buildOutlookInput` decides each team's cut with `teamValue` and passes it to the simulator (`SimTeam.irCut`). The simulator falls back to the lowest projection only if that player has already been streamed away.
+- **Tests:**
+  - the builder picks the benched center, not the starting guard;
+  - the simulator cuts the designated player.
 
 ## ADR-050: this season's league team total in the game-environment factor (2026-11-02)
 

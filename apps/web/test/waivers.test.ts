@@ -257,5 +257,19 @@ describe("waiverAnalysis by lineup fit", () => {
     expect(top.addUsage).toEqual({ games: 20, starts: 20 });
     expect(top.dropStarts).toBe(0);
     expect(top.netWins).toBeCloseTo((top.deltaWin ?? 0) + top.laterWins, 10);
+    // "Later" shows the same playoff-weighted points its wins come from.
+    expect(top.laterWins).toBeCloseTo(res.winsPerPoint * top.laterPts, 10);
+    expect(top.laterPts).toBeCloseTo(top.seasonScore - top.deltaPts, 10);
+  });
+
+  it("keeps every drop for an add, best first, for swapping the drop", () => {
+    const res = run([fa(31, "Guard", 99, 22, ["PG"])]);
+    const options = res.dropOptions.get(31)!;
+    expect(options[0]).toBe(res.best[0]);
+    expect(options.length).toBeGreaterThan(1);
+    expect(new Set(options.map((o) => o.drop?.id)).size).toBe(options.length);
+    for (let i = 1; i < options.length; i++) {
+      expect(options[i - 1]!.netWins).toBeGreaterThanOrEqual(options[i]!.netWins);
+    }
   });
 });

@@ -108,23 +108,47 @@ export function PageHeader({
   );
 }
 
-/** Prev / today / next links for date-based pages. */
-export function DateNav({ prev, next, today }: { prev: string; next: string; today?: string }) {
+/** Prev / today / next links for date-based pages (or weeks: `unit`, `todayLabel`). */
+export function DateNav({
+  prev,
+  next,
+  today,
+  unit = "day",
+  todayLabel = "Today",
+}: {
+  prev?: string;
+  next?: string;
+  today?: string;
+  unit?: string;
+  todayLabel?: string;
+}) {
   const btn =
     "inline-flex h-8 items-center gap-1 rounded-lg border bg-card px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground";
   return (
     <div className="flex items-center gap-1.5">
-      <Link href={prev} className={btn} aria-label="Previous day">
-        <ChevronLeft className="size-4" />
-      </Link>
+      {prev ? (
+        <Link href={prev} className={btn} aria-label={`Previous ${unit}`}>
+          <ChevronLeft className="size-4" />
+        </Link>
+      ) : (
+        <span className={cn(btn, "opacity-40")} aria-hidden>
+          <ChevronLeft className="size-4" />
+        </span>
+      )}
       {today && (
         <Link href={today} className={btn}>
-          Today
+          {todayLabel}
         </Link>
       )}
-      <Link href={next} className={btn} aria-label="Next day">
-        <ChevronRight className="size-4" />
-      </Link>
+      {next ? (
+        <Link href={next} className={btn} aria-label={`Next ${unit}`}>
+          <ChevronRight className="size-4" />
+        </Link>
+      ) : (
+        <span className={cn(btn, "opacity-40")} aria-hidden>
+          <ChevronRight className="size-4" />
+        </span>
+      )}
     </div>
   );
 }

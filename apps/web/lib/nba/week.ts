@@ -31,6 +31,11 @@ export interface WeekInputs {
   periods: number[];
   /** First scoring period still to be projected (today). */
   fromPeriod: number;
+  /**
+   * The day projections and injury statuses are as of (today); defaults to fromPeriod. A later
+   * week is projected from today: its first days are further ahead than "tomorrow".
+   */
+  asOf?: number;
   games: ProGame[];
   slotCounts: Record<string, number>;
   injuries: InjuryReport[];
@@ -66,7 +71,8 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   const slotsByDay = new Map<number, Map<number, string>>();
   const gamesByDay = new Map<number, Set<number>>();
   const projectedByDay = new Map<number, number>();
-  const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, input.fromPeriod).fppg]));
+  const asOf = input.asOf ?? input.fromPeriod;
+  const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, asOf).fppg]));
   const chance = (p: RosterPlayer, sp: number, ahead: number) => {
     const back = input.outUntil?.get(p.id);
     if (back != null) return sp < back ? 0 : 1;
@@ -92,7 +98,7 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
     const playing = roster.filter((p) => teams.has(p.proTeamId));
     gamesByDay.set(sp, new Set(playing.map((p) => p.id)));
     if (sp < input.fromPeriod) continue;
-    const ahead = sp - input.fromPeriod;
+    const ahead = sp - asOf;
     const players = roster.map((p) => ({
       id: p.id,
       eligible: p.positions as Position[],

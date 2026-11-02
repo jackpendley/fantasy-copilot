@@ -69,3 +69,12 @@ export async function matchupHistory(matchupPeriod: number) {
     order by scoring_period, taken_at asc
   `;
 }
+
+/** Any league matchup's morning win chances (from matchup_states), for its home team. */
+export async function matchupStatesHistory(matchupPeriod: number, homeId: number) {
+  return db()<{ scoring_period: number; p_home: number }[]>`
+    select scoring_period, p_home from matchup_states
+    where matchup_period = ${matchupPeriod} and home_id = ${homeId}
+    order by scoring_period
+  `;
+}

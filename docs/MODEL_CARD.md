@@ -563,3 +563,129 @@ A3 beats B0 but not B1, so it fails the gate.
 **Metric:** per-player mean Brier difference, candidate − baseline, with a 95% interval.
 
 **Ships only if** the interval is entirely below 0. The first evaluation runs once there are ≥1,500 non-Out rows; one evaluation, no peeking before then.
+
+## Pre-registration: day-to-day players on later days (2026-11-02, before any run)
+
+**Question:** how likely is a player listed day-to-day today to play his team's games on the next few days?
+
+**Today's rule (week projections and the season simulation):**
+
+- A day-to-day player (ESPN shows the official report's probable, questionable and doubtful all as day-to-day) plays with probability 0.75 today and tomorrow, then 1.
+- Ruled-out players are unchanged by this test: they sit until ESPN's estimated return date, which historical reports don't carry.
+
+**Data:**
+
+- The NBA's official injury reports for 2023-24, 2024-25 and 2025-26 (cached by `scripts/backtest-availability.ts`).
+- The harness is a new mode of that script (`DAYS_AHEAD=1`).
+
+**Rows:**
+
+- For each day D with games, the latest report published at or before 1 PM ET.
+- Every listed player with status Probable, Questionable or Doubtful, matched to an ESPN player in the projection pool.
+- One row per game his listed team plays on days D+1 to D+6.
+- **Label:** he played (minutes > 0 in his ESPN game log).
+- Player-seasons with no logged games are left out.
+
+**Baseline B0 (today):** 0.75 for a game on D+1, 1 for later days.
+
+**Candidate C1 (the only one):** the play rate by days ahead (1, 2, 3, 4–6) on the fit season, smoothed toward B0 with 10 pseudo-rows.
+
+**Procedure:**
+
+- **Exploration:** fit on 2023-24, score 2024-25 (reported, not a gate).
+- **Held out, judged once:** fit on 2024-25, score 2025-26.
+- **Metric:** per-player mean Brier difference (C1 − B0) with a 95% interval.
+- **Ships only if** the held-out interval is entirely below 0, with at least 2,000 rows.
+
+**If it ships:**
+
+- `playChance` in `lib/nba/week.ts` uses the table refit on 2025-26 for day-to-day players on later days (today unchanged).
+- The season simulator's injury chain is not changed by this test.
+
+### Result (2026-11-02): passed, shipped
+
+The pre-registration above was committed (6ce7d6b) before the harness existed. Exploration ran first, then the held-out season once.
+
+**Exploration:** fit 2023-24 (4,406 rows), score 2024-25 (5,411 rows, 273 players). C1 − B0 = −0.0602 [−0.0729, −0.0475].
+
+| Held out: 2025-26, fit on 2024-25 (4,946 rows, 297 players) |      Brier | vs B0 (95% CI, by player)      |
+| ----------------------------------------------------------- | ---------: | ------------------------------ |
+| B0 today (0.75 tomorrow, then 1)                            |     0.2662 |                                |
+| **C1 play rate by days ahead**                              | **0.1992** | **−0.0564 [−0.0716, −0.0412]** |
+
+| Days ahead |  Rows | Played (2025-26) |   B0 | C1 (fit on 2024-25) |
+| ---------- | ----: | ---------------: | ---: | ------------------: |
+| 1          |   391 |            0.586 | 0.75 |               0.627 |
+| 2          | 1,142 |            0.722 | 1.00 |               0.704 |
+| 3          |   842 |            0.702 | 1.00 |               0.727 |
+| 4–6        | 2,571 |            0.750 | 1.00 |               0.725 |
+
+**What it found:**
+
+- A player listed probable, questionable or doubtful at 1 PM plays only about 59% of his team's games the next day, and about 70–75% over the following five days.
+- The app assumed 75% tomorrow and 100% after that.
+- Week projections and the Matchup win chance were too high for banged-up rosters.
+
+**Shipped:** `playChance` (`lib/nba/week.ts`) uses the table refit on 2025-26:
+
+- 1 day 0.59; 2 days 0.725; 3 days 0.705; 4–6 days 0.751;
+- today unchanged; 7+ days counts as healthy (untested).
+
+## Pre-registration: manager activity from lineups (2026-11-02, before any run)
+
+**Question:** how should the season simulation estimate how often a manager sets a lineup (`act`)?
+
+**Today:**
+
+- `act` is ESPN's count of moves to an active slot ÷ (2.5 moves × days so far).
+- It's blended with last season's count when the same ESPN owner returns (new owners start at 0.7, 21-day prior weight).
+- A deep, healthy roster needs few moves and can look inactive.
+
+**Target:** what `act` means in the simulator, the share of days a manager's lineup is set.
+
+- A **set day** for a team: no bench player with a game that day sat while a starting slot he could fill was empty or held by a player without a game.
+- The realized share of set days in a later window is the truth to predict.
+
+**Data:**
+
+- 2025-26 (this league): each team's roster and lineup slots on every day (cached by `scripts/backtest-win-prob.ts`, `data/local/winprob-2026/`).
+- Games from the cached ESPN game logs (a player "had a game" if his team played).
+- **Moves to active** are counted from day-to-day slot changes (bench or IR to a starting slot), as ESPN counts them.
+
+**Predictions:** at the end of each regular-season week k = 2–18, for each team, predict its set-day share in weeks k+1 to k+3:
+
+- **A (today):** the move-count formula on weeks 1..k (2.5 moves per active day, capped at 1). The prior is the neutral 0.7 with 21-day weight (last season's counts aren't in the cache).
+- **B (candidate):** the set-day share in weeks 1..k, shrunk toward the league's share in weeks 1..k with 14 pseudo-days.
+- **C (candidate):** everyone 1.0.
+
+**Metric:** mean absolute error, clustered by team: each team's mean |error| over its k, then a mean ± 95% interval over the 12 teams of B − A and of C − A.
+
+**Ships:**
+
+- The better of B and C, only if its interval is entirely below 0 against A.
+- If neither passes, `act` stays as it is.
+
+**If B ships:**
+
+- `act` comes from this season's set days (nightly, from ESPN's daily lineups), with the same shrinkage.
+- Last season is no longer used.
+- The Outlook's "Active" column shows it as "Lineups set".
+
+### Result (2026-11-02): neither candidate passes; `act` unchanged
+
+The pre-registration above was committed (6ce7d6b) before the harness existed (`scripts/backtest-activity.ts`, one run).
+
+**Data:** 2025-26, 139 days of all 12 teams' lineups. Predictions were made at the end of weeks 2–18.
+
+| Estimate of act                      | MAE (mean of 12 teams) | vs A (95% CI, by team, t with 11 df) |
+| ------------------------------------ | ---------------------: | ------------------------------------ |
+| A today (move counts, neutral prior) |                 0.1438 |                                      |
+| B set-day share, shrunk              |                 0.1068 | −0.0370 [−0.0978, +0.0238]           |
+| C everyone 1.0                       |                 0.2005 | +0.0567 [−0.0802, +0.1935]           |
+
+**What it found:**
+
+- Managers really differ: season set-day shares were 0.42, 0.58, 0.61, 0.70, 0.80, 0.90, 0.91, 0.94, 0.99, 0.99, 0.99 and 1.00.
+- "Everyone 100%" is the worst of the three.
+- The lineup-based share was closer on average, but with 12 teams its interval includes 0, so it doesn't ship.
+- A forward retest on this season's lineups needs its own pre-registration.

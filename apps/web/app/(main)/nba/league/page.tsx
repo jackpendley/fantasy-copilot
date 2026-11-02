@@ -305,7 +305,7 @@ export default async function LeaguePage() {
           Average strength: {fmtPts(v.teams.reduce((a, t) => a + t.perWeek, 0) / v.teams.length)}{" "}
           pts/wk.
           {shown &&
-            " Odds: a Monte Carlo of the rest of the season on the real NBA and league schedules (daily lineups, streaky injuries, form swings, and each manager's lineup and waiver habits). 6-team playoffs in weeks 20-22; completed weeks keep their real results. Active = share of days the manager sets a lineup. Title bars are scaled to the favorite."}
+            " Odds: a Monte Carlo of the rest of the season on the real NBA and league schedules (daily lineups, streaky injuries, form swings, and each manager's lineup and waiver habits). 6-team playoffs in weeks 20-22; completed weeks keep their real results. Active = the share of days the simulation expects the manager to set a lineup, from this season's lineup moves (last season's only when the same ESPN owner returns; a new owner starts at 70%). Title bars are scaled to the favorite."}
         </p>
       </section>
     </>

@@ -5,6 +5,7 @@
 //
 //   node --env-file=.env.local --conditions=react-server --import tsx scripts/backtest-availability.ts
 //   TEST_SEASON=2025 ... tests 2024-25 (fit on 2023-24). DATA_ONLY=1 prints coverage only.
+//   DAYS_AHEAD=1 ... day-to-day players on later days (MODEL_CARD pre-registration 2026-11-02).
 //
 // Reports (parsed) and game logs are cached in data/local/ (gitignored).
 
@@ -290,6 +291,7 @@ async function main() {
     .filter((p) => !seen.has(p.id) && seen.add(p.id))
     .map((p) => ({ id: p.id, name: p.name, team: p.proTeam }));
   console.log(`players: ${pool.length}; reports cached in data/local/injury-reports/`);
+  if (process.env.DAYS_AHEAD) return daysAhead(pool);
 
   const fit = await seasonRows(FIT, pool);
   const test = await seasonRows(TEST, pool);
@@ -351,6 +353,116 @@ async function main() {
             .join("  "),
         );
       }
+}
+
+// ---- Day-to-day players on later days (pre-registered 2026-11-02) ----
+
+interface AheadRow {
+  date: string;
+  playerId: number;
+  /** Calendar days from the report's day to the game (1-6). */
+  ahead: number;
+  played: boolean;
+}
+
+const DTD = new Set<OfficialStatus>(["Probable", "Questionable", "Doubtful"]);
+const dayDiff = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86_400_000);
+
+async function aheadRows(season: number, pool: { id: number; name: string; team: string }[]) {
+  const logs = await inBatches(pool, 8, async (p) => ({
+    id: p.id,
+    games: (await gameLog(p.id, season)).filter((g) => g.part === "regular"),
+  }));
+  const playedOn = new Map<number, Set<string>>();
+  for (const l of logs) {
+    const days = l.games.filter((g) => (g.line.MIN ?? 0) > 0).map((g) => etDate(new Date(g.date)));
+    playedOn.set(l.id, new Set(days));
+  }
+  const schedule = new Map<string, Set<string>>();
+  for (const l of logs)
+    for (const g of l.games) {
+      if (!schedule.has(g.opponent)) schedule.set(g.opponent, new Set());
+      schedule.get(g.opponent)!.add(etDate(new Date(g.date)));
+    }
+  const teamDays = new Map([...schedule].map(([t, s]) => [t, [...s].sort()]));
+  const match = buildMatcher(pool);
+  const days = [...new Set([...schedule.values()].flatMap((s) => [...s]))].sort();
+  const rows: AheadRow[] = [];
+  let reports = 0;
+  await inBatches(days, 4, async (date) => {
+    // The latest report at or before 1 PM ET on day D.
+    const r = await latestReport(date, 13 * 60);
+    if (!r) return;
+    reports++;
+    const seen = new Set<number>();
+    for (const e of r.entries) {
+      if (e.gameDate !== date || !DTD.has(e.status)) continue;
+      const team = toEspnTeam(e.teamAbbr);
+      const id = match(e.name, team);
+      if (id == null || seen.has(id)) continue;
+      seen.add(id);
+      const played = playedOn.get(id)!;
+      if (!played.size) continue;
+      for (const g of teamDays.get(team) ?? []) {
+        const ahead = dayDiff(date, g);
+        if (ahead >= 1 && ahead <= 6)
+          rows.push({ date, playerId: id, ahead, played: played.has(g) });
+      }
+    }
+  });
+  return { rows, reports, days: days.length };
+}
+
+const bucket = (a: number) => (a >= 4 ? "4-6" : String(a));
+type AheadModel = (r: AheadRow) => number;
+/** Today: a day-to-day status counts today and tomorrow (0.75), then he's assumed healthy. */
+const AHEAD_B0: AheadModel = (r) => (r.ahead <= 1 ? 0.75 : 1);
+function aheadC1(train: AheadRow[]): AheadModel {
+  const n = new Map<string, number>();
+  const y = new Map<string, number>();
+  for (const r of train) {
+    const k = bucket(r.ahead);
+    n.set(k, (n.get(k) ?? 0) + 1);
+    y.set(k, (y.get(k) ?? 0) + (r.played ? 1 : 0));
+  }
+  return (r) => {
+    const k = bucket(r.ahead);
+    return ((y.get(k) ?? 0) + M * AHEAD_B0(r)) / ((n.get(k) ?? 0) + M);
+  };
+}
+
+async function daysAhead(pool: { id: number; name: string; team: string }[]) {
+  const fit = await aheadRows(FIT, pool);
+  const test = await aheadRows(TEST, pool);
+  const label = (s: number) => `${s - 1}-${String(s).slice(2)}`;
+  console.log(
+    `fit ${label(FIT)}: ${fit.rows.length} rows (${fit.reports}/${fit.days} days with a 1 PM report); test ${label(TEST)}: ${test.rows.length} rows (${test.reports}/${test.days})`,
+  );
+  const c1 = aheadC1(fit.rows);
+  const asRows = (rs: AheadRow[]) => rs as unknown as Row[];
+  const score = (m: AheadModel) => mean(test.rows.map((r) => (m(r) - (r.played ? 1 : 0)) ** 2));
+  console.log(
+    `\nTest ${label(TEST)}: ${test.rows.length} rows, ${new Set(test.rows.map((r) => r.playerId)).size} players`,
+  );
+  console.log("| Model | Brier | vs B0 (95% CI, by player) |\n| --- | ---: | --- |");
+  console.log(`| B0 today (0.75 tomorrow, then 1) | ${score(AHEAD_B0).toFixed(4)} | |`);
+  console.log(
+    `| C1 play rate by days ahead | ${score(c1).toFixed(4)} | ${ci(asRows(test.rows), c1 as unknown as Model, AHEAD_B0 as unknown as Model)} |`,
+  );
+  console.log(
+    "\n| Days ahead | Rows | Played | B0 | C1 (fit) |\n| --- | ---: | ---: | ---: | ---: |",
+  );
+  for (const b of ["1", "2", "3", "4-6"]) {
+    const rs = test.rows.filter((r) => bucket(r.ahead) === b);
+    if (!rs.length) continue;
+    console.log(
+      `| ${b} | ${rs.length} | ${mean(rs.map((r) => (r.played ? 1 : 0))).toFixed(3)} | ${AHEAD_B0(rs[0]!).toFixed(2)} | ${c1(rs[0]!).toFixed(3)} |`,
+    );
+  }
+  const prod = aheadC1(test.rows);
+  console.log(
+    `\nRefit on ${label(TEST)} (for production): ${["1", "2", "3", "4-6"].map((b) => `${b}: ${prod({ date: "", playerId: 0, ahead: b === "4-6" ? 4 : Number(b), played: false }).toFixed(3)}`).join(", ")}`,
+  );
 }
 
 main().catch((e) => {

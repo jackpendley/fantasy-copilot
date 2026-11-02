@@ -38,6 +38,12 @@ export interface SimTeam {
   act: number;
   /** Average waiver adds per week. */
   addsPerWeek: number;
+  /**
+   * Who goes when the IR-slot player comes back to a full roster (a player id): the one who'd
+   * add the fewest lineup points from his return on, decided by the caller (the Waivers rule).
+   * Without it, or once that player is gone, the lowest-fppg player goes.
+   */
+  irCut?: number;
 }
 
 export interface SimMatchup {
@@ -455,11 +461,12 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     const faList = [...inputFAs];
     const inFaList = new Set(faList);
     const st = rosters.map((roster, i) => {
-      // A player already in the IR slot comes back in place of the roster's weakest player.
+      // A player already in the IR slot comes back in place of the team's designated cut, or
+      // else the roster's weakest player.
       const reserve = roster.find((r) => r.src.reserve);
       const active = roster.filter((r) => r !== reserve);
-      let weakest: P | undefined;
-      for (const r of active) if (!weakest || r.fppg < weakest.fppg) weakest = r;
+      let weakest: P | undefined = active.find((r) => r.src.id === teams[i]!.irCut);
+      if (!weakest) for (const r of active) if (!weakest || r.fppg < weakest.fppg) weakest = r;
       return {
         roster: active,
         ir: reserve && weakest ? { player: reserve, fill: weakest } : null,

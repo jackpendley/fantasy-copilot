@@ -458,4 +458,39 @@ describe("roster size", { timeout: 30_000 }, () => {
     expect(limit).toBe(13);
     expect(largest).toBeLessThanOrEqual(limit);
   });
+  it("an IR return cuts the team's designated player (irCut), not the lowest projection", () => {
+    const quiet = (t: SimTeam): SimTeam => ({ ...t, addsPerWeek: 0 });
+    const base = team(1, 40);
+    const back: SimPlayer = {
+      id: 199,
+      eligible: ["C"],
+      proTeamId: 1,
+      fppg: 35,
+      gp: 82,
+      sd: 0.1,
+      outUntil: 5,
+      reserve: true,
+    };
+    const run = (irCut?: number) => {
+      const ends: number[][] = [];
+      simulateSeason(
+        league(
+          [
+            { ...quiet(base), roster: [...base.roster, back], ...(irCut ? { irCut } : {}) },
+            ...[2, 3, 4, 5, 6, 7, 8].map((id) => quiet(team(id, 30))),
+          ],
+          { seasons: 5, inspect: (_s, o) => ends.push(o.rosters[0]!) },
+        ),
+      );
+      return ends;
+    };
+    // Without a designated cut the lowest projection (player 111) goes; with one, he stays.
+    for (const r of run()) expect(r).toEqual(expect.arrayContaining([199]));
+    for (const r of run()) expect(r).not.toContain(111);
+    for (const r of run(105)) {
+      expect(r).toContain(199);
+      expect(r).toContain(111);
+      expect(r).not.toContain(105);
+    }
+  });
 });

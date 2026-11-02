@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseMatchups, parseSettings, parseTeams } from "@fantasy-copilot/espn";
+import {
+  parseMatchups,
+  parseSettings,
+  parseTeams,
+  type ProGame,
+  type RosterPlayer,
+} from "@fantasy-copilot/espn";
 import { buildOutlookInput, managerActivity } from "@/lib/nba/outlook";
 
 const league = JSON.parse(
@@ -55,5 +61,60 @@ describe("buildOutlookInput", () => {
     expect(input.matchups.every((m) => m.winner === null)).toBe(true);
     expect(input.playoffWeeks).toEqual([20, 21, 22]);
     expect(input.teams.find((t) => t.id === 13)!.roster).toHaveLength(12);
+  });
+});
+
+describe("IR returns in the simulation", () => {
+  it("cuts whoever adds the fewest lineup points, like the Waivers ranking", () => {
+    // Synthetic team: one guard and four centers for C, G and UTIL; the 18-point guard starts
+    // every game at G, the 20-point fourth center never does. A center returns from IR on day 3.
+    const p = (id: number, fppg: number, positions: string[], slot = "BE"): RosterPlayer => ({
+      id,
+      name: `P${id}`,
+      proTeamId: 1,
+      proTeam: "ATL",
+      positions,
+      slot,
+      injuryStatus: "ACTIVE",
+      percentOwned: 50,
+      percentChange: 0,
+      projection: { avg: fppg, total: fppg * 70, stats: {} },
+      season: null,
+      last7: null,
+      last15: null,
+      last30: null,
+    });
+    const roster = [
+      p(1, 30, ["C"]),
+      p(2, 28, ["C"]),
+      p(3, 26, ["C"]),
+      p(4, 20, ["C"]),
+      p(5, 18, ["PG"]),
+      p(9, 32, ["C"], "IR"),
+    ];
+    const games: ProGame[] = Array.from({ length: 20 }, (_, i) => ({
+      gameId: i + 1,
+      scoringPeriodId: i + 1,
+      date: Date.parse("2030-01-01T23:00:00Z") + i * 86_400_000,
+      homeProTeamId: 1,
+      awayProTeamId: 2,
+    }));
+    const teams = parseTeams(league).slice(0, 2);
+    const { input } = buildOutlookInput({
+      teams: [{ ...teams[0]!, roster }, teams[1]!],
+      previousTeams: null,
+      freeAgents: [],
+      games,
+      matchups: [],
+      slotCounts: { C: 1, G: 1, UTIL: 1, BE: 2, IR: 1 },
+      addCapPerWeek: 3,
+      regularWeeks: 19,
+      fromDay: 1,
+      injured: new Map([[9, { outUntil: 3 }]]),
+      seasons: 1,
+    });
+    // The lowest projection is the guard (18), but he starts; the fourth center (20) doesn't.
+    expect(input.teams[0]!.irCut).toBe(4);
+    expect(input.teams[1]!.irCut).toBeUndefined();
   });
 });

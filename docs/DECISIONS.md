@@ -598,6 +598,20 @@
   - old `/nba/players?q=` → Trends.
 - No computation changed.
 
+## ADR-049: one IR-return rule for the simulation and Waivers (2026-11-02)
+
+- **Disagreement:** when a player came back from the IR slot to a full roster:
+  - the season simulation cut the lowest per-game projection;
+  - the quick ranking (`teamValue`) and the IR plan note cut whoever would add the fewest lineup points from his return on (playoff days ×2).
+  - On Nov 1 that split them on Isaiah Jackson (Robinson vs Collins).
+- **Rule kept: fewest lineup points.**
+  - It sees positions and schedules.
+  - A low-projection guard who starts every night is worth more than a fifth center who never plays.
+- **How:** `buildOutlookInput` decides each team's cut with `teamValue` and passes it to the simulator (`SimTeam.irCut`). The simulator falls back to the lowest projection only if that player has already been streamed away.
+- **Tests:**
+  - the builder picks the benched center, not the starting guard;
+  - the simulator cuts the designated player.
+
 ## ADR-050: this season's league team total in the game-environment factor (2026-11-02)
 
 - **Mismatch:** the tested game-environment model (MODEL_CARD) divided each team's implied total by the league's average implied team total from games before that day, once 40 team-games were in. The app used the fixed 2025-26 value, 115.3.

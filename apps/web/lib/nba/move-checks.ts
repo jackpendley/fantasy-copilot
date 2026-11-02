@@ -23,7 +23,7 @@ type WaiverView = Awaited<ReturnType<typeof loadWaiverView>>;
 
 const KEY = "move-checks";
 /** Moves checked: the top of the quick ranking. */
-const SHORTLIST = 4;
+const SHORTLIST = 6;
 const COOLDOWN_MS = 30 * 60_000;
 
 export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>

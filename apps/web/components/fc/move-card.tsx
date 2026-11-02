@@ -4,8 +4,10 @@
 // expected wins and this week's matchup, with exact numbers. The drop can be swapped for any
 // other player on the roster; the numbers follow the choice.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { AddDropButton } from "@/components/add-drop-button";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export interface MoveOption {
@@ -14,6 +16,7 @@ export interface MoveOption {
   dropId: number | null;
   dropName: string | null;
   /** Moved to IL instead of a drop. */
+  ilId: number | null;
   ilName: string | null;
   /** This week: projected lineup points and change in win chance (null on a bye). */
   deltaPts: number;
@@ -90,8 +93,49 @@ export function MoveCard({
   checking: boolean;
 }) {
   const [key, setKey] = useState(initialKey);
+  // Checks run from this card (a swapped drop), on top of the page's.
+  const [mine, setMine] = useState<Record<string, MoveSim>>({});
+  const [running, setRunning] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const o = options.find((x) => x.key === key) ?? options[0]!;
-  const sim = sims[o.key];
+  const sim = mine[o.key] ?? sims[o.key];
+
+  useEffect(() => {
+    if (!running) return;
+    const t0 = Date.now();
+    const timer = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
+
+  async function simulate() {
+    const k = o.key;
+    setRunning(k);
+    setElapsed(0);
+    try {
+      const res = await fetch("/api/waivers/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addId, dropId: o.dropId, ilId: o.ilId }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error ?? `HTTP ${res.status}`);
+      const e = out.effect;
+      setMine((m) => ({
+        ...m,
+        [k]: {
+          title: e.title,
+          playoffs: e.playoffs,
+          seed1: e.seed1,
+          wins: e.wins,
+          seasons: e.seasons ?? 0,
+        },
+      }));
+    } catch (err) {
+      toast.error(`Simulation failed: ${(err as Error).message}`);
+    } finally {
+      setRunning(null);
+    }
+  }
   const last = (name: string) => name.split(" ").at(-1);
 
   // Season rows: Outlook now, with the move (now + the simulated change), the change ± margin.
@@ -167,7 +211,7 @@ export function MoveCard({
             <option key={x.key} value={x.key}>
               {x.ilName ? `${x.ilName} to IL` : (x.dropName ?? "Nobody (open spot)")}
               {` · ${signed(x.netWins, 2)}`}
-              {sims[x.key] ? " ✓" : ""}
+              {(mine[x.key] ?? sims[x.key]) ? " ✓" : ""}
             </option>
           ))}
         </select>
@@ -224,13 +268,29 @@ export function MoveCard({
             </tr>
           </tbody>
         </table>
-        {!sim && (
-          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
-            {checking && o.key === initialKey
-              ? "The season simulation is checking this move…"
-              : "The season simulation hasn't checked this drop (it checks the top moves automatically)."}
-          </p>
-        )}
+        {!sim &&
+          (checking && o.key === initialKey ? (
+            <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+              The season simulation is checking this move…
+            </p>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+              <span>
+                {running === o.key
+                  ? `Simulating… ${elapsed}s (usually 10–30 s)`
+                  : "Not simulated yet for this drop."}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={running != null}
+                onClick={simulate}
+              >
+                Simulate this drop
+              </Button>
+            </div>
+          ))}
       </div>
 
       <p className="pl-[50px] text-xs text-muted-foreground tabular-nums">

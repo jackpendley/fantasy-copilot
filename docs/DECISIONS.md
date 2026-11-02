@@ -550,3 +550,30 @@
   - "Later" → "rest of season". Its points now use the same playoff-weighted points its wins come from; before, the label printed unweighted points beside weighted wins.
   - A "How to read these numbers" disclosure replaces hover-only tooltips, which iPhones never show.
 - **Free agents table:** G and F filters (any guard, any forward) and sorting by every column, all in the browser over the 250-player pool. `?pos=` and `?sort=` stay in the URL.
+
+## ADR-047: playoff replays and batches for more precise simulations (2026-11-02)
+
+- **Jack's call:** precision first, with speed and CPU still weighed (Vercel Hobby includes 4 CPU-hours a month).
+- **Where the noise was:** at 800 plain seasons a move's title change was ±3.2 points (two standard errors), mostly playoff luck. A 3-week, 6-team bracket decides the title even when the regular season ends the same way.
+- **Playoff replays** (`SimInput.playoffReplays`):
+  - Each simulated season's playoffs are replayed K times from where its regular season ended (state saved and restored; fresh draws per replay).
+  - Title and final odds count each replay as a share. The expected value is the same and the noise is much lower.
+  - The first replay is the season's own playoffs, so K = 1 is exactly the old simulation (the recorded-results test still passes).
+- **Measured on Nov 2's top three moves** (`scripts/measure-move-precision.ts`, local CPU for base + 3 moves):
+
+  | Seasons × replays |    CPU | Title ± (2 SE) | Expected wins ± |
+  | ----------------- | -----: | -------------: | --------------: |
+  | 800 × 1 (before)  | 11.6 s |            3.2 |            0.14 |
+  | 2,400 × 1         | 34.8 s |            1.8 |            0.08 |
+  | 400 × 10          | 14.0 s |            1.9 |            0.20 |
+  | 800 × 10          | 27.4 s |            1.3 |            0.14 |
+  | 400 × 20          | 22.5 s |            1.7 |            0.20 |
+
+  Title precision per CPU second is ~2.4× plain seasons at K = 10; K = 20 adds little. The means agree with plain seasons within error.
+
+- **Move checks:**
+  - Batches of 400 seasons × 10 replays, each batch with its own seed. A move whose title change is still within its margin gets a second batch (800 seasons, ~±1.3), while the day's move-check CPU is under 2 minutes (`DAILY_CPU_BUDGET_S`; one batch costs about what 800 plain seasons did, so routine checks cost about the same as before).
+  - The base run is cached by setup, so a swapped drop checked on request (`POST /api/waivers/check`) costs one run.
+- **Trade simulations:** 400 seasons × 10 replays (was 500 plain).
+- **The Outlook is unchanged (2,000 plain seasons):** its playoffs and #1-seed odds need seasons, not replays. Revisit once Settings → Simulation CPU shows the monthly budget has room.
+- **Every simulation logs its CPU seconds** (`refresh_log`: move-sim, outlook-sim, trade-sim). Settings shows the last 30 days.

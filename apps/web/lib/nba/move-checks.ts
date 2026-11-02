@@ -8,7 +8,14 @@ import "server-only";
 import { after } from "next/server";
 import { dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
-import { simulateMoves, type MoveEffect, type MoveSimResult, type MoveSpec } from "./move-sim";
+import {
+  DAILY_CPU_BUDGET_S,
+  moveCpuToday,
+  simulateMoves,
+  type MoveEffect,
+  type MoveSimResult,
+  type MoveSpec,
+} from "./move-sim";
 import type { StreamOption } from "./waivers";
 import { loadWaiverView } from "./waivers-view";
 
@@ -102,7 +109,12 @@ export function refreshMoveChecks(): Promise<boolean> {
     if (row?.value.rosterKey === roster && Date.now() - row.computedAt.getTime() < COOLDOWN_MS)
       return false;
     const t0 = performance.now();
-    const result = await simulateMoves(moves.map(spec));
+    // Close calls get a second batch while the day's simulation budget lasts.
+    const budget = (await moveCpuToday().catch(() => 0)) < DAILY_CPU_BUDGET_S;
+    const result = await simulateMoves(moves.map(spec), {
+      maxBatches: budget ? 2 : 1,
+      label: "shortlist",
+    });
     const value: Stored = { ...result, rosterKey: roster };
     await writeView(KEY, fp, value, performance.now() - t0);
     return true;
@@ -110,4 +122,35 @@ export function refreshMoveChecks(): Promise<boolean> {
     running = null;
   });
   return running;
+}
+
+/**
+ * One more move checked on request (a drop Jack picked instead): simulated, and kept with the
+ * stored checks so the page shows it next time. Null when that move isn't available now.
+ */
+export async function checkMove(
+  addId: number,
+  dropId: number | null,
+  ilId: number | null,
+): Promise<MoveEffect | null> {
+  const v = await loadWaiverView();
+  const option = (v.analysis.dropOptions.get(addId) ?? []).find(
+    (o) => (o.drop?.id ?? null) === dropId && (o.il?.id ?? null) === ilId,
+  );
+  if (!option) return null;
+  const budget = (await moveCpuToday().catch(() => 0)) < DAILY_CPU_BUDGET_S;
+  const t0 = performance.now();
+  const result = await simulateMoves([spec(option)], {
+    maxBatches: budget ? 2 : 1,
+    label: "on request",
+  });
+  const effect = result.effects[0]!;
+  const row = await readView<Stored>(KEY).catch(() => null);
+  if (row) {
+    const effects = [...row.value.effects.filter((e) => e.key !== effect.key), effect];
+    await writeView(KEY, row.fingerprint, { ...row.value, effects }, performance.now() - t0).catch(
+      () => {},
+    );
+  }
+  return effect;
 }

@@ -78,9 +78,11 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
       <ul className="mt-2 list-disc space-y-1.5 pl-4">
         <li>
           <b className="text-foreground">Season sim</b>: the Outlook&apos;s season simulation,
-          played out with and without the move on the same random draws. &ldquo;Now&rdquo; is your
-          latest Outlook; &ldquo;With move&rdquo; adds the simulated change. ± is the margin of
-          error (two standard errors): a change smaller than it could be chance.
+          played out with and without the move on the same random draws; each season&apos;s playoffs
+          are replayed 10 times so the title odds aren&apos;t swamped by playoff luck.
+          &ldquo;Now&rdquo; is your latest Outlook; &ldquo;With move&rdquo; adds the simulated
+          change. ± is the margin of error (two standard errors): a change smaller than it could be
+          chance. Close calls get a second batch of seasons for a tighter margin.
         </li>
         <li>
           <b className="text-foreground">This week&apos;s matchup</b>: your win chance against this
@@ -114,6 +116,7 @@ function optionOf(o: StreamOption): MoveOption {
     key: moveKey(o),
     dropId: o.drop?.id ?? null,
     dropName: o.drop?.name ?? null,
+    ilId: o.il?.id ?? null,
     ilName: o.il?.name ?? null,
     deltaPts: o.deltaPts,
     deltaWin: o.deltaWin,
@@ -171,7 +174,7 @@ export default async function WaiversPage({
         playoffs: e.playoffs,
         seed1: e.seed1,
         wins: e.wins,
-        seasons: checks!.seasons,
+        seasons: e.seasons ?? checks!.seasons,
       },
     ]),
   );

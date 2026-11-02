@@ -30,6 +30,7 @@ import {
 import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
 import { memoFetch } from "../fetch-memo";
+import { leagueTeamTotal } from "./league-total";
 import { LAST_SCORING_PERIOD } from "./calendar";
 import { defenseTable } from "./defense-table";
 
@@ -100,14 +101,18 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
     leagueJson(scoringPeriodId),
     rostersAhead(scoringPeriodId),
   ]);
-  const [games, scoreboard, injuries, lineups, defense] = await Promise.all([
+  const [games, board, injuries, lineups, defense, leagueTotal] = await Promise.all([
     nbaSchedule(season),
     fetchScoreboard(yyyymmdd, LIVE_FETCH).catch(() => []),
     safeInjuries(),
     // Published on game days only; any failure just means no lineup info yet.
     fetchDailyLineups(yyyymmdd, LINEUPS_FETCH).catch(() => null),
     defenseTable().catch(() => null),
+    leagueTeamTotal(ymd).catch(() => null),
   ]);
+  // Each game's line carries this season's league-average team total (the projection's
+  // game-environment factor divides by it).
+  const scoreboard = board.map((g) => ({ ...g, leagueTotal }));
   const settings = parseSettings(raw);
   const teams = parseTeams(raw);
   const me = teams.find((t) => t.id === teamId);

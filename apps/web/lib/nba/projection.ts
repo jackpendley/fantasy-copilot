@@ -124,9 +124,9 @@ export function perGameProjection(p: RosterPlayer, asOf?: number): PerGame {
 /** Game environment (MODEL_CARD.md, passed 2026-10-21): (team's implied points ÷ league)^0.75. */
 const ENV_BETA = 0.75;
 /**
- * League-average implied team total. 2025-26's closing lines averaged 115.3 (2024-25: 113.3).
- * A fixed value moves every game's factor alike, so start/sit choices and head-to-head odds
- * barely depend on it; replace it with this season's average once lines are collected.
+ * League-average implied team total when this season's isn't known yet (fewer than 40
+ * team-games of lines): 2025-26's closing lines averaged 115.3 (2024-25: 113.3). Otherwise the
+ * line carries this season's average so far (lib/nba/league-total.ts), as in the tested model.
  */
 export const LEAGUE_TEAM_TOTAL = 115.3;
 
@@ -149,11 +149,13 @@ export function matchupFactor(
 export interface GameLine {
   total: number | null;
   spread: number | null;
+  /** This season's average implied team total before the game's day (null: not enough yet). */
+  leagueTotal?: number | null;
 }
 
 /** Multiplier for one game from its line; 1 when there's no line. */
 export function gameEnvironment(line: GameLine | null | undefined, home: boolean): number {
   if (line?.total == null || line.spread == null) return 1;
   const team = home ? (line.total - line.spread) / 2 : (line.total + line.spread) / 2;
-  return Math.pow(team / LEAGUE_TEAM_TOTAL, ENV_BETA);
+  return Math.pow(team / (line.leagueTotal ?? LEAGUE_TEAM_TOTAL), ENV_BETA);
 }

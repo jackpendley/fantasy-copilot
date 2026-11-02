@@ -318,6 +318,14 @@ describe("gameEnvironment", () => {
     expect(gameEnvironment(line, true)).toBeGreaterThan(gameEnvironment(line, false));
     expect(gameEnvironment({ total: 210, spread: 4 }, true)).toBeLessThan(1);
   });
+  it("divides by this season's league average when the line carries it", () => {
+    const line = { total: 240, spread: -6, leagueTotal: 120 };
+    expect(gameEnvironment(line, true)).toBeCloseTo(Math.pow(123 / 120, 0.75));
+    // Not enough games yet: the 2025-26 average stands in.
+    expect(gameEnvironment({ ...line, leagueTotal: null }, true)).toBeCloseTo(
+      Math.pow(123 / LEAGUE_TEAM_TOTAL, 0.75),
+    );
+  });
 });
 
 describe("perGameProjection without an ESPN projection", () => {

@@ -29,7 +29,7 @@ function Who({ c }: { c: WaiverCandidate }) {
       <PlayerAvatar id={c.player.id} name={c.player.name} size={40} />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="truncate font-medium">{c.player.name}</span>
+          <span className="min-w-0 font-medium break-words">{c.player.name}</span>
           <StatusPill status={c.player.injuryStatus ?? "ACTIVE"} />
           {c.status === "WAIVERS" && <Pill tone="info">Waivers</Pill>}
         </div>

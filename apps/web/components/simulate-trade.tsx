@@ -103,7 +103,7 @@ export function SimulateTrade({
                 </td>
               </tr>
               <tr>
-                <td className="max-w-28 truncate px-3 py-2 font-medium">{partnerName}</td>
+                <td className="px-3 py-2 font-medium break-words">{partnerName}</td>
                 <td className="px-3 py-2">
                   <Delta
                     before={result.theirs.before.playoffs}

@@ -160,7 +160,7 @@ export default async function SettingsPage() {
             <div key={i} className="flex gap-2">
               <span className={j.status === "ok" ? "" : "text-destructive"}>{j.job}</span>
               <span className="text-muted-foreground">{when(j.ran_at)}</span>
-              <span className="truncate text-muted-foreground">{j.detail}</span>
+              <span className="min-w-0 break-all text-muted-foreground">{j.detail}</span>
             </div>
           ))}
         </CardContent>

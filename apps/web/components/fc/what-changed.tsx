@@ -67,7 +67,10 @@ export function WhatChanged({
         <div key={t.teamId} className="px-3 py-2.5">
           <div className="flex items-baseline justify-between gap-3">
             <span
-              className={cn("truncate text-sm font-medium", t.teamId === myId && "text-primary")}
+              className={cn(
+                "min-w-0 text-sm font-medium break-words",
+                t.teamId === myId && "text-primary",
+              )}
             >
               {t.name}
             </span>

@@ -77,7 +77,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
       <div className="flex items-center gap-4">
         <PlayerAvatar id={pl.id} name={pl.name} size={72} />
         <div className="min-w-0">
-          <h1 className="truncate text-2xl font-semibold tracking-tight">{pl.name}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight break-words">{pl.name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
             <TeamLogo abbr={pl.proTeam} size={18} />
             <span>

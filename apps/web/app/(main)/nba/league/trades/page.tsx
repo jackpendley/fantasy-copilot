@@ -92,7 +92,7 @@ function PickList({
           <PlayerAvatar id={p.id} name={p.name} size={28} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-medium">{p.name}</span>
+              <span className="min-w-0 text-sm font-medium break-words">{p.name}</span>
               <StatusPill status={p.injuryStatus ?? "ACTIVE"} />
             </div>
             <div className="text-[11px] text-muted-foreground">
@@ -188,7 +188,7 @@ function Evaluation({
             <tbody className="divide-y">
               {rows.map((r) => (
                 <tr key={r.who}>
-                  <td className="max-w-32 truncate px-3 py-2 font-medium">{r.who}</td>
+                  <td className="px-3 py-2 font-medium break-words">{r.who}</td>
                   <td className={cn("px-3 py-2 text-right font-semibold", tone(r.d.regular))}>
                     {signed(r.d.regular)}
                   </td>
@@ -301,7 +301,7 @@ async function Targets({
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
                   {i.acceptance && <RealismPill realism={i.acceptance.realism} />}
                   <span>{tradeSize(i)}</span>
-                  <span className="truncate">
+                  <span className="min-w-0 break-words">
                     · {name.get(i.partnerId)} · their lineup{" "}
                     {signed(i.theirs.regular + i.theirs.playoffs)}
                   </span>
@@ -390,7 +390,7 @@ export default async function TradesPage({
               key={t.id}
               href={`/nba/league/trades?team=${t.id}`}
               className={cn(
-                "max-w-48 truncate rounded-lg border px-2.5 py-1 text-xs font-medium",
+                "rounded-lg border px-2.5 py-1 text-xs font-medium break-words",
                 partner?.id === t.id
                   ? "border-primary bg-primary/10 text-primary"
                   : "bg-card text-muted-foreground",
@@ -416,7 +416,7 @@ export default async function TradesPage({
               />
             </div>
             <div className="space-y-1">
-              <div className="truncate px-1 text-xs font-medium">
+              <div className="px-1 text-xs font-medium break-words">
                 You get from {partner.name} (up to 3)
               </div>
               <PickList

@@ -89,7 +89,7 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
             <PlayerAvatar id={p.id} name={p.name} size={36} />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className="truncate font-medium">{p.name}</span>
+                <span className="min-w-0 font-medium break-words">{p.name}</span>
                 <StatusPill status={p.injuryStatus ?? "ACTIVE"} />
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">

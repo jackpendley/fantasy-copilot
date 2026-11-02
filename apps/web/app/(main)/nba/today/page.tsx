@@ -190,7 +190,7 @@ export default async function TodayPage({
                 <ul className="space-y-1.5 text-sm">
                   {board.moves.map((m) => (
                     <li key={m.playerId} className="flex items-center gap-2">
-                      <span className="truncate font-medium">{m.name}</span>
+                      <span className="min-w-0 font-medium break-words">{m.name}</span>
                       <span className="ml-auto font-mono text-xs text-muted-foreground">
                         {m.from}
                       </span>

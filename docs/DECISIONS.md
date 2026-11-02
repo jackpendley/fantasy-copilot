@@ -577,3 +577,23 @@
 - **Trade simulations:** 400 seasons × 10 replays (was 500 plain).
 - **The Outlook is unchanged (2,000 plain seasons):** its playoffs and #1-seed odds need seasons, not replays. Revisit once Settings → Simulation CPU shows the monthly budget has room.
 - **Every simulation logs its CPU seconds** (`refresh_log`: move-sim, outlook-sim, trade-sim). Settings shows the last 30 days.
+
+## ADR-048: four tabs: Players (Waivers + Players) and League (Outlook + League) (2026-11-02)
+
+- **Jack's call, after weighing pros and cons:** merge both pairs.
+- **Players** (`/nba/players`) has three views, each its own route so only the open one loads its data:
+  - **Moves** (default; was Waivers): best adds and drops, checked with the season simulation.
+  - **Free agents** (`/free-agents`): the sortable pool.
+  - **Trends** (`/trends`): hot and cold, minutes opening up, free agents being added, your roster, and `?q=` search results.
+  - Search as you type sits on top of all three.
+- **League** (`/nba/league`):
+  - your odds tiles, what changed and the odds chart (was Outlook);
+  - one table of every team's record, points, strength (pts/wk and power), expected wins, playoff, #1-seed, final and title odds, and activity;
+  - Trades and team pages are unchanged.
+  - The two pages' near-duplicate tables became one.
+- **Bottom bar:** 4 tabs instead of 6.
+- **Old links redirect:**
+  - `/nba/waivers` → Moves (with `?pos=`/`?sort=` → Free agents);
+  - `/nba/outlook` → League;
+  - old `/nba/players?q=` → Trends.
+- No computation changed.

@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 /**
- * Re-run the season outlook (button on /nba/outlook), unless a run is already going. It answers
+ * Re-run the season outlook (button on /nba/league), unless a run is already going. It answers
  * at once; the run reports its odds as it goes, which the page shows while it refreshes.
  */
 export async function POST() {

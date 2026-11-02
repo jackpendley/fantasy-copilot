@@ -93,7 +93,7 @@ export function PlayerSearch({ initial = "" }: { initial?: string }) {
 
   const showList = open && q.trim().length > 0;
   return (
-    <form ref={box} action="/nba/players" className="relative" role="search">
+    <form ref={box} action="/nba/players/trends" className="relative" role="search">
       <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
       <input
         name="q"

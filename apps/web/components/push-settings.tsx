@@ -16,7 +16,17 @@ function keyBytes(base64: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
-type State = "loading" | "unsupported" | "install-first" | "off" | "on" | "blocked";
+type State =
+  "loading" | "unsupported" | "install-first" | "update-ios" | "no-keys" | "off" | "on" | "blocked";
+
+/** Was this subscription made with the current key? (Not after the keys are rotated.) */
+function sameKey(sub: PushSubscription): boolean {
+  const key = sub.options.applicationServerKey;
+  if (!key) return true;
+  const a = new Uint8Array(key);
+  const b = keyBytes(VAPID_PUBLIC_KEY);
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
 
 export function PushSettings() {
   const [state, setState] = useState<State>("loading");
@@ -24,15 +34,25 @@ export function PushSettings() {
 
   useEffect(() => {
     (async () => {
-      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !VAPID_PUBLIC_KEY) {
-        // iOS Safari only exposes push to apps added to the home screen.
-        const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
-        setState(ios ? "install-first" : "unsupported");
-        return;
+      // iPadOS reports itself as a Mac; a touch screen gives it away.
+      const ios =
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+      const standalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (navigator as { standalone?: boolean }).standalone === true;
+      // iOS only offers push to apps opened from the Home Screen.
+      if (ios && !standalone) return setState("install-first");
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+        return setState(ios ? "update-ios" : "unsupported");
       }
+      if (!VAPID_PUBLIC_KEY) return setState("no-keys");
       if (Notification.permission === "denied") return setState("blocked");
       const reg = await navigator.serviceWorker.register("/sw.js");
-      setState((await reg.pushManager.getSubscription()) ? "on" : "off");
+      const sub = await reg.pushManager.getSubscription();
+      // A subscription from before the keys changed can't receive anything: start over.
+      if (sub && !sameKey(sub)) await sub.unsubscribe();
+      setState(sub && sameKey(sub) ? "on" : "off");
     })().catch(() => setState("unsupported"));
   }, []);
 
@@ -68,7 +88,11 @@ export function PushSettings() {
     setBusy(true);
     const res = await fetch("/api/push/test", { method: "POST" });
     const out = await res.json().catch(() => ({}));
-    if (res.ok) toast.success(`Test sent to ${out.sent} device${out.sent === 1 ? "" : "s"}`);
+    if (res.ok && out.sent) {
+      toast.success(
+        `Test sent to ${out.sent} device${out.sent === 1 ? "" : "s"}${out.failed ? ` (${out.failed} failed)` : ""}`,
+      );
+    } else if (res.ok) toast.error(`Test reached no device (${out.failed ?? 0} failed)`);
     else toast.error(`Test failed: ${out.error ?? res.status}`);
     setBusy(false);
   }
@@ -79,6 +103,14 @@ export function PushSettings() {
       <p className="text-sm">
         On iPhone, notifications need the app on your home screen: Share → Add to Home Screen, then
         open it from there and come back here.
+      </p>
+    );
+  if (state === "update-ios")
+    return <p className="text-sm">Notifications on iPhone and iPad need iOS 16.4 or later.</p>;
+  if (state === "no-keys")
+    return (
+      <p className="text-sm text-muted-foreground">
+        Notifications aren&apos;t set up on the server yet (its push keys are missing).
       </p>
     );
   if (state === "unsupported")

@@ -3,7 +3,13 @@ import "server-only";
 // so the server can re-check a move against fresh data before writing it.
 
 import { isStartingSlot } from "@fantasy-copilot/fantasy-core";
-import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
+import {
+  LAST_SCORING_PERIOD,
+  gameDate,
+  matchupPeriodOf,
+  scoringPeriodForDate,
+  scoringPeriodsOf,
+} from "./calendar";
 import { loadFreeAgents, loadLeague } from "./data";
 import { buildDayBoard } from "./day";
 import { matchupView } from "./matchup";
@@ -11,9 +17,57 @@ import { absences } from "./availability";
 import { rosterLocked } from "./roster";
 import { valueContext } from "./trade";
 import { bestPerGame } from "./best";
-import { waiverAnalysis } from "./waivers";
+import { waiverAnalysis, waiverCandidates } from "./waivers";
+import { memoAsync } from "@/lib/fetch-memo";
 
-export async function loadWaiverView(now = new Date()) {
+/**
+ * Moves' data, kept 30 seconds per server instance so switching tabs and coming back doesn't
+ * redo the add-and-drop analysis (forgetResponses(), e.g. before an add, clears it).
+ */
+export const loadWaiverView = memoAsync(30_000, () => gameDate(), readWaiverView);
+
+/** Which teams' games today have started (an add can't play in them). */
+function startedTeams(data: Awaited<ReturnType<typeof loadLeague>>, sp: number, now: Date) {
+  const live = new Map(data.scoreboard.map((g) => [g.gameId, g]));
+  const started = new Set<number>();
+  for (const g of data.games.filter((x) => x.scoringPeriodId === sp)) {
+    const s = live.get(g.gameId);
+    if (s ? s.state !== "pre" : g.date <= now.getTime()) {
+      started.add(g.homeProTeamId);
+      started.add(g.awayProTeamId);
+    }
+  }
+  return started;
+}
+
+/** The Free agents view: the pool with this week's games and season points, no analysis. */
+export async function loadFreeAgentPool(now = new Date()) {
+  const date = gameDate(now);
+  const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
+  const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
+  const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
+  const { candidates } = waiverCandidates({
+    freeAgents,
+    week: {
+      periods: scoringPeriodsOf(matchupPeriodOf(sp)),
+      fromPeriod: sp,
+      games: data.games,
+      slotCounts: data.settings.slotCounts,
+      injuries: data.injuries,
+    },
+    rosterLocked: rosterLocked(
+      data.settings,
+      todayGames.map((g) => g.date),
+      data.scoreboard,
+      now,
+    ),
+    startedToday: startedTeams(data, sp, now),
+    lastDay: LAST_SCORING_PERIOD,
+  });
+  return candidates;
+}
+
+async function readWaiverView(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);

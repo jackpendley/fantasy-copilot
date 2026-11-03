@@ -3,11 +3,10 @@
 
 import { SectionTitle } from "@/components/fc/bits";
 import { FreeAgentTable } from "@/components/fc/free-agent-table";
-import { PlayersNav } from "@/components/fc/players-nav";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { POSITIONS, type FreeAgentRow, type SortKey } from "@/lib/free-agents";
-import { loadWaiverView } from "@/lib/nba/waivers-view";
+import { loadFreeAgentPool } from "@/lib/nba/waivers-view";
 
 const SORTS = ["name", "fppg", "last7", "games", "owned", "change", "season"] as const;
 
@@ -20,14 +19,14 @@ export default async function FreeAgentsPage({
   const pos = POSITIONS.includes(posParam as (typeof POSITIONS)[number]) ? posParam! : "All";
   const sort: SortKey = SORTS.includes(sortParam as SortKey) ? (sortParam as SortKey) : "fppg";
 
-  let v;
+  let candidates;
   try {
-    v = await loadWaiverView();
+    candidates = await loadFreeAgentPool();
   } catch (e) {
     if (e instanceof SetupError) return <SetupNotice message={e.message} />;
     return <ErrorNotice title="Couldn't load free agents" message={(e as Error).message} />;
   }
-  const pool: FreeAgentRow[] = v.analysis.candidates.map((c) => ({
+  const pool: FreeAgentRow[] = candidates.map((c) => ({
     id: c.player.id,
     name: c.player.name,
     status: c.player.injuryStatus ?? "ACTIVE",
@@ -44,7 +43,7 @@ export default async function FreeAgentsPage({
 
   return (
     <>
-      <PlayersNav view="free-agents" subtitle={`${pool.length} free agents and waiver players`} />
+      <p className="px-1 text-sm text-muted-foreground">{`${pool.length} free agents and waiver players`}</p>
       <section className="space-y-1.5">
         <SectionTitle>Free agents</SectionTitle>
         <FreeAgentTable rows={pool} initialPos={pos} initialSort={sort} />

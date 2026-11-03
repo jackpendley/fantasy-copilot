@@ -13,7 +13,6 @@ import { moveChecks, moveKey, rosterKey, type MoveChecks } from "@/lib/nba/move-
 import type { MoveEffect } from "@/lib/nba/move-sim";
 import { LiveRefresh } from "@/components/live-refresh";
 import { MoveCard, type MoveOption, type MoveSim } from "@/components/fc/move-card";
-import { PlayersNav } from "@/components/fc/players-nav";
 import { redirect } from "next/navigation";
 import { latestOutlook } from "@/lib/nba/outlook-run";
 import { latestDeepChecks } from "@/lib/nba/sim-jobs";
@@ -247,12 +246,11 @@ export default async function MovesPage({
     .slice(0, 5);
   return (
     <>
-      <PlayersNav
-        view="moves"
-        subtitle={`Week ${view.mp} · ${addsLeft} of ${addsCap} adds left${
+      <p className="px-1 text-sm text-muted-foreground">
+        {`Week ${view.mp} · ${addsLeft} of ${addsCap} adds left${
           analysis.baseWin != null ? ` · ${winChanceLabel(analysis.baseWin, false)} to win now` : ""
         }`}
-      />
+      </p>
 
       <IlPlanNote plan={ilReturnPlan(v.data.ahead.me, v.data, v.sp)} />
 

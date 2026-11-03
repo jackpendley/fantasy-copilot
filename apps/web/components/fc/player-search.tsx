@@ -7,7 +7,8 @@
 // a plain form that loads ?q= results.
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Search } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Search as SearchIcon } from "lucide-react";
 import { usePlayerCard } from "@/components/fc/player-card";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { StatusPill } from "@/components/fc/status-pill";
@@ -43,7 +44,22 @@ function Highlighted({ hit }: { hit: SearchHit }) {
   );
 }
 
-export function PlayerSearch({ initial = "" }: { initial?: string }) {
+export function PlayerSearch({
+  initial = "",
+  fromUrl = false,
+}: {
+  initial?: string;
+  fromUrl?: boolean;
+}) {
+  return fromUrl ? <FromUrl /> : <Search initial={initial} />;
+}
+
+/** The box prefilled with the page's ?q= (search results on Trends). */
+function FromUrl() {
+  return <Search initial={useSearchParams().get("q") ?? ""} />;
+}
+
+function Search({ initial }: { initial: string }) {
   const card = usePlayerCard();
   const listId = useId();
   const [q, setQ] = useState(initial);
@@ -94,7 +110,7 @@ export function PlayerSearch({ initial = "" }: { initial?: string }) {
   const showList = open && q.trim().length > 0;
   return (
     <form ref={box} action="/nba/players/trends" className="relative" role="search">
-      <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+      <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
       <input
         name="q"
         value={q}

@@ -8,6 +8,8 @@ export interface FreeAgentRow {
   positions: string[];
   waivers: boolean;
   fppg: number;
+  /** Percentile of his FP/G among this league's rostered players. */
+  fppgPct: number | null;
   last7: number | null;
   weekGames: number;
   owned: number | null;

@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
-import { Callout, SectionTitle, StatTile } from "@/components/fc/bits";
+import { Callout, StatTile } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
-import { FpChart } from "@/components/fp-chart";
+import { PlayerSeasons } from "@/components/fc/player-seasons";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
@@ -14,21 +14,22 @@ import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "@/lib/nba/c
 import { nbaSchedule } from "@/lib/nba/data";
 import { propsForGames } from "@/lib/nba/market-data";
 import { scoreGames, summarize } from "@/lib/nba/player";
+import { loadPlayerCard } from "@/lib/nba/player-card";
 import { loadPlayer } from "@/lib/nba/pool";
 import { perGameProjection } from "@/lib/nba/projection";
 import { vegasProjection } from "@/lib/nba/vegas";
-import { cn } from "@/lib/utils";
 
 const seasonLabel = (s: number) => `${s - 1}-${String(s).slice(2)}`;
-const shortDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", {
-    month: "numeric",
-    day: "numeric",
-    timeZone: "America/New_York",
-  });
 
-export default async function PlayerPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PlayerPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ season?: string }>;
+}) {
   const id = Number((await params).id);
+  const { season } = await searchParams;
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   let p;
@@ -39,13 +40,14 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
     return <ErrorNotice title="Couldn't load this player" message={(e as Error).message} />;
   }
   if (!p) notFound();
+  // Both seasons with the card's numbers (advanced stats, percentiles) for the season view.
+  const card = await loadPlayerCard(id, undefined, true).catch(() => null);
 
   const { entry, fa, injury } = p;
   const pl = entry.player;
   const rows = scoreGames(p.log, p.scoring);
   const sum = summarize(rows);
   const proj = perGameProjection(pl).fppg;
-  const recent = [...rows].reverse().slice(0, 15);
   const fromLastSeason = p.logSeason !== p.season;
 
   // Tonight's game, as the sportsbooks see it (when props are posted).
@@ -114,7 +116,7 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
       )}
       {fa && (
         <Callout tone="info">
-          {fa.status === "WAIVERS" ? "On waivers." : "Free agent."} See how he&apos;d fit your week
+          {fa.status === "WAIVERS" ? "On waivers. " : "Free agent. "}See how he&apos;d fit your week
           on{" "}
           <Link
             href="/nba/players"
@@ -156,103 +158,15 @@ export default async function PlayerPage({ params }: { params: Promise<{ id: str
         />
       </div>
 
-      {rows.length > 0 ? (
-        <>
-          <section className="space-y-1.5">
-            <SectionTitle
-              aside={
-                fromLastSeason
-                  ? `${seasonLabel(p.logSeason)}: this season hasn't started`
-                  : seasonLabel(p.logSeason)
-              }
-            >
-              Fantasy points by game
-            </SectionTitle>
-            <div className="rounded-xl border bg-card p-3">
-              <FpChart
-                points={rows.map((r) => ({
-                  label: shortDate(r.date),
-                  opponent: r.opponent,
-                  fp: Math.round(r.fp * 10) / 10,
-                  rolling: r.rolling != null ? Math.round(r.rolling * 10) / 10 : null,
-                }))}
-              />
-            </div>
-          </section>
-
-          <section className="space-y-1.5">
-            <SectionTitle aside="League scoring">Game log</SectionTitle>
-            <div className="overflow-x-auto rounded-xl border bg-card">
-              <table className="w-full text-sm tabular-nums">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="px-3 py-2.5 text-left font-medium">Game</th>
-                    <th className="px-2 py-2.5 text-right font-medium">FP</th>
-                    <th className="px-2 py-2.5 text-right font-medium">MIN</th>
-                    <th className="px-2 py-2.5 text-right font-medium">PTS</th>
-                    <th className="px-2 py-2.5 text-right font-medium">REB</th>
-                    <th className="px-2 py-2.5 text-right font-medium">AST</th>
-                    <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">STL</th>
-                    <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">BLK</th>
-                    <th className="hidden px-2 py-2.5 text-right font-medium sm:table-cell">TO</th>
-                    <th className="hidden px-3 py-2.5 text-right font-medium sm:table-cell">FG</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {recent.map((r) => (
-                    <tr key={r.gameId}>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span className="w-9 text-muted-foreground">{shortDate(r.date)}</span>
-                          <span className="text-muted-foreground">{r.home ? "vs" : "@"}</span>
-                          <TeamLogo abbr={r.opponent} size={14} />
-                          <span className="font-medium">{r.opponent}</span>
-                          {r.part === "post" && (
-                            <span className="hidden sm:inline">
-                              <Pill tone="info">Playoffs</Pill>
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td
-                        className={cn(
-                          "px-2 py-2 text-right font-semibold",
-                          sum.fppg != null && r.fp >= sum.fppg * 1.25 && "text-success",
-                          sum.fppg != null && r.fp <= sum.fppg * 0.6 && "text-danger",
-                        )}
-                      >
-                        {fmtPts(r.fp)}
-                      </td>
-                      <td className="px-2 py-2 text-right">{r.line.MIN ?? 0}</td>
-                      <td className="px-2 py-2 text-right">{r.line.PTS ?? 0}</td>
-                      <td className="px-2 py-2 text-right">{r.line.REB ?? 0}</td>
-                      <td className="px-2 py-2 text-right">{r.line.AST ?? 0}</td>
-                      <td className="hidden px-2 py-2 text-right sm:table-cell">
-                        {r.line.STL ?? 0}
-                      </td>
-                      <td className="hidden px-2 py-2 text-right sm:table-cell">
-                        {r.line.BLK ?? 0}
-                      </td>
-                      <td className="hidden px-2 py-2 text-right sm:table-cell">
-                        {r.line.TO ?? 0}
-                      </td>
-                      <td className="hidden px-3 py-2 text-right text-muted-foreground sm:table-cell">
-                        {r.line.FGM ?? 0}-{r.line.FGA ?? 0}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="px-1 text-xs text-muted-foreground">
-              Last {recent.length} games, newest first. Green: 25%+ above his average; red: 40%+
-              below.
-            </p>
-          </section>
-        </>
-      ) : (
+      {card?.logs ? (
+        <PlayerSeasons
+          card={card}
+          logs={card.logs}
+          initial={season === "last" || !card.seasons.current.split ? "last" : "current"}
+        />
+      ) : rows.length === 0 ? (
         <Callout tone="info">No NBA games on record for him yet.</Callout>
-      )}
+      ) : null}
     </>
   );
 }

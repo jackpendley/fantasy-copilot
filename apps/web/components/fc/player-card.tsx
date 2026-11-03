@@ -8,6 +8,7 @@
 // every 20 seconds, and again when the app comes back to the foreground.
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -17,6 +18,9 @@ import { fmtPts } from "@/lib/display";
 import type { Contribution } from "@/lib/nba/card-stats";
 import type { LiveGame, PlayerCardData, SeasonBlock } from "@/lib/nba/player-card";
 import { cn } from "@/lib/utils";
+import { FpChart } from "@/components/fp-chart";
+import type { PlayerMetric } from "@/lib/nba/pbp-metrics";
+import { fpTone, toneText } from "@/lib/display";
 import { PlayerAvatar } from "./player-avatar";
 import { Pill, StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
@@ -40,7 +44,11 @@ type Entry = { at: number; data: Promise<PlayerCardData>; live: boolean };
 export function PlayerCardProvider({ children }: { children: React.ReactNode }) {
   const cache = useRef(new Map<number, Entry>());
   const current = useRef<number | null>(null);
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [opened, setOpened] = useState<{ id: number; path: string } | null>(null);
+  // Following a link out of the card (full player page, model accuracy) closes it: the card is
+  // open only on the page it was opened from.
+  const pathname = usePathname();
+  const openId = opened && opened.path === pathname ? opened.id : null;
   const [card, setCard] = useState<PlayerCardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,7 +88,7 @@ export function PlayerCardProvider({ children }: { children: React.ReactNode }) 
   const open = useCallback(
     (id: number) => {
       current.current = id;
-      setOpenId(id);
+      setOpened({ id, path: pathname });
       setError(null);
       // Show what we have at once (even if a refresh is coming), never another player's card.
       const hit = cache.current.get(id);
@@ -88,7 +96,7 @@ export function PlayerCardProvider({ children }: { children: React.ReactNode }) 
       if (hit) hit.data.then((c) => current.current === id && setCard(c)).catch(() => {});
       show(id, load(id));
     },
-    [load, show],
+    [load, show, pathname],
   );
   const prefetch = useCallback((id: number) => void load(id).catch(() => {}), [load]);
 
@@ -119,13 +127,16 @@ export function PlayerCardProvider({ children }: { children: React.ReactNode }) 
         onOpenChange={(o) => {
           if (!o) {
             current.current = null;
-            setOpenId(null);
+            setOpened(null);
           }
         }}
       >
         <DialogContent
           className={cn(
-            "max-h-[88dvh] gap-0 overflow-y-auto p-0 sm:max-w-xl",
+            // One size for every tab and while loading: switching tabs never resizes the card;
+            // its content scrolls inside.
+            // (One shrinkable grid column: wide tables scroll inside their own box.)
+            "h-[min(88dvh,780px)] grid-cols-[minmax(0,1fr)] content-start gap-0 overflow-y-auto p-0 sm:max-w-xl",
             // Phones: a bottom sheet.
             "max-sm:top-auto max-sm:bottom-0 max-sm:max-w-full max-sm:translate-y-0 max-sm:rounded-b-none",
           )}
@@ -195,20 +206,60 @@ function CardSkeleton() {
   );
 }
 
+/** A league percentile as a badge: green at the 80th or better, red at the 20th or worse. */
+export function PercentileBadge({
+  p,
+  colored = true,
+  title = "League percentile among regulars",
+}: {
+  p: number | null;
+  colored?: boolean;
+  title?: string;
+}) {
+  if (p == null) return null;
+  const tone = !colored ? null : p >= 80 ? "good" : p <= 20 ? "bad" : null;
+  return (
+    <span
+      className={cn(
+        "rounded px-1 text-[10px] font-semibold tabular-nums",
+        tone === "good"
+          ? "bg-success/15 text-success"
+          : tone === "bad"
+            ? "bg-danger/15 text-danger"
+            : "bg-muted text-muted-foreground",
+      )}
+      title={title}
+    >
+      {ordinal(p)}
+    </span>
+  );
+}
+
+const ordinal = (n: number) => {
+  const r = Math.round(n);
+  const s = r % 100 >= 11 && r % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][r % 10] ?? "th");
+  return `${r}${s}`;
+};
+
 function Tile({
   label,
   value,
   sub,
   strong,
+  percentile,
 }: {
   label: string;
   value: string;
   sub?: string;
   strong?: boolean;
+  percentile?: number | null;
 }) {
   return (
     <div className={cn("rounded-lg border px-3 py-2", strong && "border-primary/40 bg-primary/5")}>
-      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+      <div className="flex items-center justify-between gap-1 text-[11px] font-medium text-muted-foreground">
+        {label}
+        {percentile != null && <PercentileBadge p={percentile} />}
+      </div>
       <div className={cn("text-lg font-semibold tabular-nums", strong && "text-primary")}>
         {value}
       </div>
@@ -239,30 +290,6 @@ function Section({
   );
 }
 
-/** Last 10 games' fantasy points as a small line. */
-function Spark({ values }: { values: number[] }) {
-  if (values.length < 2) return null;
-  const max = Math.max(...values, 1);
-  const min = Math.min(...values, 0);
-  const x = (i: number) => (i / (values.length - 1)) * 100;
-  const y = (v: number) => 28 - ((v - min) / (max - min || 1)) * 26;
-  return (
-    <svg viewBox="0 0 100 30" className="h-10 w-full" preserveAspectRatio="none" aria-hidden>
-      <polyline
-        points={values.map((v, i) => `${x(i)},${y(v)}`).join(" ")}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        vectorEffect="non-scaling-stroke"
-        className="text-primary"
-      />
-      {values.map((v, i) => (
-        <circle key={i} cx={x(i)} cy={y(v)} r={1.6} className="fill-primary" />
-      ))}
-    </svg>
-  );
-}
-
 const pct = (v: number | null) => (v == null ? "—" : `${v.toFixed(0)}%`);
 const signed = (v: number, digits = 1) => `${v >= 0 ? "+" : ""}${v.toFixed(digits)}`;
 const STAT_LABEL: Record<string, string> = { FG: "FG (net)", FT: "FT (net)" };
@@ -271,7 +298,7 @@ const STAT_LABEL: Record<string, string> = { FG: "FG (net)", FT: "FT (net)" };
  * Fantasy points by stat as bars from zero: green adds, red costs. FG and FT are one net bar
  * each (makes minus misses), so efficient shooting shows green.
  */
-function ContributionBars({ items }: { items: Contribution[] }) {
+export function ContributionBars({ items }: { items: Contribution[] }) {
   const max = Math.max(...items.map((c) => Math.abs(c.points)), 1);
   return (
     <div className="space-y-1">
@@ -544,7 +571,58 @@ function NextTab({ card }: { card: PlayerCardData }) {
   );
 }
 
-function SeasonNumbers({ s }: { s: SeasonBlock }) {
+/**
+ * Advanced stats in groups, each with his league percentile (green 80th+, red 20th or below;
+ * style stats like 3-point rate aren't good or bad, so they stay grey).
+ */
+export function AdvancedMetrics({ metrics, per }: { metrics: PlayerMetric[]; per: number | null }) {
+  const groups = [...new Set(metrics.map((m) => m.group))];
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => (
+        <div key={g} className="space-y-1">
+          <div className="text-[11px] font-medium text-muted-foreground">{g}</div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+            {metrics
+              .filter((m) => m.group === g)
+              .map((m) => (
+                <div key={m.key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-muted-foreground">{m.label}</span>
+                  <span className="flex items-center gap-1.5 tabular-nums">
+                    <span
+                      className={cn(
+                        "font-semibold",
+                        m.tone === "good" && "text-success",
+                        m.tone === "bad" && "text-danger",
+                      )}
+                    >
+                      {m.value}
+                    </span>
+                    <PercentileBadge
+                      p={m.percentile}
+                      colored={m.tone != null || m.percentile == null ? true : false}
+                    />
+                  </span>
+                </div>
+              ))}
+          </div>
+        </div>
+      ))}
+      {metrics.every((m) => m.percentile == null) && (
+        <p className="text-[11px] text-muted-foreground">
+          Too few minutes so far for league percentiles (regulars play 10+ a game).
+        </p>
+      )}
+      {per != null && (
+        <p className="text-[11px] text-muted-foreground">
+          PER (ESPN): {per.toFixed(1)} (15 = average)
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function SeasonNumbers({ s }: { s: SeasonBlock }) {
   const sp = s.split;
   const e = s.espn;
   const pbp = s.pbp;
@@ -560,7 +638,13 @@ function SeasonNumbers({ s }: { s: SeasonBlock }) {
       {sp ? (
         <>
           <div className="grid grid-cols-3 gap-2 px-5 pb-4">
-            <Tile label="FP/G" value={fmtPts(sp.fppg)} sub={`${sp.games} games`} strong />
+            <Tile
+              label="FP/G"
+              value={fmtPts(sp.fppg)}
+              sub={`${sp.games} games`}
+              strong
+              percentile={s.fppgPercentile ?? null}
+            />
             <Tile
               label="Typical range"
               value={`${fmtPts(sp.floor)}–${fmtPts(sp.ceiling)}`}
@@ -606,7 +690,44 @@ function SeasonNumbers({ s }: { s: SeasonBlock }) {
         <p className="px-5 pb-4 text-xs text-muted-foreground">No games this season yet.</p>
       )}
 
-      {(e || pbp) && (
+      {pbp?.metrics?.length ? (
+        <Section title="Advanced" aside="League percentile among regulars · PBP Stats">
+          <AdvancedMetrics metrics={pbp.metrics} per={e?.per ?? null} />
+        </Section>
+      ) : null}
+      {pbp && pbp.zones.length > 0 && (
+        <Section title="Shot profile" aside="PBP Stats">
+          <div className="space-y-1 pt-1">
+            <div className="flex items-baseline justify-between text-[11px] text-muted-foreground">
+              <span>Where his shots come from</span>
+              {pbp.shotQuality != null && (
+                <span title="PBP Stats' expected eFG% for his shots: where and how they're taken">
+                  shot quality {(pbp.shotQuality * 100).toFixed(1)}%
+                </span>
+              )}
+            </div>
+            {pbp.zones.map((z) => (
+              <div
+                key={z.zone}
+                className="grid grid-cols-[6.5rem_1fr_6rem] items-center gap-2 text-xs tabular-nums"
+              >
+                <span>{z.zone}</span>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-primary/60"
+                    style={{ width: `${(z.frequency / maxZone) * 100}%` }}
+                  />
+                </div>
+                <span className="text-right text-muted-foreground">
+                  {(z.frequency * 100).toFixed(0)}% ·{" "}
+                  {z.accuracy != null ? `${(z.accuracy * 100).toFixed(0)}% made` : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+      {(e || pbp) && !pbp?.metrics?.length && (
         <Section title="Advanced" aside="ESPN · PBP Stats">
           <div className="grid grid-cols-3 gap-2">
             <Tile
@@ -636,36 +757,6 @@ function SeasonNumbers({ s }: { s: SeasonBlock }) {
               sub="team pts with him on"
             />
           </div>
-          {pbp && pbp.zones.length > 0 && (
-            <div className="space-y-1 pt-1">
-              <div className="flex items-baseline justify-between text-[11px] text-muted-foreground">
-                <span>Where his shots come from</span>
-                {pbp.shotQuality != null && (
-                  <span title="PBP Stats' expected eFG% for his shots: where and how they're taken">
-                    shot quality {(pbp.shotQuality * 100).toFixed(1)}%
-                  </span>
-                )}
-              </div>
-              {pbp.zones.map((z) => (
-                <div
-                  key={z.zone}
-                  className="grid grid-cols-[6.5rem_1fr_6rem] items-center gap-2 text-xs tabular-nums"
-                >
-                  <span>{z.zone}</span>
-                  <div className="h-2 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary/60"
-                      style={{ width: `${(z.frequency / maxZone) * 100}%` }}
-                    />
-                  </div>
-                  <span className="text-right text-muted-foreground">
-                    {(z.frequency * 100).toFixed(0)}% ·{" "}
-                    {z.accuracy != null ? `${(z.accuracy * 100).toFixed(0)}% made` : "—"}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
         </Section>
       )}
     </>
@@ -699,24 +790,50 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
       {which === "current" && (
         <>
           <Section title="Recent games">
-            <Spark values={card.form.spark} />
+            <FpChart
+              compact
+              average={card.form.fppg}
+              projection={card.projection.best}
+              points={[...card.recent].reverse().map((g, i, all) => {
+                const window = all.slice(Math.max(0, i - 4), i + 1);
+                return {
+                  label: g.date,
+                  opponent: g.opponent,
+                  fp: g.fp,
+                  minutes: g.line.MIN,
+                  rolling: i >= 4 ? window.reduce((a, x) => a + x.fp, 0) / window.length : null,
+                };
+              })}
+            />
             <div className="-mx-1 overflow-x-auto">
               <table className="w-full text-xs tabular-nums">
                 <thead>
                   <tr className="text-muted-foreground">
-                    {["Date", "Opp", "MIN", "REB", "AST", "STL", "BLK", "TO", "FG", "FT", "FP"].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          className={cn(
-                            "px-1 py-1 font-medium",
-                            h === "Date" || h === "Opp" ? "text-left" : "text-right",
-                          )}
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
+                    {[
+                      "Date",
+                      "Opp",
+                      "MIN",
+                      "PTS",
+                      "REB",
+                      "AST",
+                      "STL",
+                      "BLK",
+                      "3PM",
+                      "TO",
+                      "FG",
+                      "FT",
+                      "FP",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className={cn(
+                          "px-1 py-1 font-medium",
+                          h === "Date" || h === "Opp" ? "text-left" : "text-right",
+                        )}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -727,7 +844,7 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
                         {g.home ? "" : "@"}
                         {g.opponent}
                       </td>
-                      {["MIN", "REB", "AST", "STL", "BLK", "TO"].map((k) => (
+                      {["MIN", "PTS", "REB", "AST", "STL", "BLK", "3PM", "TO"].map((k) => (
                         <td key={k} className="px-1 py-1 text-right">
                           {g.line[k]}
                         </td>
@@ -738,7 +855,14 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
                       <td className="px-1 py-1 text-right whitespace-nowrap">
                         {g.line.FTM}-{g.line.FTA}
                       </td>
-                      <td className="px-1 py-1 text-right font-semibold">{fmtPts(g.fp)}</td>
+                      <td
+                        className={cn(
+                          "px-1 py-1 text-right font-semibold",
+                          toneText(fpTone(g.fp, card.form.fppg, g.line.MIN)),
+                        )}
+                      >
+                        {fmtPts(g.fp)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

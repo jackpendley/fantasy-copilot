@@ -17,6 +17,7 @@ import { absences } from "./availability";
 import { rosterLocked } from "./roster";
 import { valueContext } from "./trade";
 import { bestPerGame } from "./best";
+import { rosteredPercentile } from "./projection";
 import { waiverAnalysis, waiverCandidates } from "./waivers";
 import { memoAsync } from "@/lib/fetch-memo";
 
@@ -64,7 +65,8 @@ export async function loadFreeAgentPool(now = new Date()) {
     startedToday: startedTeams(data, sp, now),
     lastDay: LAST_SCORING_PERIOD,
   });
-  return candidates;
+  const rank = rosteredPercentile(data.teams.flatMap((t) => t.roster));
+  return candidates.map((c) => ({ ...c, fppgPct: rank(c.fppg) }));
 }
 
 async function readWaiverView(now = new Date()) {

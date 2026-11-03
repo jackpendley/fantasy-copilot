@@ -9,6 +9,7 @@ const row = (id: number, over: Partial<FreeAgentRow>): FreeAgentRow => ({
   positions: ["PG"],
   waivers: false,
   fppg: 20,
+  fppgPct: null,
   last7: null,
   weekGames: 3,
   owned: 10,

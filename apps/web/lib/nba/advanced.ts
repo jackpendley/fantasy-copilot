@@ -11,6 +11,14 @@ import "server-only";
 
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import { darkoPerGame, parseDarko } from "@fantasy-copilot/nba-data";
+import {
+  PBP_FIELDS,
+  distributions,
+  playerMetrics,
+  type Distributions,
+  type PbpStats,
+  type PlayerMetric,
+} from "./pbp-metrics";
 import { db, dbConfigured } from "@/lib/db";
 import { memoFetch } from "@/lib/fetch-memo";
 
@@ -93,6 +101,8 @@ export interface PbpPlayer {
   /** PBP Stats' expected eFG% of his shots (where they're taken from and how). */
   shotQuality: number | null;
   zones: ShotZone[];
+  /** His advanced stats with league percentiles (null before the stats are stored). */
+  metrics?: PlayerMetric[] | null;
 }
 
 type PbpRow = Record<string, string | number | null>;
@@ -113,9 +123,15 @@ const ZONES: [string, string][] = [
   ["Above-break 3", "Arc3"],
 ];
 
-function pbpRow(r: PbpRow): PbpPlayer & { name: string; team: string } {
+function pbpRow(r: PbpRow): PbpPlayer & { name: string; team: string; stats: PbpStats } {
   const num = (k: string) => (typeof r[k] === "number" ? (r[k] as number) : null);
+  const stats: PbpStats = {};
+  for (const k of PBP_FIELDS) {
+    const v = num(k);
+    if (v != null) stats[k] = v;
+  }
   return {
+    stats,
     nbaId: Number(r.EntityId),
     name: String(r.Name ?? ""),
     team: String(r.TeamAbbreviation ?? ""),
@@ -149,6 +165,7 @@ export async function refreshPbpPlayers(seasons: number[]): Promise<Record<numbe
             ts_pct: r.tsPct,
             shot_quality: r.shotQuality,
             zones: sql.json(r.zones as never),
+            stats: sql.json(r.stats as never),
           })),
         )}`;
       }
@@ -160,17 +177,33 @@ export async function refreshPbpPlayers(seasons: number[]): Promise<Record<numbe
 
 let filling: Promise<unknown> | null = null;
 
-/** Before the first nightly run: fill the table once (in the background, one at a time). */
+/**
+ * Before the first nightly run (or the first after the stats column was added): fill the table
+ * once (in the background, one at a time).
+ */
 export async function ensurePbpPlayers(seasons: number[]) {
   if (!dbConfigured() || filling) return;
   const [row] = await db()<{ n: number }[]>`
-    select count(*)::int as n from pbp_players where season = ${seasons[0]!}
+    select count(*)::int as n from pbp_players where season = ${seasons[0]!} and stats is not null
   `;
   if ((row?.n ?? 0) > 0) return;
   filling = refreshPbpPlayers(seasons).finally(() => {
     filling = null;
   });
   await filling;
+}
+
+/** Each season's league distributions for the percentiles, kept 6 hours per server instance. */
+const leagueCache = new Map<number, { at: number; dist: Promise<Distributions> }>();
+function leagueDistributions(season: number) {
+  const hit = leagueCache.get(season);
+  if (hit && Date.now() - hit.at < 6 * 3600_000) return hit.dist;
+  const dist = db()<{ stats: PbpStats | null }[]>`
+    select stats from pbp_players where season = ${season} and stats is not null
+  `.then((rows) => distributions(rows.map((r) => r.stats!)));
+  leagueCache.set(season, { at: Date.now(), dist });
+  dist.catch(() => leagueCache.delete(season));
+  return dist;
 }
 
 /** His stored PBP Stats season (team breaks a name tie); null if not stored. */
@@ -184,9 +217,10 @@ export async function pbpPlayer(name: string, team: string, season: number) {
       ts_pct: number | null;
       shot_quality: number | null;
       zones: ShotZone[];
+      stats: PbpStats | null;
     }[]
   >`
-    select nba_id, team, usage, ts_pct, shot_quality, zones from pbp_players
+    select nba_id, team, usage, ts_pct, shot_quality, zones, stats from pbp_players
     where season = ${season} and name_key = ${nameKey(name)}
   `;
   const r = rows.find((x) => x.team.toUpperCase() === team.toUpperCase()) ?? rows[0];
@@ -197,6 +231,12 @@ export async function pbpPlayer(name: string, team: string, season: number) {
     tsPct: r.ts_pct,
     shotQuality: r.shot_quality,
     zones: r.zones,
+    metrics: r.stats
+      ? playerMetrics(
+          r.stats,
+          await leagueDistributions(season).catch(() => ({ minGames: 1, values: new Map() })),
+        )
+      : null,
   } satisfies PbpPlayer;
 }
 

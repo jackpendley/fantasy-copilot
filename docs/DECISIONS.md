@@ -679,3 +679,23 @@
   - about 20 CPU-minutes, none on Vercel.
   - The top move came out +0.83 ±0.42 title points, with a 93% chance of being the best.
 - **The honest limit:** more seasons remove the simulation's randomness, not the projections' error. That is what the pre-registered model tests address.
+
+## ADR-054: league percentiles on advanced stats; one look for game results (2026-11-02)
+
+- **Why:** Jack wants every advanced stat ranked against the league, with elite numbers in green and concerning ones in red, everywhere that's relevant. He also wants the game log's colors on the card, and a player page with last season too.
+- **Stats:** PBP Stats' season totals, now also stored raw per player in `pbp_players.stats` (nightly; migration 0018). `lib/nba/pbp-metrics.ts` turns them into 17 metrics in five groups:
+  - Scoring: usage, true shooting, eFG, points/36, fouls drawn/36.
+  - Playmaking: assists/36, turnovers/36.
+  - Rebounding & defense: rebounds, offensive rebounds, steals, blocks, fouls per 36.
+  - Impact: on-court net rating, +/- per 36.
+  - Style: 3-point rate, unassisted points, shot quality.
+- **Percentiles:**
+  - Each one ranks against that season's **regulars**: at least 10 minutes a game, and 5 games (or 40% of the most anyone has, early in the season).
+  - A player who isn't a regular himself gets no percentile; a few minutes say little.
+  - Percentiles are oriented so higher is better: turnovers and fouls are inverted.
+  - **Colors:** green at the 80th percentile or better, red at the 20th or worse.
+  - Style stats get a grey percentile and no color. They describe how he plays, not how well; shot quality is low for 3-point shooters.
+- **FP/G percentiles** rank against this league's rostered players, the players a pickup competes with for a spot. They show on the card (actual FP/G, this season), on Free agents and on Trends (projected FP/G).
+- **Game results** look the same everywhere (`fpTone`): 25%+ above his average is green, 40%+ below is red, and a game he didn't play is neither. This covers the card's recent games, the player page's log and `FpChart`'s bars. The chart also draws his season average and today's projection.
+- **Card:** one fixed height for every tab, so switching tabs never resizes it. It closes when a link inside it changes the page.
+- **Player page:** the card's sections plus every game, for this season or last (`?season=last`).

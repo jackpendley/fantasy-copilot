@@ -50,12 +50,14 @@ The player card has a fixed size and closes on navigation. It shows advanced sta
 
 ## Waiting on Jack
 
-1. **Optional:** a Vercel deployment retention policy (an account setting) to delete old deployments' functions and free storage. Needs his OK.
+Nothing right now.
 
 **Done Nov 3:**
 
+- Deployment retention set to 1 day for every type, with Jack's OK. Vercel always keeps the live deployment and the last 3 production deployments, and deleted ones can be restored for the retention period. This frees the Functions Storage that was at 7.1 of 10 GB.
+
 - `WORKER_SECRET` set in GitHub and Vercel (on the second try: the first values didn't match, and the runners got 401).
-- `GITHUB_DISPATCH_TOKEN` set: fine-grained, this repo only, Actions read and write, expires Jan 31, 2027. **Renew it before then.**
+- `GITHUB_DISPATCH_TOKEN` set: fine-grained, this repo only, Actions read and write, expires **Nov 1, 2027** (checked on GitHub). **Renew it before then.**
 - `VAPID_SUBJECT` was already set.
 - **Production test:**
   - Simulate this drop started a GitHub run in 22 s.

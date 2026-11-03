@@ -4,7 +4,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
-import { matchupView } from "./matchup";
+import { leagueMatchups, matchupView } from "./matchup";
 import { bestPerGame } from "./best";
 
 export async function recordMatchupSnapshot(now = new Date()) {
@@ -93,5 +93,54 @@ export async function matchupStatesHistory(matchupPeriod: number, homeId: number
     select scoring_period, p_home from matchup_states
     where matchup_period = ${matchupPeriod} and home_id = ${homeId}
     order by scoring_period
+  `;
+}
+
+/** Every league matchup's win chance now, with the props blend (matchup_timeline). */
+export async function recordTimeline(data: Awaited<ReturnType<typeof loadLeague>>, sp: number) {
+  const mp = matchupPeriodOf(sp);
+  const perGame = await bestPerGame(
+    data.teams.flatMap((t) => t.roster),
+    data,
+    sp,
+  );
+  const rows = leagueMatchups(data, sp, mp, perGame)
+    .filter((m) => m.pHome != null)
+    .map((m) => ({
+      matchup_period: mp,
+      scoring_period: sp,
+      home_id: m.homeId,
+      away_id: m.awayId,
+      home_points: m.home,
+      away_points: m.away,
+      p_home: m.pHome!,
+    }));
+  if (rows.length) await db()`insert into matchup_timeline ${db()(rows)}`;
+  return rows.length;
+}
+
+/** One matchup's win chances through a week (home team's view), oldest first. */
+export async function matchupTimeline(matchupPeriod: number, homeId: number) {
+  return db()<{ taken_at: Date; p_home: number }[]>`
+    select taken_at, p_home from matchup_timeline
+    where matchup_period = ${matchupPeriod} and home_id = ${homeId}
+    order by taken_at
+  `;
+}
+
+/** Morning snapshots with their times (Jack's own matchup), oldest first. */
+export async function matchupSnapshotsTimed(matchupPeriod: number) {
+  return db()<{ taken_at: Date; p_win: number }[]>`
+    select taken_at, p_win from matchup_snapshots where matchup_period = ${matchupPeriod}
+    order by taken_at
+  `;
+}
+
+/** The league-wide morning log with times, for a home team. */
+export async function matchupStatesTimed(matchupPeriod: number, homeId: number) {
+  return db()<{ taken_at: Date; p_home: number }[]>`
+    select taken_at, p_home from matchup_states
+    where matchup_period = ${matchupPeriod} and home_id = ${homeId}
+    order by taken_at
   `;
 }

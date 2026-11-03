@@ -17,8 +17,9 @@ import {
   scoringPeriodsOf,
   shortDay,
   gameDate,
+  nowMs,
 } from "@/lib/nba/calendar";
-import { loadLeague, loadLiveRosters, loadPlayersById } from "@/lib/nba/data";
+import { loadLeague, loadLiveRosters, loadOnCourt, loadPlayersById } from "@/lib/nba/data";
 import { dbConfigured } from "@/lib/db";
 import {
   cellFromFinal,
@@ -33,7 +34,11 @@ import {
 import { isStarting, liveRows } from "@/lib/nba/live";
 import { absences, returnLabel } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
-import { matchupHistory, matchupStatesHistory } from "@/lib/nba/matchup-snapshots";
+import {
+  matchupSnapshotsTimed,
+  matchupStatesTimed,
+  matchupTimeline,
+} from "@/lib/nba/matchup-snapshots";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { bestPerGame } from "@/lib/nba/best";
@@ -140,8 +145,11 @@ function LeagueStrip({
   const side = (m: LeagueMatchup) =>
     [jack, viewed].find((id) => id === m.homeId || id === m.awayId) ?? m.homeId;
   const isOpen = (m: LeagueMatchup) => m.homeId === viewed || m.awayId === viewed;
-  const line = (id: number, pts: number, final: number, p: number | null, won: boolean) => (
-    <div className="flex items-baseline gap-2">
+  const isJacks = (m: LeagueMatchup) => m.homeId === jack || m.awayId === jack;
+  /** A finished matchup's winner in green, loser in red. */
+  const result = (won: boolean | null) => (won == null ? "" : won ? "text-success" : "text-danger");
+  const line = (id: number, pts: number, final: number, p: number | null, won: boolean | null) => (
+    <div className={cn("flex items-baseline gap-2", result(won))}>
       <span
         className={cn(
           "min-w-0 flex-1 text-xs leading-tight break-words",
@@ -167,14 +175,26 @@ function LeagueStrip({
       >
         League matchups
       </SectionTitle>
-      {/* A swipeable row on phones (the open matchup first), a grid from tablet width. */}
+      {/* A swipeable row on phones (Jack's matchup first), a grid from tablet width. */}
       <div className="-mx-3 flex snap-x gap-1.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none] sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0">
         {[...matchups]
-          .sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))
+          .sort((a, b) => Number(isJacks(b)) - Number(isJacks(a)))
           .map((m) => {
             const open = isOpen(m);
-            const homeWon = mode === "past" && m.home > m.away;
-            const awayWon = mode === "past" && m.away > m.home;
+            const final = mode === "past" || (mode === "now" && m.decided);
+            const decided = final && m.home !== m.away;
+            const homeWon = decided ? m.home > m.away : null;
+            const awayWon = decided ? m.away > m.home : null;
+            // Jack's team on top in his own matchup.
+            const jackAway = m.awayId === jack;
+            const home = line(m.homeId, m.home, m.homeFinal, m.pHome, homeWon);
+            const away = line(
+              m.awayId,
+              m.away,
+              m.awayFinal,
+              m.pHome == null ? null : 1 - m.pHome,
+              awayWon,
+            );
             return (
               <Link
                 key={m.id}
@@ -185,8 +205,8 @@ function LeagueStrip({
                   open ? "border-primary ring-1 ring-primary" : "hover:bg-muted/50",
                 )}
               >
-                {line(m.homeId, m.home, m.homeFinal, m.pHome, homeWon)}
-                {line(m.awayId, m.away, m.awayFinal, m.pHome == null ? null : 1 - m.pHome, awayWon)}
+                {jackAway ? away : home}
+                {jackAway ? home : away}
               </Link>
             );
           })}
@@ -344,18 +364,27 @@ export default async function WeekPage({
     (m) => m.period === mp && (m.homeTeamId === data.me.id || m.awayTeamId === data.me.id),
   );
   const iAmHome = matchup?.homeTeamId === data.me.id;
-  // Win chances before each day: Jack's own snapshots for his matchups, the league-wide
-  // morning log for the rest. Seen from the viewed team.
+  // Win chances through the week, seen from the viewed team: before each day's games (Jack's
+  // own snapshots for his matchups, the league-wide morning log for the rest) and every 15
+  // minutes while games are on (matchup_timeline).
   const jackPlays =
     matchup && (matchup.homeTeamId === league.me.id || matchup.awayTeamId === league.me.id);
-  const loadHistory = async () => {
+  const loadHistory = async (): Promise<{ t: number; p: number }[]> => {
     if (!dbConfigured() || !matchup || mode === "later") return [];
-    if (jackPlays) {
-      const rows = await matchupHistory(mp);
-      return rows.map((h) => ({ sp: h.scoring_period, p: mineIsJack ? h.p_win : 1 - h.p_win }));
-    }
-    const rows = await matchupStatesHistory(mp, matchup.homeTeamId);
-    return rows.map((h) => ({ sp: h.scoring_period, p: iAmHome ? h.p_home : 1 - h.p_home }));
+    const homeView = (p: number) => (iAmHome ? p : 1 - p);
+    const [mornings, through] = await Promise.all([
+      jackPlays
+        ? matchupSnapshotsTimed(mp).then((rows) =>
+            rows.map((h) => ({ t: h.taken_at.getTime(), p: mineIsJack ? h.p_win : 1 - h.p_win })),
+          )
+        : matchupStatesTimed(mp, matchup.homeTeamId).then((rows) =>
+            rows.map((h) => ({ t: h.taken_at.getTime(), p: homeView(h.p_home) })),
+          ),
+      matchupTimeline(mp, matchup.homeTeamId).then((rows) =>
+        rows.map((h) => ({ t: h.taken_at.getTime(), p: homeView(h.p_home) })),
+      ),
+    ]);
+    return [...mornings, ...through].sort((a, b) => a.t - b.t);
   };
   const [live, history] = await Promise.all([
     mode === "now" ? loadLiveRosters(sp, mp).catch(() => null) : Promise.resolve(null),
@@ -364,16 +393,28 @@ export default async function WeekPage({
   const myLive = liveRows(myToday, live?.get(data.me.id), data.scoreboard);
   const oppLive = opp && oppToday ? liveRows(oppToday, live?.get(opp.id), data.scoreboard) : null;
   const gamesLive = [...myLive, ...(oppLive ?? [])].some((r) => r.row.game?.state === "in");
+  const liveGameIds = [
+    ...new Set(
+      [...myLive, ...(oppLive ?? [])]
+        .filter((r) => r.row.game?.state === "in")
+        .map((r) => r.row.game!.gameId),
+    ),
+  ];
+  const onCourt = liveGameIds.length
+    ? await loadOnCourt(liveGameIds).catch(() => new Map<number, boolean>())
+    : new Map<number, boolean>();
   // Snapshots are taken before each day's games; "Now" is added once today's games start.
   const started = [...myLive, ...(oppLive ?? [])].some(
     (r) => r.row.game && r.row.game.state !== "pre",
   );
+  const weekStart = Date.parse(`${dateForScoringPeriod(periods[0]!)}T07:00:00Z`); // Arizona midnight
   const winPoints = [
-    ...history.map((h) => ({
-      label: shortDay(dateForScoringPeriod(h.sp)).split(" ")[0]!,
-      pWin: h.p,
-    })),
-    ...(pWin != null && started ? [{ label: "Now", pWin }] : []),
+    ...history.map((h) => ({ t: h.t, pWin: h.p })),
+    ...(pWin != null && mode === "now" && started ? [{ t: nowMs(), pWin }] : []),
+    // A finished week ends at its result.
+    ...(pWin != null && mode === "past"
+      ? [{ t: weekStart + periods.length * 86_400_000 - 3_600_000, pWin }]
+      : []),
   ];
 
   const days = periods.map((p) => ({ sp: p, date: dateForScoringPeriod(p) }));
@@ -432,7 +473,17 @@ export default async function WeekPage({
         : x,
     );
   const placedFor = (day: number): [Placed[], Placed[]] => {
-    if (day === sp) return [myLive.map(cellFromLive), (oppLive ?? []).map(cellFromLive)];
+    if (day === sp) {
+      // While a game is on: on the court or on the bench (from ESPN's play-by-play).
+      const withCourt = (x: Placed): Placed =>
+        x.cell.game?.state === "in" && onCourt.has(x.cell.player.id)
+          ? { ...x, cell: { ...x.cell, onCourt: onCourt.get(x.cell.player.id)! } }
+          : x;
+      return [
+        myLive.map(cellFromLive).map(withCourt),
+        (oppLive ?? []).map(cellFromLive).map(withCourt),
+      ];
+    }
     if (day < sp) {
       const past = pastFinals.get(day);
       const final = (teamId: number) =>
@@ -496,7 +547,7 @@ export default async function WeekPage({
           ? "Final ESPN fantasy points in each slot. Under the points: his pregame projection, with ▲/▼ when he finished well above or below it."
           : d.sp > sp
             ? "Projected lineups (the best lineup each team can set that day), from rosters after pending moves. The number in each slot is his projection."
-            : "ESPN fantasy points in each slot. Under the points: his projection (live: points so far plus the rest of his projection). ▲/▼ = 5+ points and 20%+ off. Tap a player for his card.",
+            : "ESPN fantasy points in each slot. Under the points: his projection (live: points so far plus the rest of his projection). ▲/▼ = 5+ points and 20%+ off. While a game is on, a green dot by the points means he's on the court, grey on the bench. Tap a player for his card.",
     };
   });
   const opponentOf = (proTeamId: number, p: number) => {
@@ -611,14 +662,12 @@ export default async function WeekPage({
       {winPoints.length > 1 && (
         <section className="space-y-1.5">
           <SectionTitle
-            aside={
-              mode === "now" ? "Before each day's games, then live" : "Before each day's games"
-            }
+            aside={mode === "now" ? "Before each day's games and through them" : "Through the week"}
           >
             {mode === "now" ? "Win chance this week" : "Win chance during the week"}
           </SectionTitle>
           <div className="rounded-xl border bg-card p-3">
-            <WinChart points={winPoints} />
+            <WinChart points={winPoints} start={weekStart} days={periods.length} />
           </div>
         </section>
       )}

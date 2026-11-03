@@ -155,3 +155,32 @@ export function parseBoxScore(summary: Json): BoxScoreLine[] {
   }
   return out;
 }
+
+/**
+ * Who's on the court in a game, from ESPN's summary: each team's starters, then every
+ * substitution play in order ("X enters the game for Y"; the entering player is the first
+ * participant). Players listed in the box score but not on the court are on the bench.
+ */
+export function parseOnCourt(data: Json): Map<number, boolean> {
+  const out = new Map<number, boolean>();
+  const onCourt = new Map<string, Set<string>>();
+  for (const team of data?.boxscore?.players ?? []) {
+    const teamId = String(team.team?.id ?? "");
+    const athletes = team.statistics?.[0]?.athletes ?? [];
+    onCourt.set(
+      teamId,
+      new Set(athletes.filter((a: Json) => a.starter).map((a: Json) => String(a.athlete?.id))),
+    );
+    for (const a of athletes) out.set(Number(a.athlete?.id), false);
+  }
+  for (const p of data?.plays ?? []) {
+    if (p.type?.text !== "Substitution") continue;
+    const team = onCourt.get(String(p.team?.id ?? ""));
+    const [enters, leaves] = (p.participants ?? []).map((x: Json) => String(x.athlete?.id));
+    if (!team || !enters || !leaves) continue;
+    team.delete(leaves);
+    team.add(enters);
+  }
+  for (const ids of onCourt.values()) for (const id of ids) out.set(Number(id), true);
+  return out;
+}

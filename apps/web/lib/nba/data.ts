@@ -26,6 +26,8 @@ import {
   fetchInjuries,
   fetchScoreboard,
   type InjuryReport,
+  fetchGameSummary,
+  parseOnCourt,
 } from "@fantasy-copilot/nba-data";
 import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
@@ -39,6 +41,8 @@ const LEAGUE_FETCH = memoFetch(20_000);
 const LIVE_FETCH = memoFetch(15_000);
 const FEED_FETCH = memoFetch(60_000);
 const LINEUPS_FETCH = memoFetch(5 * 60_000);
+// Live game summaries (who's on the court): a little longer than the page's refresh.
+const SUMMARY_FETCH = memoFetch(20_000);
 // A finished day's fantasy points don't change: keep them for hours.
 const SETTLED_FETCH = memoFetch(6 * 3600_000);
 
@@ -144,6 +148,23 @@ async function readLeague(scoringPeriodId: number, ymd: string) {
     defense,
     warnings: injuries.error ? [`Injury feed unavailable: ${injuries.error}`] : [],
   };
+}
+
+/**
+ * Who's on the court in games under way (ESPN summaries, kept 20 s): player id → on the court.
+ * A game whose summary can't be read is left out (the board shows no indicator).
+ */
+export async function loadOnCourt(gameIds: number[]): Promise<Map<number, boolean>> {
+  const out = new Map<number, boolean>();
+  const all = await Promise.all(
+    gameIds.map((id) =>
+      fetchGameSummary(id, SUMMARY_FETCH)
+        .then(parseOnCourt)
+        .catch(() => null),
+    ),
+  );
+  for (const m of all) if (m) for (const [id, on] of m) out.set(id, on);
+  return out;
 }
 
 /** Free agents and waiver players, most-owned first (empty in ESPN_LEAGUE_FILE dev mode). */

@@ -45,6 +45,8 @@ export interface H2HCell {
   proj: number | null;
   trend: Trend;
   line: Record<string, number> | null;
+  /** While his game is on: on the court (true) or on the bench (false); unknown otherwise. */
+  onCourt?: boolean | null;
 }
 
 export interface Placed {

@@ -282,8 +282,10 @@ const GOLDEN = [
     expPointsFor: 6957.059283504318,
     playoffs: 0.9833333333333333,
     seed1: 0.21666666666666667,
+    bye: 0.45,
     final: 0.21666666666666667,
     champ: 0.06666666666666667,
+    champBye: 0.03333333333333333,
   },
   {
     teamId: 2,
@@ -291,8 +293,10 @@ const GOLDEN = [
     expPointsFor: 7453.843685560525,
     playoffs: 0.9833333333333333,
     seed1: 0.3,
+    bye: 0.55,
     final: 0.45,
     champ: 0.21666666666666667,
+    champBye: 0.15,
   },
   {
     teamId: 3,
@@ -300,8 +304,10 @@ const GOLDEN = [
     expPointsFor: 5574.99067071142,
     playoffs: 0.36666666666666664,
     seed1: 0,
+    bye: 0.016666666666666666,
     final: 0.05,
     champ: 0.05,
+    champBye: 0.016666666666666666,
   },
   {
     teamId: 4,
@@ -309,8 +315,10 @@ const GOLDEN = [
     expPointsFor: 6631.970078281314,
     playoffs: 0.9166666666666666,
     seed1: 0.16666666666666666,
+    bye: 0.3333333333333333,
     final: 0.35,
     champ: 0.26666666666666666,
+    champBye: 0.13333333333333333,
   },
   {
     teamId: 5,
@@ -318,8 +326,10 @@ const GOLDEN = [
     expPointsFor: 6700.884739609615,
     playoffs: 0.9166666666666666,
     seed1: 0.1,
+    bye: 0.2833333333333333,
     final: 0.3333333333333333,
     champ: 0.1,
+    champBye: 0.03333333333333333,
   },
   {
     teamId: 6,
@@ -327,8 +337,10 @@ const GOLDEN = [
     expPointsFor: 5449.4000267664505,
     playoffs: 0.13333333333333333,
     seed1: 0,
+    bye: 0,
     final: 0.016666666666666666,
     champ: 0,
+    champBye: 0,
   },
   {
     teamId: 7,
@@ -336,8 +348,10 @@ const GOLDEN = [
     expPointsFor: 6464.9697178430115,
     playoffs: 0.8,
     seed1: 0.08333333333333333,
+    bye: 0.16666666666666666,
     final: 0.21666666666666667,
     champ: 0.05,
+    champBye: 0.016666666666666666,
   },
   {
     teamId: 8,
@@ -345,12 +359,20 @@ const GOLDEN = [
     expPointsFor: 6792.419732415116,
     playoffs: 0.9,
     seed1: 0.13333333333333333,
+    bye: 0.2,
     final: 0.36666666666666664,
     champ: 0.25,
+    champBye: 0.08333333333333333,
   },
 ];
 
 describe("simulator exactness", { timeout: 30_000 }, () => {
+  it("gives exactly two byes a season, and titles with a bye are a part of all titles", () => {
+    const res = simulateSeason(goldenInput());
+    expect(res.reduce((a, t) => a + t.bye, 0)).toBeCloseTo(2, 10);
+    for (const t of res) expect(t.champBye).toBeLessThanOrEqual(t.champ + 1e-12);
+  });
+
   it("matches the recorded results to the last bit", () => {
     expect(simulateSeason(goldenInput())).toEqual(GOLDEN);
   });

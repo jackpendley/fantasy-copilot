@@ -14,6 +14,7 @@ import { espnConfig } from "@/lib/env";
 import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
+import { enqueueSimJob } from "./sim-jobs";
 import { refreshTradeTargets } from "./trade-view";
 
 const LOCK = "outlook";
@@ -25,6 +26,47 @@ export const WATCH_WINDOW_MS = RERUN_GAP_MS + 15 * 60_000;
 /** A move newer than the latest run means the outlook is out of date. */
 export function isStale(moveAt: number | null, lastRunAt: number | null): boolean {
   return moveAt != null && (lastRunAt == null || moveAt > lastRunAt);
+}
+
+/**
+ * Simulations run on the GitHub Actions worker when it's set up (WORKER_SECRET, ADR-053);
+ * otherwise on Vercel, as before.
+ */
+export const workerEnabled = () => Boolean(process.env.WORKER_SECRET);
+
+/** A worker job queued or running since `since` (a move newer than it isn't in it yet). */
+async function liveJobSince(since: number): Promise<{ queuedFor: number } | null> {
+  const [j] = await db()<{ status: string; created_at: Date }[]>`
+    select status, created_at from sim_jobs
+    where status in ('queued', 'running') and created_at >= ${new Date(since)}
+    order by id desc limit 1
+  `;
+  if (!j) return null;
+  return { queuedFor: j.status === "queued" ? Date.now() - j.created_at.getTime() : 0 };
+}
+
+/** The worker hasn't picked a job up in this long: Vercel runs the Outlook itself. */
+const WORKER_FALLBACK_MS = 15 * 60_000;
+
+/**
+ * A move newer than the latest run: queue it for the worker (right away), or re-run on Vercel
+ * (at most every 30 minutes). Returns what happened.
+ */
+export async function refreshIfStale(
+  newest: number | null,
+  lastRunAt: number | null,
+  now = Date.now(),
+): Promise<"current" | "queued" | "refreshing" | "waiting"> {
+  if (!isStale(newest, lastRunAt)) return "current";
+  if (workerEnabled()) {
+    const live = await liveJobSince(newest!);
+    if (live && live.queuedFor < WORKER_FALLBACK_MS) return "queued";
+    after(() => (live ? refreshVercel() : refreshLogged()));
+    return "refreshing";
+  }
+  if (!dueForRerun(newest, lastRunAt, now)) return "waiting";
+  after(() => refreshLogged());
+  return "refreshing";
 }
 
 /** Out of date, and the last run is old enough to run again (coalesces bursts of moves). */
@@ -68,9 +110,13 @@ async function release() {
   await db()`delete from job_locks where name = ${LOCK}`;
 }
 
-/** Is a run under way right now? */
+/** Is a run under way right now (on Vercel, or a worker job runners are on)? */
 export async function outlookRunning(): Promise<boolean> {
-  const rows = await db()`select 1 from job_locks where name = ${LOCK} and until > now()`;
+  const rows = await db()`
+    select 1 from job_locks where name = ${LOCK} and until > now()
+    union all
+    select 1 from sim_jobs where status = 'running' and last_worker_at > now() - interval '3 minutes'
+  `;
   return rows.length > 0;
 }
 
@@ -128,23 +174,44 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
   // Rosters changed: later reads go back to ESPN.
   forgetResponses();
   const last = await latestOutlook();
-  const lastAt = last?.run_at.getTime() ?? null;
-  if (!isStale(newest, lastAt)) return { watch: "current" };
-  if (!dueForRerun(newest, lastAt, now.getTime())) return { watch: "waiting" };
-  after(() => refreshLogged());
-  return { watch: "refreshing" };
+  return { watch: await refreshIfStale(newest, last?.run_at.getTime() ?? null, now.getTime()) };
 }
 
-/** For `after()` callbacks: run it and log the outcome (nobody is waiting on a response). */
-export async function refreshLogged(trigger?: string | null) {
-  const record = (job: string, status: "ok" | "error", detail: string) =>
-    db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`.catch(
-      () => {},
-    );
+const record = (job: string, status: "ok" | "error", detail: string) =>
+  db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`.catch(
+    () => {},
+  );
+
+/** The Outlook on Vercel (2,000 seasons): without the worker, or when it isn't starting. */
+async function refreshVercel(trigger?: string | null) {
   try {
     await record("outlook-refresh", "ok", await refreshOutlook(trigger));
   } catch (e) {
     await record("outlook-refresh", "error", (e as Error).message);
+  }
+}
+
+/**
+ * For `after()` callbacks: queue the season for the worker (or re-run it on Vercel), then
+ * refresh the trade ideas; log the outcome (nobody is waiting on a response).
+ */
+export async function refreshLogged(trigger?: string | null) {
+  if (workerEnabled()) {
+    try {
+      const last = await latestOutlook();
+      const label =
+        trigger !== undefined
+          ? trigger
+          : last
+            ? await describeMoves(last.run_at, last.scoring_period).catch(() => null)
+            : null;
+      await record("sim-job", "ok", `queued job ${await enqueueSimJob(label)}`);
+    } catch (e) {
+      await record("sim-job", "error", (e as Error).message);
+      await refreshVercel(trigger);
+    }
+  } else {
+    await refreshVercel(trigger);
   }
   // Rosters changed: have the trade ideas ready before a visit. (Waiver moves are re-checked
   // by the nightly run; simulations are too costly to repeat after every league move.)

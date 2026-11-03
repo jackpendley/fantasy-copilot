@@ -6,12 +6,13 @@ const PWA_FILES = new Set(["/manifest.webmanifest", "/sw.js", "/icon", "/apple-i
 export default async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Public: login page/API, the cron route (guarded by CRON_SECRET itself), and the PWA
+  // Public: login page/API, the cron and worker routes (guarded by their own secrets), and the PWA
   // files the OS fetches without the session cookie (manifest, service worker, icons).
   if (
     pathname === "/login" ||
     pathname === "/api/login" ||
     pathname.startsWith("/api/cron") ||
+    pathname.startsWith("/api/worker") ||
     PWA_FILES.has(pathname)
   ) {
     return NextResponse.next();

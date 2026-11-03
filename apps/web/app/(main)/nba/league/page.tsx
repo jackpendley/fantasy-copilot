@@ -3,7 +3,6 @@
 // every team's standing, strength and odds.
 
 import Link from "next/link";
-import { after } from "next/server";
 import { ArrowLeftRight, RefreshCw } from "lucide-react";
 import { PageHeader, ProbBar, SectionTitle, StatTile } from "@/components/fc/bits";
 import { WhatChanged } from "@/components/fc/what-changed";
@@ -19,11 +18,10 @@ import { dateForScoringPeriod, shortDay } from "@/lib/nba/calendar";
 import { leagueMovesBetween } from "@/lib/nba/changes";
 import { loadLeagueView } from "@/lib/nba/league-view";
 import {
-  dueForRerun,
   isStale,
+  refreshIfStale,
   outlookRunning,
   recentLeagueMoves,
-  refreshLogged,
 } from "@/lib/nba/outlook-refresh";
 import {
   latestOutlooks,
@@ -65,13 +63,13 @@ async function loadOutlook(myId: number) {
     provisionalOutlook().catch(() => null),
   ]);
   const [latest, previous] = runs;
-  // A roster move newer than the latest run: update in the background, at most every 30
-  // minutes (later moves ride along with the next run).
+  // A roster move newer than the latest run: queue it for the worker (or re-run on Vercel at
+  // most every 30 minutes; later moves ride along with the next run).
   const newest = leagueMoves.at(-1)?.at ?? null;
   const lastAt = latest?.run_at.getTime() ?? null;
   const stale = isStale(newest, lastAt);
-  const due = dueForRerun(newest, lastAt, Date.now());
-  if (due && !running) after(() => refreshLogged());
+  const state = running ? "running" : await refreshIfStale(newest, lastAt);
+  const due = state === "refreshing" || state === "queued";
   // The roster moves between the two runs. Never blocks the page.
   const moves =
     latest && previous
@@ -147,7 +145,7 @@ export default async function LeaguePage() {
           <RefreshCw className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
           <span>
             {o.provisional
-              ? `Refining with the latest rosters: ${o.provisional.seasons.toLocaleString("en-US")} of 2,000 seasons so far. These odds are provisional and update every few seconds.`
+              ? `Refining with the latest rosters: ${o.provisional.seasons.toLocaleString("en-US")} seasons so far. These odds are provisional and update every few seconds.`
               : "Updating for the latest roster move. Provisional odds appear in a few seconds."}
           </span>
           <LiveRefresh active seconds={5} />

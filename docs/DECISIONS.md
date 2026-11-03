@@ -652,3 +652,30 @@
   - Matchup blended today's games with Vegas props; Moves and the morning snapshots didn't (63% vs 61% on Nov 2).
   - Now Moves (rostered players and free agents), the snapshots and every what-if use the same blend for today (`WeekInputs.todayValues`).
 - **Next:** heavy simulations move off Vercel to a GitHub Actions worker (ADR-053).
+
+## ADR-053: season simulations on a GitHub Actions worker; deep move checks (2026-11-02)
+
+- **Why:**
+  - Jack wants the add/drop recommendations as accurate as possible; 400–800 seasons (±1.3–3.2 title points) isn't enough.
+  - Vercel Hobby's 4 CPU-hours a month can't pay for more (ADR-052).
+  - GitHub-hosted runners are free and unlimited for public repositories.
+- **How:**
+  - Vercel builds a job: the season as it stands, as plain JSON (fantasy-core `WireInput`: rosters as projections, schedule, matchups, banked points), plus the top 15 moves by the points estimate and any Jack asked for (`WireMove`). It stores it in `sim_jobs` and starts `.github/workflows/simulate.yml`.
+  - Eight runners take 200-season chunks (`/api/worker/next`, atomic and never overlapping) and play the base and every move on the same seasons with 10 playoff replays (`runChunk`). They post paired sums (`/api/worker/result`).
+  - Each post updates the Outlook (`outlook_runs`) and the deep Moves checks (`view_cache` "move-checks-deep").
+  - **Stopping:**
+    - a move stops once its title change is known to ±0.5 points (two standard errors), with at least 4,000 seasons, or at 20,000;
+    - a move clearly worse than doing nothing on both title and wins stops early;
+    - the base run gets at least 8,000 seasons.
+  - **Shown per move:**
+    - the change ± margin;
+    - the chance it raises the title odds (normal approximation);
+    - the chance it's the best of the moves checked (resampling the chunks all contenders share).
+- **Secrets:** the worker holds only `WORKER_SECRET`. ESPN cookies and the database stay on Vercel.
+- **Starting the worker:** `GITHUB_DISPATCH_TOKEN` (repo-scoped) on Vercel starts it the moment rosters change. A schedule every 15 minutes is the fallback (each check wakes the database, so not more often). Without `WORKER_SECRET` the app keeps simulating on Vercel; if a job sits unstarted for 15 minutes, Vercel runs the Outlook itself.
+- **Measured locally** (14 cores, Nov 2):
+  - a 15-move job finished in 88 s;
+  - every move reached ±0.5 or stopped early, with the Outlook at 8,400 seasons;
+  - about 20 CPU-minutes, none on Vercel.
+  - The top move came out +0.83 ±0.42 title points, with a 93% chance of being the best.
+- **The honest limit:** more seasons remove the simulation's randomness, not the projections' error. That is what the pre-registered model tests address.

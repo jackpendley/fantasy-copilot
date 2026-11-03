@@ -12,7 +12,6 @@ import { loadPlayerPool } from "@/lib/nba/pool";
 import { perGameProjection } from "@/lib/nba/projection";
 import { hotAndCold, injuryOpenings, ownershipRisers, type PoolPlayer } from "@/lib/nba/trends";
 import { searchPlayers } from "@/lib/player-search";
-import { PlayersNav } from "@/components/fc/players-nav";
 import { TeamTabs } from "@/components/fc/team-tabs";
 import { cn } from "@/lib/utils";
 
@@ -161,11 +160,9 @@ export default async function PlayersPage({
 
   return (
     <>
-      <PlayersNav
-        view="trends"
-        subtitle="Hot and cold players, minutes opening up, free agents being added"
-        query={q}
-      />
+      <p className="px-1 text-sm text-muted-foreground">
+        Hot and cold players, minutes opening up, free agents being added
+      </p>
 
       {q ? (
         <section className="space-y-1.5">

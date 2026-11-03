@@ -106,6 +106,50 @@ const availability = (p: RosterPlayer) => {
   return Math.min(1, gp / 82);
 };
 
+/**
+ * The free-agent pool with what the table shows: projection, games he can still play this
+ * week (after a claim clears, and not in a game already under way) and rest-of-season points.
+ * Cheap; the Free agents view uses it without the add-and-drop loop.
+ */
+export function waiverCandidates(
+  a: Pick<WaiverInputs, "freeAgents" | "week" | "rosterLocked" | "startedToday" | "lastDay">,
+): { candidates: WaiverCandidate[]; availableFrom: Map<number, number> } {
+  const { week } = a;
+  const lastWeekDay = Math.max(...week.periods);
+  const gamesBetween = (pro: number, from: number, to: number) =>
+    countGames(week.games, pro, from, to);
+  const ros = (p: RosterPlayer) =>
+    perGameProjection(p).fppg *
+    availability(p) *
+    gamesBetween(p.proTeamId, lastWeekDay + 1, a.lastDay);
+  // When each free agent can first play: after his claim processes, and not in a game already
+  // under way (or not today at all once the roster has locked). Starts from the week's own
+  // windows (players added after today's lock).
+  const availableFrom = new Map(week.availableFrom ?? []);
+  const candidates: WaiverCandidate[] = a.freeAgents
+    .map((f) => {
+      let from = week.fromPeriod;
+      if (f.status === "WAIVERS" && f.waiverUntil) {
+        from = Math.max(from, scoringPeriodForDate(etDate(new Date(f.waiverUntil))));
+      }
+      if (from === week.fromPeriod && (a.rosterLocked || a.startedToday.has(f.player.proTeamId))) {
+        from += 1;
+      }
+      availableFrom.set(f.player.id, from);
+      return {
+        player: f.player,
+        status: f.status,
+        waiverUntil: f.waiverUntil,
+        fppg: perGameProjection(f.player).fppg,
+        weekGames: gamesBetween(f.player.proTeamId, from, lastWeekDay),
+        ros: ros(f.player),
+      };
+    })
+    .filter((c) => c.fppg > 0)
+    .sort((x, y) => y.fppg - x.fppg);
+  return { candidates, availableFrom };
+}
+
 export function waiverAnalysis(a: WaiverInputs): {
   baseWin: number | null;
   candidates: WaiverCandidate[];
@@ -132,31 +176,7 @@ export function waiverAnalysis(a: WaiverInputs): {
     availability(p) *
     gamesBetween(p.proTeamId, lastWeekDay + 1, a.lastDay);
 
-  // When each free agent can first play: after his claim processes, and not in a game already
-  // under way (or not today at all once the roster has locked). Starts from the week's own
-  // windows (players added after today's lock).
-  const availableFrom = new Map(week.availableFrom ?? []);
-  const candidates: WaiverCandidate[] = a.freeAgents
-    .map((f) => {
-      let from = week.fromPeriod;
-      if (f.status === "WAIVERS" && f.waiverUntil) {
-        from = Math.max(from, scoringPeriodForDate(etDate(new Date(f.waiverUntil))));
-      }
-      if (from === week.fromPeriod && (a.rosterLocked || a.startedToday.has(f.player.proTeamId))) {
-        from += 1;
-      }
-      availableFrom.set(f.player.id, from);
-      return {
-        player: f.player,
-        status: f.status,
-        waiverUntil: f.waiverUntil,
-        fppg: perGameProjection(f.player).fppg,
-        weekGames: gamesBetween(f.player.proTeamId, from, lastWeekDay),
-        ros: ros(f.player),
-      };
-    })
-    .filter((c) => c.fppg > 0)
-    .sort((x, y) => y.fppg - x.fppg);
+  const { candidates, availableFrom } = waiverCandidates(a);
 
   const current = [...a.roster, ...(a.leaving ?? [])];
   const baseline = projectTeamWeek(current, week);

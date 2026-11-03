@@ -9,6 +9,7 @@ import "server-only";
 // so a game that has started is never shown as upcoming. ESPN's game log can trail a game by
 // hours, so recent games it hasn't added yet are read from the box score.
 
+import { percentileOf } from "./pbp-metrics";
 import { after } from "next/server";
 import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
 import { fantasyPoints, normalizeStatus, withDerived } from "@fantasy-copilot/fantasy-core";
@@ -87,6 +88,8 @@ export interface SeasonBlock {
   split: SeasonSplit | null;
   espn: EspnAdvanced | null;
   pbp: PbpPlayer | null;
+  /** FP/G percentile among this league's rostered players with enough games (this season). */
+  fppgPercentile?: number | null;
 }
 
 export interface PlayerCardData {
@@ -185,7 +188,27 @@ async function storedProps(gameId: number, playerId: number) {
   return rows;
 }
 
-export async function loadPlayerCard(id: number, now = new Date()): Promise<PlayerCardData | null> {
+/** One game in a full log (the player page): date, opponent, box score and fantasy points. */
+export interface LogGame {
+  gameId: number;
+  date: string;
+  opponent: string;
+  home: boolean;
+  playoffs: boolean;
+  fp: number;
+  /** 5-game rolling average (null for the first four games). */
+  rolling: number | null;
+  line: Record<string, number>;
+}
+
+/**
+ * The card's data; with `full`, also both seasons' full game logs (the player page).
+ */
+export async function loadPlayerCard(
+  id: number,
+  now = new Date(),
+  full = false,
+): Promise<(PlayerCardData & { logs?: { current: LogGame[]; last: LogGame[] } }) | null> {
   const [p, poolData, draftPicks] = await Promise.all([
     loadPlayer(id, now),
     loadPlayerPool(now),
@@ -432,6 +455,7 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
         split: seasonSplit(regular(thisLog)),
         espn: espnNow,
         pbp: pbpNow,
+        fppgPercentile: fppgPercentile(pool, seasonSplit(regular(thisLog))?.fppg ?? null),
       },
       last: {
         label: label(season - 1),
@@ -441,6 +465,14 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
       },
     },
     darko,
+    ...(full
+      ? {
+          logs: {
+            current: logGames(scoreGames(thisLog, scoring)),
+            last: logGames(scoreGames(p.logSeason === season ? lastLog : p.log, scoring)),
+          },
+        }
+      : {}),
     nbaId: pbpNow?.nbaId ?? pbpLast?.nbaId ?? null,
     rest: {
       gamesLeft: restGames.length,
@@ -467,3 +499,41 @@ export async function loadPlayerCard(id: number, now = new Date()): Promise<Play
 
 /** True while his game is in progress: the card refreshes itself and isn't cached. */
 export const isLive = (c: PlayerCardData) => c.live?.state === "in";
+
+/**
+ * Where his FP/G ranks among this league's rostered players with enough games this season (3,
+ * or 40% of the most anyone has), as a percentile: the players he'd compete with for a spot.
+ */
+function fppgPercentile(
+  all: {
+    available: boolean;
+    player: { season: { avg: number | null; total: number | null } | null };
+  }[],
+  fppg: number | null,
+): number | null {
+  if (fppg == null) return null;
+  const pool = all.filter((e) => !e.available);
+  const games = (w: { avg: number | null; total: number | null } | null) =>
+    w?.avg && w.total ? w.total / w.avg : 0;
+  const most = Math.max(0, ...pool.map((e) => games(e.player.season)));
+  const min = Math.max(1, Math.min(3, Math.ceil(most * 0.4)));
+  const values = pool
+    .filter((e) => games(e.player.season) >= min && e.player.season?.avg != null)
+    .map((e) => e.player.season!.avg!)
+    .sort((a, b) => a - b);
+  const p = percentileOf(values, fppg);
+  return p == null ? null : Math.round(p);
+}
+
+function logGames(rows: ReturnType<typeof scoreGames>): LogGame[] {
+  return rows.map((r) => ({
+    gameId: r.gameId,
+    date: r.date,
+    opponent: r.opponent,
+    home: r.home,
+    playoffs: r.part === "post",
+    fp: Math.round(r.fp * 10) / 10,
+    rolling: r.rolling != null ? Math.round(r.rolling * 10) / 10 : null,
+    line: r.line as Record<string, number>,
+  }));
+}

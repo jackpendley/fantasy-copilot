@@ -61,3 +61,21 @@ export function compactGame(g: GameLike | null): string {
 /** "24 PTS 5 REB" with each number kept beside its label when the line wraps. */
 export const keepStatsTogether = (s: string | null) =>
   s && s.replace(/(\d) (?=[A-Z0-9]*[A-Z])/g, "$1\u00a0");
+
+/**
+ * A game's fantasy points against his average, as the game log colors them: 25%+ above is a
+ * good game, 40%+ below a bad one. A game he didn't play (no minutes) is neither.
+ */
+export function fpTone(
+  fp: number,
+  avg: number | null,
+  minutes?: number | null,
+): "good" | "bad" | null {
+  if (avg == null || avg <= 0 || minutes === 0) return null;
+  if (fp >= avg * 1.25) return "good";
+  if (fp <= avg * 0.6) return "bad";
+  return null;
+}
+
+export const toneText = (t: "good" | "bad" | null) =>
+  t === "good" ? "text-success" : t === "bad" ? "text-danger" : "";

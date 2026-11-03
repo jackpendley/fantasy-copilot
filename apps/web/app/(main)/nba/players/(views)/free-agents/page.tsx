@@ -34,6 +34,7 @@ export default async function FreeAgentsPage({
     positions: c.player.positions,
     waivers: c.status === "WAIVERS",
     fppg: c.fppg,
+    fppgPct: c.fppgPct,
     last7: c.player.last7?.avg != null && c.player.last7.total ? c.player.last7.avg : null,
     weekGames: c.weekGames,
     owned: c.player.percentOwned ?? null,
@@ -48,11 +49,12 @@ export default async function FreeAgentsPage({
         <SectionTitle>Free agents</SectionTitle>
         <FreeAgentTable rows={pool} initialPos={pos} initialSort={sort} />
         <p className="px-1 text-xs text-muted-foreground">
-          FP/G = projected fantasy points per game (league scoring). Last 7 = his average over the
-          last 7 days. Wk G = games he can still play this week. Owned = share of ESPN leagues
-          rostering him; +/− = its change over the last week. Season = projected points from games
-          after this week. Tap a column to sort; tap again to flip. Moves has the best add for each,
-          with whom to drop.
+          FP/G = projected fantasy points per game (league scoring); the badge is where that ranks
+          among this league&apos;s rostered players (green: 80th percentile or better, red: 20th or
+          below). Last 7 = his average over the last 7 days. Wk G = games he can still play this
+          week. Owned = share of ESPN leagues rostering him; +/− = its change over the last week.
+          Season = projected points from games after this week. Tap a column to sort; tap again to
+          flip. Moves has the best add for each, with whom to drop.
         </p>
       </section>
     </>

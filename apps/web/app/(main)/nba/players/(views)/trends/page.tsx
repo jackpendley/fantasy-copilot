@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { PlayerCardButton } from "@/components/fc/player-card";
+import { PercentileBadge, PlayerCardButton } from "@/components/fc/player-card";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { Callout, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
@@ -9,11 +9,21 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
 import { loadPlayerPool } from "@/lib/nba/pool";
-import { perGameProjection } from "@/lib/nba/projection";
+import { perGameProjection, rosteredPercentile } from "@/lib/nba/projection";
 import { hotAndCold, injuryOpenings, ownershipRisers, type PoolPlayer } from "@/lib/nba/trends";
 import { searchPlayers } from "@/lib/player-search";
 import { TeamTabs } from "@/components/fc/team-tabs";
 import { cn } from "@/lib/utils";
+
+/** "proj FP/G" with where it ranks among this league's rostered players. */
+function ProjLabel({ p }: { p: number | null }) {
+  return (
+    <div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+      <PercentileBadge p={p} title="Percentile among this league's rostered players" />
+      proj FP/G
+    </div>
+  );
+}
 
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${fmtPts(n)}`;
 
@@ -154,6 +164,7 @@ export default async function PlayersPage({
     data.injuries,
     freeAgents,
   ).slice(0, 6);
+  const rank = rosteredPercentile(data.teams.flatMap((t) => t.roster));
   const mine = [...data.me.roster].sort(
     (a, b) => perGameProjection(b).fppg - perGameProjection(a).fppg,
   );
@@ -178,7 +189,7 @@ export default async function PlayersPage({
                       <div className="font-semibold">
                         {fmtPts(perGameProjection(e.player).fppg)}
                       </div>
-                      <div className="text-[11px] text-muted-foreground">proj FP/G</div>
+                      <ProjLabel p={rank(perGameProjection(e.player).fppg)} />
                     </>
                   }
                 />
@@ -241,7 +252,7 @@ export default async function PlayersPage({
                               <div className="font-semibold">
                                 {fmtPts(perGameProjection(f.player).fppg)}
                               </div>
-                              <div className="text-[11px] text-muted-foreground">proj FP/G</div>
+                              <ProjLabel p={rank(perGameProjection(f.player).fppg)} />
                             </>
                           }
                         />
@@ -292,7 +303,7 @@ export default async function PlayersPage({
                   right={
                     <>
                       <div className="font-semibold">{fmtPts(perGameProjection(p).fppg)}</div>
-                      <div className="text-[11px] text-muted-foreground">proj FP/G</div>
+                      <ProjLabel p={rank(perGameProjection(p).fppg)} />
                     </>
                   }
                 />

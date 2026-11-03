@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { PlayerCardButton } from "@/components/fc/player-card";
+import { PercentileBadge, PlayerCardButton } from "@/components/fc/player-card";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
@@ -22,6 +22,7 @@ import {
 } from "@/lib/free-agents";
 
 const PAGE = 40;
+const RANK_TITLE = "Percentile among this league's rostered players";
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}`;
 
 export function FreeAgentTable({
@@ -141,7 +142,10 @@ export function FreeAgentTable({
                   </PlayerCardButton>
                 </td>
                 <td className="px-2 py-2 text-right font-semibold tabular-nums">
-                  {fmtPts(r.fppg)}
+                  <div className="flex items-center justify-end gap-1.5">
+                    {fmtPts(r.fppg)}
+                    <PercentileBadge p={r.fppgPct} title={RANK_TITLE} />
+                  </div>
                 </td>
                 <td className="px-2 py-2 text-right text-muted-foreground tabular-nums">
                   {r.last7 != null ? fmtPts(r.last7) : "—"}

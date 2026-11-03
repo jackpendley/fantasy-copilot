@@ -7,6 +7,7 @@
 // docs/MODEL_CARD.md.
 
 import type { RosterPlayer } from "@fantasy-copilot/espn";
+import { percentileOf } from "./pbp-metrics";
 
 /** Games of actual data that count as much as the preseason projection (fallback blend). */
 const PRIOR_GAMES = 15;
@@ -158,4 +159,16 @@ export function gameEnvironment(line: GameLine | null | undefined, home: boolean
   if (line?.total == null || line.spread == null) return 1;
   const team = home ? (line.total - line.spread) / 2 : (line.total + line.spread) / 2;
   return Math.pow(team / (line.leagueTotal ?? LEAGUE_TEAM_TOTAL), ENV_BETA);
+}
+
+/**
+ * Percentile of a projected FP/G among this league's rostered players (0-100): the players a
+ * pickup would compete with for a spot.
+ */
+export function rosteredPercentile(rostered: RosterPlayer[]): (fppg: number) => number | null {
+  const values = rostered.map((p) => perGameProjection(p).fppg).sort((a, b) => a - b);
+  return (fppg) => {
+    const p = percentileOf(values, fppg);
+    return p == null ? null : Math.round(p);
+  };
 }

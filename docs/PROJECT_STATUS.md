@@ -33,7 +33,7 @@ The player card has a fixed size and closes on navigation. It shows advanced sta
   - Page visits never start simulations.
   - Parsed league and free agents are memoized.
   - One win chance everywhere: Matchup and Moves both use the props blend for today (the 63% vs 61% fix).
-- **#64, simulation worker (ADR-053):** GitHub Actions (8 runners) plays move checks and the Outlook in 200-season chunks. Each move runs until ±0.5 title points (2 SE), between 4,000 and 20,000 seasons, and the base run gets 8,000+. Shown per move: P(helps) and P(best). Results update progressively. **Off until Jack adds the secrets (below)**; until then Vercel keeps the old quick checks.
+- **#64, simulation worker (ADR-053):** GitHub Actions (8 runners) plays move checks and the Outlook in 200-season chunks. Each move runs until ±0.5 title points (2 SE), between 4,000 and 20,000 seasons, and the base run gets 8,000+. Shown per move: P(helps) and P(best). Results update progressively. **Live since Nov 3.**
 - **#65:** Players tabs share a layout. Switches are ~10–20 ms warm.
 - **#66:** `matchup_timeline` (every 15 min in game windows), the Mon–Sun chart, strip order and colors, on-court dots (from the ESPN summary).
 - **#67:** Vercel builds only `main`: no preview deployments, which were filling Functions Storage (7.1 of 10 GB).
@@ -50,17 +50,22 @@ The player card has a fixed size and closes on navigation. It shows advanced sta
 
 ## Waiting on Jack
 
-1. **Worker secrets** (needed for deep move checks; nothing set as of Nov 2 evening):
-   1. Run `! S=$(openssl rand -hex 32) && printf '%s' "$S" | gh secret set WORKER_SECRET --repo jackpendley/fantasy-copilot && printf '%s' "$S" | pbcopy && echo "saved + copied"`.
-   2. Paste the same value into Vercel as `WORKER_SECRET` (Sensitive, Production).
-   3. Create a fine-grained GitHub token (this repo only, Actions: read and write) and add it to Vercel as `GITHUB_DISPATCH_TOKEN`.
-   4. Redeploy.
-2. **`VAPID_SUBJECT`** = `mailto:` plus his email in Vercel. The dashboard asked for 2FA, so Jack does this.
-3. **Optional:** a Vercel deployment retention policy (an account setting) to delete old deployments' functions and free storage. Needs his OK.
+1. **Optional:** a Vercel deployment retention policy (an account setting) to delete old deployments' functions and free storage. Needs his OK.
+
+**Done Nov 3:**
+
+- `WORKER_SECRET` set in GitHub and Vercel (on the second try: the first values didn't match, and the runners got 401).
+- `GITHUB_DISPATCH_TOKEN` set: fine-grained, this repo only, Actions read and write, expires Jan 31, 2027. **Renew it before then.**
+- `VAPID_SUBJECT` was already set.
+- **Production test:**
+  - Simulate this drop started a GitHub run in 22 s.
+  - A run of 8 runners finished in ~3 min.
+  - Moves showed "Deep check done: 15 moves, up to 12,000 seasons each" (top: +Lively −Collins, +0.8 ±0.3 title points, >99% helps, 43% best).
+  - #72 fixed asking again for a move already queued, which didn't start a runner.
 
 ## Next tasks
 
-1. **After the secrets:** verify a production worker run. A roster move should show first deep results within ~2 min and final results within ~5. Then compare Vercel Active CPU before and after.
+1. **Worker:** time a real roster move to first and final deep results (the target is about 2 and 5 min). Compare Vercel Active CPU before and after (Nov 2: 2 h 29 m of 4 h).
 2. **Production checks:**
    - `pbp_players.stats` fills on the first card open after deploy, or nightly. Percentiles appear then.
    - Team pages show "At the time" values from the season's Outlook runs.

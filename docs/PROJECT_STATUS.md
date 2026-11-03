@@ -1,4 +1,4 @@
-# Project status (2026-11-02)
+# Project status (2026-11-02, end of round 2)
 
 ## Where things stand
 
@@ -6,90 +6,71 @@
 
 - **Today**
 - **Matchup** (`/nba/week`):
-  - any week (`?week=`) and any team (`?team=`);
-  - every league matchup with its win chance;
-  - both teams' schedules.
-- **Players** (`/nba/players`):
-  - Moves (was Waivers);
-  - Free agents;
-  - Trends (was Players);
-  - search as you type.
-- **League** (`/nba/league`): your odds, what changed, the odds chart (was Outlook), standings with strength and odds, Trades.
+  - any week or team;
+  - a Mon–Sun win chart with points every 15 minutes during games;
+  - a league strip with Jack's matchup first and finals in green/red;
+  - on-court/bench dots during live games.
+- **Players:**
+  - **Moves**, with deep simulation checks once the worker is on;
+  - **Free agents**, with FP/G percentile badges;
+  - **Trends**;
+  - search.
+- **League:**
+  - odds and a "What a bye is worth" line;
+  - sortable standings with Bye and #1 columns;
+  - Most impactful moves;
+  - Trades.
+  - Each team page has odds over time, roster moves with their impact, and injury games missed.
 
-Settings and Model accuracy are reached from the header. Every ESPN write goes through a UI confirm and is audited in `espn_actions`.
+The player card has a fixed size and closes on navigation. It shows advanced stats with league percentiles (green ≥80th, red ≤20th) and colored game results. The player page has the same data plus every game, for this season or last.
 
-**Shipped Nov 2 (PRs #51–#61):**
+**Shipped Nov 2, round 1 (#51–#62):** jobs and push fixes, the Matchup rework, the Moves numbers, search, simulation replays, four tabs, IR rule, day-to-day test (see git log / ADR-046–051).
 
-- **Jobs and push (#51):**
-  - Nightly steps log their own results (the Oct 29 matchup-snapshot "fetch failed" was a one-off).
-  - Errors keep their cause; the snapshot retries.
-  - Settings dates are in Arizona time.
-  - Push survives a bad device, and an alert is only marked sent once delivered.
-  - DARKO is checked hourly.
-  - Jack rotated the VAPID keys; push works on his iPhone.
-- **Matchup (#52):**
-  - Past weeks show finals; later weeks are projected.
-  - A league scoreboard of all matchups with win chances; `matchup_states` drives other matchups' charts.
-  - Schedule tabs for both teams.
-  - The boards are unchanged.
-- **Waivers, now Moves (#53, ADR-046):**
-  - Exact numbers: Outlook now → with move → change ± margin, plus this week's matchup.
-  - Any drop can be chosen and simulated on request.
-  - Clearer labels; the "Later" points fix.
-  - Free agents sort by any column, with G/F filters.
-- **Players search (#54):** the whole player list (~1,100) is searched in the browser as you type, with a ranked matcher. Hot & Cold has a free-agents toggle.
-- **Simulation precision (#55, ADR-047):**
-  - Playoff replays: title odds are ~2.4× as precise per CPU second.
-  - Waiver checks run in 400-season batches; close calls get a second batch within a 2-minute daily budget. Title change is ±1.3–1.4 (was ±3.2).
-  - Trades use replays too.
-  - Simulation CPU is logged and shown on Settings.
-- **Four tabs (#56, ADR-048):** Players and League merges, with redirects from old links.
-- **Fixes:**
-  - IR-return cuts follow one rule everywhere (#57, ADR-049).
-  - No cut-off text on the remaining pages (#58).
-  - This season's league team total in the game-environment factor (#59, ADR-050: 115.42 vs 115.3, effect under 0.1% today).
-  - Six simulated moves per refresh; the quick ranking keeps no streaming credit (#61, ADR-051: it doesn't track the simulation among close calls).
-- **Tests (#60, MODEL_CARD):**
-  - **Day-to-day players on later days passed and shipped.** They play ~59% tomorrow and ~70–75% after (the old rule was 75%, then 100%).
-  - **Manager activity from lineups:** neither candidate passed; `act` is unchanged.
+**Shipped Nov 2, round 2 (#63–#70):**
 
-**Data sources** (free first; paid ones on hold, see memory `nba-data-sources`):
+- **#63, CPU diet (ADR-052):**
+  - Outlook reruns are coalesced to one per 30 minutes.
+  - Page visits never start simulations.
+  - Parsed league and free agents are memoized.
+  - One win chance everywhere: Matchup and Moves both use the props blend for today (the 63% vs 61% fix).
+- **#64, simulation worker (ADR-053):** GitHub Actions (8 runners) plays move checks and the Outlook in 200-season chunks. Each move runs until ±0.5 title points (2 SE), between 4,000 and 20,000 seasons, and the base run gets 8,000+. Shown per move: P(helps) and P(best). Results update progressively. **Off until Jack adds the secrets (below)**; until then Vercel keeps the old quick checks.
+- **#65:** Players tabs share a layout. Switches are ~10–20 ms warm.
+- **#66:** `matchup_timeline` (every 15 min in game windows), the Mon–Sun chart, strip order and colors, on-court dots (from the ESPN summary).
+- **#67:** Vercel builds only `main`: no preview deployments, which were filling Functions Storage (7.1 of 10 GB).
+- **#68, card and page (ADR-054):** `pbp_players.stats`, 17 metrics with percentiles among regulars, rostered-player FP/G percentiles, `fpTone` colors everywhere, `FpChart` with average and projection lines, the last-season toggle.
+- **#69, byes (ADR-055):** the simulator counts byes and titles won with one (golden test extended). On Nov 3, a bye meant a 27% title chance vs 12% as a 3–6 seed.
+- **#70, move history (ADR-056):** `league_transactions`; per move, the odds change at the time (≈ when not clean), points since and value now; injuries as games missed × projection.
 
-- ESPN (fantasy, site, core APIs);
-- DraftKings props via ESPN;
-- DARKO;
-- PBP Stats;
-- the NBA official injury report (`ak-static.cms.nba.com`).
+**Vercel usage on Nov 2:**
 
-**Read the injury report politely:** at most one request per 5 minutes live; backfills space requests 2 s apart.
-
-**Compute budget:**
-
-- Vercel Hobby includes 4 active CPU-hours a month.
-- Settings → Simulation CPU shows the last 30 days of Outlook, move-check and trade simulations.
-- Vercel → Usage has the full total, pages included.
-- Move checks: about 8 s per batch on Vercel; second batches stop once a day's move checks pass 2 minutes.
+- Active CPU 2 h 29 m of 4 h.
+- Functions Storage 7.12 of 10 GB (this is what the warning email was about).
+- After #63, CPU grew ~2 min in 5 h, and #67 stops the storage growth.
+- Recommendation given: stay on Hobby. Pro ($20) only if usage stays near the limits.
 
 ## Waiting on Jack
 
-1. **Vercel → Usage:** check Active CPU after a few days with the 5-minute job and the new simulation settings. Compare with Settings → Simulation CPU.
-2. **Optional:** set `VAPID_SUBJECT` to `mailto:` plus his email (push already works).
+1. **Worker secrets** (needed for deep move checks; nothing set as of Nov 2 evening):
+   1. Run `! S=$(openssl rand -hex 32) && printf '%s' "$S" | gh secret set WORKER_SECRET --repo jackpendley/fantasy-copilot && printf '%s' "$S" | pbcopy && echo "saved + copied"`.
+   2. Paste the same value into Vercel as `WORKER_SECRET` (Sensitive, Production).
+   3. Create a fine-grained GitHub token (this repo only, Actions: read and write) and add it to Vercel as `GITHUB_DISPATCH_TOKEN`.
+   4. Redeploy.
+2. **`VAPID_SUBJECT`** = `mailto:` plus his email in Vercel. The dashboard asked for 2FA, so Jack does this.
+3. **Optional:** a Vercel deployment retention policy (an account setting) to delete old deployments' functions and free storage. Needs his OK.
 
 ## Next tasks
 
-1. **Watch the first production runs:**
-   - Settings should show matchup-snapshot "ok" after the Nov 3 nightly run.
-   - "darko" rows when DARKO publishes.
-   - move-sim CPU in Settings.
-2. **Official statuses forward test** (pre-registered): run once when there are ≥1,500 non-Out rows (~3–4 weeks of logging).
-3. **Props blend and DARKO blend tests** run nightly; check `/nba/model`.
-4. **Win probability, candidate C:** after week 7's finals (Dec 6), run the forward test once on weeks 3–7 (Pre-registration 3).
-5. **Win-probability recalibration** after week 13 (Pre-registration 2).
-6. **Outlook precision:** once the monthly CPU is known, consider playoff replays for the Outlook too (title ±0.4 instead of ±0.8 at ~1.6× its CPU).
-7. **Manager activity:** a forward retest of the lineup-based share on this season's lineups, if pre-registered (2025-26 alone was inconclusive with 12 teams).
-8. **Free agents' Vegas props on Moves:** today's games for free agents use our model only (Today and Matchup use the blend).
-9. **Roadmap** (`docs/ROADMAP.md`):
-   - own projection models (minutes, play chance, rate);
-   - opponent manager profiles and scouting;
+1. **After the secrets:** verify a production worker run. A roster move should show first deep results within ~2 min and final results within ~5. Then compare Vercel Active CPU before and after.
+2. **Production checks:**
+   - `pbp_players.stats` fills on the first card open after deploy, or nightly. Percentiles appear then.
+   - Team pages show "At the time" values from the season's Outlook runs.
+   - The first bye numbers appear after the next Outlook run.
+3. **Official statuses forward test** (pre-registered): once ≥1,500 non-Out rows (~3–4 weeks).
+4. **Props and DARKO blend tests** run nightly; check `/nba/model`.
+5. **Win probability:** candidate C after week 7's finals (Dec 6, Pre-registration 3); recalibration after week 13 (Pre-registration 2).
+6. **Free agents' Vegas props on Moves:** free agents are now in the blend (#63). Check the props coverage for them.
+7. **Roadmap** (`docs/ROADMAP.md`):
+   - own projection models;
+   - opponent manager profiles;
    - a playoff-schedule planner;
-   - NFL and MLB later.
+   - NFL and MLB.

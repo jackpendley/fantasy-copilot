@@ -1,7 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
-    { "path": "/api/cron/nightly", "schedule": "0 11 * * *" },
-    { "path": "/api/cron/pregame", "schedule": "0 22 * * *" }
-  ]
+    {
+      "path": "/api/cron/nightly",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/cron/pregame",
+      "schedule": "0 22 * * *"
+    }
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "**": false,
+      "main": true
+    }
+  }
 }

@@ -174,7 +174,16 @@ export function MoveCard({
         <td className="py-1 pl-1 text-right tabular-nums">
           {d ? (
             <>
-              <span className={cn("font-semibold", tone(d.d * k, wins ? 0.005 : 0.05))}>
+              <span
+                className={cn(
+                  "font-semibold",
+                  // Green or red only when the change is bigger than its margin: inside it, the
+                  // simulation can't tell it from no change.
+                  Math.abs(d.d) > 2 * d.se
+                    ? tone(d.d * k, wins ? 0.005 : 0.05)
+                    : "text-muted-foreground",
+                )}
+              >
                 {signed(d.d * k, wins ? 2 : 1)}
               </span>
               <span className="ml-1 text-[11px] text-muted-foreground">
@@ -327,13 +336,24 @@ export function MoveCard({
       </div>
 
       <p className="pl-[50px] text-xs text-muted-foreground tabular-nums">
-        Lineup points: this week{" "}
-        <span className={tone(o.deltaPts, 0.5)}>{signed(o.deltaPts, 0)}</span> · rest of season{" "}
-        <span className={tone(o.laterPts, 0.5)}>{signed(o.laterPts, 0)}</span>
-        {" · "}points estimate{" "}
-        <span className={cn("font-medium", tone(o.netWins, 0.005))}>
+        {sim ? "Quick estimate, if you kept him all season: " : "Lineup points: "}this week{" "}
+        <span className={cn(!sim && tone(o.deltaPts, 0.5))}>{signed(o.deltaPts, 0)}</span> · rest of
+        season <span className={cn(!sim && tone(o.laterPts, 0.5))}>{signed(o.laterPts, 0)}</span>
+        {" · "}
+        {sim ? "≈" : "points estimate "}
+        <span className={cn("font-medium", !sim && tone(o.netWins, 0.005))}>
           {signed(o.netWins, 2)} wins
         </span>
+        {sim && o.deltaPts > 0.5 && o.laterPts < -0.5 && (
+          <>
+            {" "}
+            · helps now, costs later if kept. The season sim lets you swap him out again, as you
+            usually do, so it doesn&apos;t charge the later points in full.
+          </>
+        )}
+        {sim && o.deltaPts < -0.5 && o.laterPts > 0.5 && (
+          <> · costs this week, pays off over the rest of the season.</>
+        )}
       </p>
     </div>
   );

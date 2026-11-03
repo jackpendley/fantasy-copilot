@@ -104,6 +104,16 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
           roster stays as it is (no future pickups).
         </li>
         <li>
+          <b className="text-foreground">When they disagree, trust the table.</b> The two answer
+          different questions. The quick estimate counts lineup points as if you kept this roster
+          all season. The season sim plays the season the way it goes: every team, yours included,
+          keeps streaming free agents, players get hurt, and the title is decided in the playoff
+          weeks. So a pickup that helps this week but is weak later (&ldquo;this week +27 · rest of
+          season −75&rdquo;) can still be fine: you&apos;d swap him out again. Changes are colored
+          only when they&apos;re bigger than their ± margin; grey means the simulation can&apos;t
+          tell the move from doing nothing.
+        </li>
+        <li>
           <b className="text-foreground">Drop</b>: the best drop is picked for you; choose another
           player to see that move&apos;s numbers. The number after each name is its points estimate;
           ✓ marks drops the simulation has checked (it checks the top moves automatically).

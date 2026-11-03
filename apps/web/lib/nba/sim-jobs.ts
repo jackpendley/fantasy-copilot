@@ -385,7 +385,11 @@ export async function requestMoveCheck(key: string): Promise<number | null> {
     select id, roster_key, moves from sim_jobs where status in ('queued', 'running')
     order by id desc limit 1
   `;
-  if (live?.moves.some((m) => m.key === key)) return live.id;
+  // Already in the live job: make sure a runner is on it (e.g. after one failed to start).
+  if (live?.moves.some((m) => m.key === key)) {
+    await startWorker();
+    return live.id;
+  }
   const v = await loadWaiverView();
   if (live && live.roster_key === rosterKey(v)) {
     const move = await buildMove(key);

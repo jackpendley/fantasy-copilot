@@ -5,11 +5,19 @@ import { db } from "@/lib/db";
 import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
 import { matchupView } from "./matchup";
+import { bestPerGame } from "./best";
 
 export async function recordMatchupSnapshot(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
-  const v = matchupView(await loadLeague(sp, date), sp);
+  const data = await loadLeague(sp, date);
+  // Today's games with the props blend, as the Matchup page shows them.
+  const perGame = await bestPerGame(
+    data.teams.flatMap((t) => t.roster),
+    data,
+    sp,
+  );
+  const v = matchupView(data, sp, perGame);
   if (!v.theirs || v.pWin == null) return null; // bye week
   const row = {
     matchup_period: v.mp,
@@ -32,13 +40,22 @@ export async function recordMatchupStates(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const data = await loadLeague(sp, date);
+  const perGame = await bestPerGame(
+    data.teams.flatMap((t) => t.roster),
+    data,
+    sp,
+  );
   const mp = matchupPeriodOf(sp);
   const rows = [];
   for (const m of data.matchups.filter((x) => x.period === mp && x.awayTeamId != null)) {
     const home = data.teams.find((t) => t.id === m.homeTeamId);
     const homeAhead = data.ahead.teams.find((t) => t.id === m.homeTeamId);
     if (!home || !homeAhead) continue;
-    const v = matchupView({ ...data, me: home, ahead: { ...data.ahead, me: homeAhead } }, sp);
+    const v = matchupView(
+      { ...data, me: home, ahead: { ...data.ahead, me: homeAhead } },
+      sp,
+      perGame,
+    );
     if (!v.theirs || v.pWin == null) continue;
     rows.push({
       matchup_period: mp,

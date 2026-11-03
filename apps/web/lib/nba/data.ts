@@ -29,7 +29,7 @@ import {
 } from "@fantasy-copilot/nba-data";
 import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
-import { memoFetch } from "../fetch-memo";
+import { memoAsync, memoFetch } from "../fetch-memo";
 import { leagueTeamTotal } from "./league-total";
 import { LAST_SCORING_PERIOD } from "./calendar";
 import { defenseTable } from "./defense-table";
@@ -95,7 +95,17 @@ async function rostersAhead(scoringPeriodId: number): Promise<Map<number, Roster
   return new Map(parseTeams(raw).map((t) => [t.id, t.roster]));
 }
 
-export async function loadLeague(scoringPeriodId: number, ymd: string) {
+/**
+ * The league for a day, parsed once per 15 seconds per server instance (as long as the live
+ * scoreboard is remembered): pages, cards and jobs share it instead of re-parsing.
+ */
+export const loadLeague = memoAsync(
+  15_000,
+  (sp: number, ymd: string) => `${sp}|${ymd}`,
+  readLeague,
+);
+
+async function readLeague(scoringPeriodId: number, ymd: string) {
   const yyyymmdd = ymd.replace(/-/g, "");
   const [{ raw, teamId, season }, ahead] = await Promise.all([
     leagueJson(scoringPeriodId),
@@ -137,7 +147,13 @@ export async function loadLeague(scoringPeriodId: number, ymd: string) {
 }
 
 /** Free agents and waiver players, most-owned first (empty in ESPN_LEAGUE_FILE dev mode). */
-export async function loadFreeAgents(scoringPeriodId: number, limit = 250) {
+export const loadFreeAgents = memoAsync(
+  60_000,
+  (sp: number, limit = 250) => `${sp}|${limit}`,
+  readFreeAgents,
+);
+
+async function readFreeAgents(scoringPeriodId: number, limit = 250) {
   if (process.env.ESPN_LEAGUE_FILE) return [];
   const cfg = espnConfig();
   const raw = await fetchLeague(cfg, ["kona_player_info"], {

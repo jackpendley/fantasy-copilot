@@ -5,7 +5,6 @@ import "server-only";
 // changed: a new free agent in the short list waits up to COOLDOWN_MS while the roster and
 // the players' injury news stay the same.
 
-import { after } from "next/server";
 import { dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import {
@@ -74,7 +73,7 @@ const spec = (o: StreamOption): MoveSpec => ({
 export interface MoveChecks {
   byKey: Map<string, MoveEffect>;
   seasons: number;
-  /** False while the short list is being (re)checked. */
+  /** False when rosters, injury news or the short list changed since the check. */
   fresh: boolean;
 }
 
@@ -84,8 +83,9 @@ export async function moveChecks(v: WaiverView): Promise<MoveChecks | null> {
   const moves = shortlist(v);
   if (!moves.length) return null;
   const row = await readView<Stored>(KEY).catch(() => null);
+  // Page visits never start a simulation (CPU budget): stale checks are shown as such and
+  // re-run by the nightly job.
   const fresh = row?.fingerprint === fingerprint(v, moves);
-  if (!fresh) after(() => refreshMoveChecks().catch(() => {}));
   if (!row) return { byKey: new Map(), seasons: 0, fresh: false };
   return {
     byKey: new Map(row.value.effects.map((e) => [e.key, e])),

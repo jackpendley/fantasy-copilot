@@ -10,13 +10,21 @@ import { matchupView } from "./matchup";
 import { absences } from "./availability";
 import { rosterLocked } from "./roster";
 import { valueContext } from "./trade";
+import { bestPerGame } from "./best";
 import { waiverAnalysis } from "./waivers";
 
 export async function loadWaiverView(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
-  const view = matchupView(data, sp);
+  // The props blend for today's games, for rostered players and free agents alike, so this
+  // page's win chance and what-ifs match the Matchup page.
+  const perGame = await bestPerGame(
+    [...data.teams.flatMap((t) => t.roster), ...freeAgents.map((f) => f.player)],
+    data,
+    sp,
+  );
+  const view = matchupView(data, sp, perGame);
 
   const todayGames = data.games.filter((g) => g.scoringPeriodId === sp);
   const board = buildDayBoard({

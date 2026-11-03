@@ -71,7 +71,7 @@ export function MoveCard({
   sims,
   outlook,
   weekWin,
-  checking,
+  stale,
 }: {
   who: React.ReactNode;
   addId: number;
@@ -89,8 +89,8 @@ export function MoveCard({
   outlook: Outlook | null;
   /** This week's win chance now (null on a bye). */
   weekWin: number | null;
-  /** The simulation is re-checking the top moves. */
-  checking: boolean;
+  /** The stored checks predate a roster or injury change (re-checked overnight). */
+  stale: boolean;
 }) {
   const [key, setKey] = useState(initialKey);
   // Checks run from this card (a swapped drop), on top of the page's.
@@ -99,6 +99,8 @@ export function MoveCard({
   const [elapsed, setElapsed] = useState(0);
   const o = options.find((x) => x.key === key) ?? options[0]!;
   const sim = mine[o.key] ?? sims[o.key];
+  // A check run from this card is current; the page's stored ones may predate a change.
+  const old = stale && !mine[o.key];
 
   useEffect(() => {
     if (!running) return;
@@ -268,29 +270,32 @@ export function MoveCard({
             </tr>
           </tbody>
         </table>
-        {!sim &&
-          (checking && o.key === initialKey ? (
-            <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
-              The season simulation is checking this move…
-            </p>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-2 py-1.5 text-[11px] text-muted-foreground">
-              <span>
-                {running === o.key
-                  ? `Simulating… ${elapsed}s (usually 10–30 s)`
+        {sim && old && (
+          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+            Simulated before your latest roster or injury news; re-checked overnight, or simulate it
+            again now below.
+          </p>
+        )}
+        {(!sim || old) && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+            <span>
+              {running === o.key
+                ? `Simulating… ${elapsed}s (usually 10–30 s)`
+                : sim
+                  ? "Re-run with the latest rosters."
                   : "Not simulated yet for this drop."}
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                disabled={running != null}
-                onClick={simulate}
-              >
-                Simulate this drop
-              </Button>
-            </div>
-          ))}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              disabled={running != null}
+              onClick={simulate}
+            >
+              Simulate this drop
+            </Button>
+          </div>
+        )}
       </div>
 
       <p className="pl-[50px] text-xs text-muted-foreground tabular-nums">

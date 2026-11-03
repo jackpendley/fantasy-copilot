@@ -41,7 +41,40 @@ export function memoFetch(ttlMs: number, base: typeof fetch = fetch): typeof fet
   }) as typeof fetch;
 }
 
-/** Drop every remembered response (after an ESPN write). */
+const forgetters: (() => void)[] = [];
+
+/** Also run `fn` whenever remembered responses are dropped (caches built from them). */
+export function onForget(fn: () => void) {
+  forgetters.push(fn);
+}
+
+/** Drop every remembered response (after an ESPN write), and what was built from them. */
 export function forgetResponses() {
   entries.clear();
+  for (const fn of forgetters) fn();
+}
+
+/**
+ * Remember an async result for `ttlMs` by key, per server instance (the parsed league, so pages
+ * and cards don't re-parse the same responses). Failures aren't kept; forgetResponses() clears.
+ */
+export function memoAsync<A extends unknown[], R>(
+  ttlMs: number,
+  key: (...args: A) => string,
+  fn: (...args: A) => Promise<R>,
+): (...args: A) => Promise<R> {
+  const cache = new Map<string, { at: number; value: Promise<R> }>();
+  onForget(() => cache.clear());
+  return (...args: A) => {
+    const k = key(...args);
+    const hit = cache.get(k);
+    if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+    const value = fn(...args);
+    cache.set(k, { at: Date.now(), value });
+    if (cache.size > 50) cache.delete(cache.keys().next().value!);
+    value.catch(() => {
+      if (cache.get(k)?.value === value) cache.delete(k);
+    });
+    return value;
+  };
 }

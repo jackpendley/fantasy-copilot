@@ -9,7 +9,6 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
-import { LiveRefresh } from "@/components/live-refresh";
 import { moveChecks, moveKey, type MoveChecks } from "@/lib/nba/move-checks";
 import type { MoveEffect } from "@/lib/nba/move-sim";
 import { MoveCard, type MoveOption, type MoveSim } from "@/components/fc/move-card";
@@ -195,7 +194,7 @@ export default async function MovesPage({
         sims={sims}
         outlook={outlook}
         weekWin={analysis.baseWin}
-        checking={!!checks && !checks.fresh}
+        stale={!!checks && !checks.fresh}
       />
     );
   };
@@ -231,7 +230,6 @@ export default async function MovesPage({
           Best moves
         </SectionTitle>
         <HowToRead winsPerPoint={analysis.winsPerPoint} />
-        {checks && !checks.fresh && <LiveRefresh active seconds={15} />}
         {best.length ? (
           <div className="divide-y overflow-hidden rounded-xl border bg-card">{best.map(card)}</div>
         ) : (

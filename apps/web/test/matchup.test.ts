@@ -178,3 +178,19 @@ describe("day-to-day players on later days", () => {
     expect(playChance("ACTIVE", 2)).toBe(1);
   });
 });
+
+describe("today's blended values", () => {
+  it("replace ours for today's games only, in week projections and the win chance", async () => {
+    const { projectTeamWeek } = await import("@/lib/nba/week");
+    const data = league([player(1, 30)], [player(1, 30)]);
+    const plain = matchupView(data, 1);
+    const blended = matchupView(data, 1, new Map([[1, 40]]));
+    // Today's board and the week inputs both use 40 for player 1 today; later days stay at 30.
+    expect(blended.mine.remaining - plain.mine.remaining).toBeCloseTo(10, 5);
+    const week = projectTeamWeek([player(1, 30)], blended.weekInputs);
+    const ours = projectTeamWeek([player(1, 30)], plain.weekInputs);
+    expect(week.projectedByDay.get(1)! - ours.projectedByDay.get(1)!).toBeCloseTo(10, 5);
+    expect(week.projectedByDay.get(2)).toBeCloseTo(ours.projectedByDay.get(2)!, 5);
+    expect(blended.pWin!).toBeGreaterThan(plain.pWin!);
+  });
+});

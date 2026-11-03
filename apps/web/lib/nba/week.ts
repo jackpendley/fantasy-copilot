@@ -56,6 +56,11 @@ export interface WeekInputs {
   outUntil?: Map<number, number>;
   /** Opponent defense by position (lib/nba/defense.ts). */
   defense?: DefenseTable | null;
+  /**
+   * Today's per-game values to use instead of ours (the props blend, lib/nba/best.ts; they
+   * already include the game environment and matchup), for games on the `asOf` day.
+   */
+  todayValues?: Map<number, number>;
 }
 
 /**
@@ -114,7 +119,10 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
         teams.has(p.proTeamId) &&
         (input.availableFrom?.get(p.id) ?? 0) <= sp &&
         sp <= (input.availableUntil?.get(p.id) ?? Infinity)
-          ? chance(p, sp, ahead) * (fppg.get(p.id) ?? 0) * env(p)
+          ? chance(p, sp, ahead) *
+            (sp === asOf && input.todayValues?.has(p.id)
+              ? input.todayValues.get(p.id)!
+              : (fppg.get(p.id) ?? 0) * env(p))
           : 0,
       currentSlot: "BE",
     }));

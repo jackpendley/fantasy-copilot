@@ -1,8 +1,10 @@
 import "server-only";
 // Keep the season outlook current. Besides the nightly run, it re-runs whenever a roster move
 // lands, from three places: right after an add made in this app, from the 5-minute gameday
-// job (which watches ESPN's transaction log), and when someone opens the outlook and it's
-// older than the newest move. A lock keeps it to one run at a time.
+// job (which watches ESPN's transaction log), and when someone opens the League page and it's
+// older than the newest move. Other teams' moves re-run it at most every 30 minutes (moves in
+// between ride along): each run costs CPU (Vercel Hobby: 4 CPU-hours a month). A lock keeps it
+// to one run at a time.
 
 import { after } from "next/server";
 import { fetchLeague, parseTransactions, type LeagueTransaction } from "@fantasy-copilot/espn";
@@ -12,16 +14,22 @@ import { espnConfig } from "@/lib/env";
 import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
-import { refreshMoveChecks } from "./move-checks";
 import { refreshTradeTargets } from "./trade-view";
 
 const LOCK = "outlook";
+/** Other teams' moves re-run the outlook at most this often. */
+export const RERUN_GAP_MS = 30 * 60_000;
 /** The roster watch only reads the database when a move is at least this recent. */
-export const WATCH_WINDOW_MS = 15 * 60_000;
+export const WATCH_WINDOW_MS = RERUN_GAP_MS + 15 * 60_000;
 
 /** A move newer than the latest run means the outlook is out of date. */
 export function isStale(moveAt: number | null, lastRunAt: number | null): boolean {
   return moveAt != null && (lastRunAt == null || moveAt > lastRunAt);
+}
+
+/** Out of date, and the last run is old enough to run again (coalesces bursts of moves). */
+export function dueForRerun(moveAt: number | null, lastRunAt: number | null, now: number): boolean {
+  return isStale(moveAt, lastRunAt) && (lastRunAt == null || now - lastRunAt >= RERUN_GAP_MS);
 }
 
 /** Should the 5-minute watch look further (read the last run)? Only for a recent move. */
@@ -120,7 +128,9 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
   // Rosters changed: later reads go back to ESPN.
   forgetResponses();
   const last = await latestOutlook();
-  if (!isStale(newest, last?.run_at.getTime() ?? null)) return { watch: "current" };
+  const lastAt = last?.run_at.getTime() ?? null;
+  if (!isStale(newest, lastAt)) return { watch: "current" };
+  if (!dueForRerun(newest, lastAt, now.getTime())) return { watch: "waiting" };
   after(() => refreshLogged());
   return { watch: "refreshing" };
 }
@@ -136,15 +146,11 @@ export async function refreshLogged(trigger?: string | null) {
   } catch (e) {
     await record("outlook-refresh", "error", (e as Error).message);
   }
-  // Rosters changed: have the trade ideas and checked waiver moves ready before a visit.
+  // Rosters changed: have the trade ideas ready before a visit. (Waiver moves are re-checked
+  // by the nightly run; simulations are too costly to repeat after every league move.)
   try {
     if (await refreshTradeTargets()) await record("trade-targets", "ok", "refreshed");
   } catch (e) {
     await record("trade-targets", "error", (e as Error).message);
-  }
-  try {
-    if (await refreshMoveChecks()) await record("move-checks", "ok", "refreshed");
-  } catch (e) {
-    await record("move-checks", "error", (e as Error).message);
   }
 }

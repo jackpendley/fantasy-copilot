@@ -103,6 +103,8 @@ export function matchupView(
     // A past week has nothing left to project; a later week starts on its first day.
     fromPeriod: past ? periods.at(-1)! + 1 : later ? periods[0]! : sp,
     asOf: sp,
+    // Today's games with the same values as the day boards (what-ifs on Moves use these).
+    todayValues: perGame,
     games: data.games,
     slotCounts: data.settings.slotCounts,
     injuries: data.injuries,

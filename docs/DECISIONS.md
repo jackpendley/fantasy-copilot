@@ -635,3 +635,20 @@
 - **Change:** the simulation checks the top 6 moves instead of 4, so a move the quick estimate undersells has more chance to be checked.
   - Cost: two more single-batch runs per refresh (~8 s each on Vercel).
   - Any drop can still be simulated on request.
+
+## ADR-052: CPU diet on Vercel; one win chance everywhere (2026-11-02)
+
+- **Measured (Vercel Usage, Nov 2):** the team used 2 h 27 m of Hobby's 4 CPU-hours in 30 days, 2 h 16 m of it this app. Since Oct 30 it's been 15–23 minutes a day, about a week from the cap.
+  - **Last 12 h by route:**
+    - cron 5 min: Outlook reruns, trade refreshes and move checks after every league move;
+    - Moves 3 min: page visits started move simulations;
+    - player cards 2 min;
+    - every other page seconds.
+- **Changes:**
+  - Other teams' moves re-run the Outlook at most every 30 minutes; moves in between ride along, and League says so. Jack's own adds still re-run at once.
+  - Move checks no longer run after every league move or on page visits; the nightly job runs them. Moves marks results that predate a roster or injury change and offers "Simulate this drop".
+  - The parsed league (15 s) and free-agent pool (60 s) are remembered per server instance (`memoAsync`), so pages, cards and jobs share one parse. `forgetResponses()` clears them after a write or a league move.
+- **Win chance:**
+  - Matchup blended today's games with Vegas props; Moves and the morning snapshots didn't (63% vs 61% on Nov 2).
+  - Now Moves (rostered players and free agents), the snapshots and every what-if use the same blend for today (`WeekInputs.todayValues`).
+- **Next:** heavy simulations move off Vercel to a GitHub Actions worker (ADR-053).

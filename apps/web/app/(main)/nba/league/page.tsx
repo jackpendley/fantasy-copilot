@@ -19,6 +19,7 @@ import { dateForScoringPeriod, shortDay } from "@/lib/nba/calendar";
 import { leagueMovesBetween } from "@/lib/nba/changes";
 import { loadLeagueView } from "@/lib/nba/league-view";
 import {
+  dueForRerun,
   isStale,
   outlookRunning,
   recentLeagueMoves,
@@ -64,9 +65,13 @@ async function loadOutlook(myId: number) {
     provisionalOutlook().catch(() => null),
   ]);
   const [latest, previous] = runs;
-  // A roster move newer than the latest run: update now, in the background.
-  const stale = isStale(leagueMoves.at(-1)?.at ?? null, latest?.run_at.getTime() ?? null);
-  if (stale && !running) after(() => refreshLogged());
+  // A roster move newer than the latest run: update in the background, at most every 30
+  // minutes (later moves ride along with the next run).
+  const newest = leagueMoves.at(-1)?.at ?? null;
+  const lastAt = latest?.run_at.getTime() ?? null;
+  const stale = isStale(newest, lastAt);
+  const due = dueForRerun(newest, lastAt, Date.now());
+  if (due && !running) after(() => refreshLogged());
   // The roster moves between the two runs. Never blocks the page.
   const moves =
     latest && previous
@@ -83,7 +88,9 @@ async function loadOutlook(myId: number) {
     history,
     moves,
     provisional,
-    updating: stale || running || provisional != null,
+    updating: due || running || provisional != null,
+    /** A newer move that the next run (within 30 minutes) will include. */
+    waiting: stale && !due && !running && provisional == null,
   };
 }
 
@@ -127,6 +134,13 @@ export default async function LeaguePage() {
           </Button>
         </div>
       </PageHeader>
+
+      {o?.waiting && (
+        <p className="rounded-xl border bg-card px-3 py-2.5 text-sm text-muted-foreground">
+          A newer roster move isn&apos;t in these odds yet: the next update (within 30 minutes)
+          includes it.
+        </p>
+      )}
 
       {o?.updating && (
         <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 px-3 py-2.5 text-sm">

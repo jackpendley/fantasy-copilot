@@ -713,3 +713,20 @@
   - On Nov 3 (2,000 seasons): 27% with a bye vs 12% as a 3-6 seed (2.3×). For Jack, 24% vs 10%: 70% of his title odds come with a bye.
 - **Standings:** a client table (`components/fc/standings-table.tsx`), sortable by every column, with phone cards and a sort menu. `?sort=` is kept in the URL.
 - Runs from before this change have no bye numbers and show "—" until the next run.
+
+## ADR-056: roster move history with impact; injury games missed (2026-11-02)
+
+- **Why:** Jack wants each team's roster moves with the analytics behind them: what a move did to the projections then, what it's done since, and which moves mattered most. He also wants injuries that hurt a team.
+- **Storage:** `league_transactions` (migration 0019) keeps every executed move from ESPN's `mTransactions2`; a trade is one row per team.
+  - The first sync reads every scoring period; later syncs read the last two, at most every 5 minutes per instance.
+  - Syncs run when a team or League page is opened, and nightly.
+- **Per move:**
+  - **At the time:** the team's title, playoff and expected-wins change from the last final Outlook run before the move to the first after it. Runs read the league at `run_at`, and use common random numbers, so the difference is mostly real.
+    - Marked ≈ when another league move fell between those runs, or they're more than 3 hours apart (games, results).
+    - "Most impactful moves" on League ranks only the clean ones.
+  - **Since:** fantasy points (league scoring, ESPN game logs timed by the NBA schedule) in games after the move. An added player counts only until this team drops him again; minus what the dropped players scored.
+  - **Rest of season:** the projected points in minus out, from today (`rawValue`).
+- **Injuries:** for each current player, his NBA team's games since he joined this roster (last add, or the start of the season) that aren't in his game log as played (matched by game id), times his projection.
+  - It counts rest and coach's decisions too, and a traded NBA player counts his current team's games. The page says so.
+- **Odds over time** per team (`outlookHistory`), as on the League page.
+- **Not attempted:** separating a move's effect from same-day news when runs are far apart. Those moves stay marked ≈ rather than guessed.

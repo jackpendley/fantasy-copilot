@@ -1,4 +1,8 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { TeamStory } from "@/components/fc/move-history";
+import { RowsSkeleton } from "@/components/fc/page-skeleton";
+import { teamHistory } from "@/lib/nba/move-history";
 import { PlayerCardButton } from "@/components/fc/player-card";
 import { IlPlanNote } from "@/components/fc/il-plan-note";
 import { notFound } from "next/navigation";
@@ -110,6 +114,10 @@ export default async function TeamPage({ params }: { params: Promise<{ id: strin
         Right column: projected FP/G, and projected points over his remaining games (discounted for
         games he&apos;s expected to miss).
       </p>
+
+      <Suspense fallback={<RowsSkeleton rows={4} />}>
+        <TeamStory teamId={t.team.id} history={teamHistory(t.team.id, v)} />
+      </Suspense>
     </>
   );
 }

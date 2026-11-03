@@ -25,6 +25,7 @@ import {
 import { latestOutlook, runOutlook } from "./nba/outlook-run";
 import { enqueueSimJob } from "./nba/sim-jobs";
 import { refreshMoveChecks } from "./nba/move-checks";
+import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
@@ -243,6 +244,12 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     // PBP Stats season numbers for the player cards (this season and last).
     const season = Number(process.env.ESPN_SEASON || 2027);
     const pbp = await step("pbp-players", () => refreshPbpPlayers([season, season - 1]));
+    // The league's roster moves, for the team pages' move history (ADR-056).
+    const transactions = await step("transactions", () =>
+      syncTransactions(
+        Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD),
+      ),
+    );
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
     const market = await step("market-data", () => collectToday("morning", true));
     // Opponent defense by position from every result so far (after yesterday's box scores).
@@ -256,6 +263,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       tradesRefreshed: trades,
       movesChecked: moves,
       pbpPlayers: pbp,
+      transactions,
       defense,
       ...states,
       ...market,

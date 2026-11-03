@@ -2,7 +2,10 @@
 // #1-seed odds, what changed since the last simulation, your odds over time, then one table of
 // every team's standing, strength and odds.
 
+import { Suspense } from "react";
 import Link from "next/link";
+import { ImpactfulMoves } from "@/components/fc/move-history";
+import { mostImpactfulMoves } from "@/lib/nba/move-history";
 import { ArrowLeftRight, RefreshCw } from "lucide-react";
 import { PageHeader, SectionTitle, StatTile } from "@/components/fc/bits";
 import { StandingsTable, type StandingsRow } from "@/components/fc/standings-table";
@@ -274,6 +277,13 @@ export default async function LeaguePage({
           </div>
         </section>
       )}
+
+      <Suspense fallback={null}>
+        <ImpactfulMoves
+          moves={mostImpactfulMoves(v.sp)}
+          teams={v.teams.map((t) => ({ id: t.team.id, name: t.team.name, mine: t.mine }))}
+        />
+      </Suspense>
 
       <section className="space-y-1.5">
         <SectionTitle aside="Tap a team for its roster">Standings</SectionTitle>

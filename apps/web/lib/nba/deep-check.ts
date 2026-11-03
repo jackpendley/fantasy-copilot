@@ -161,13 +161,18 @@ export function combineOutlook(chunks: ChunkResult[]): SimTeamResult[] {
         expPointsFor: 0,
         playoffs: 0,
         seed1: 0,
+        bye: 0,
         final: 0,
         champ: 0,
+        champBye: 0,
       };
       acc.expWins += w * t.expWins;
       acc.expPointsFor += w * t.expPointsFor;
       acc.playoffs += w * t.playoffs;
       acc.seed1 += w * t.seed1;
+      // Chunks from before byes were counted have none: 0 (the job's later chunks have them).
+      acc.bye += w * (t.bye ?? 0);
+      acc.champBye += w * (t.champBye ?? 0);
       acc.final += w * t.final;
       acc.champ += w * t.champ;
       byTeam.set(t.teamId, acc);

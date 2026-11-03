@@ -28,8 +28,12 @@ export interface OutlookTeam {
   expWins: number;
   playoffs: number;
   seed1: number;
+  /** A first-round bye (top-2 seed); missing on runs from before byes were counted. */
+  bye?: number;
   final: number;
   champ: number;
+  /** Title and a bye together; missing on older runs. */
+  champBye?: number;
   act: number;
   addsPerWeek: number;
 }

@@ -107,8 +107,12 @@ export interface SimTeamResult {
   expPointsFor: number;
   playoffs: number;
   seed1: number;
+  /** A first-round bye: a top-2 seed. */
+  bye: number;
   final: number;
   champ: number;
+  /** Title and a bye together (champ - champBye is titles won from seeds 3-6). */
+  champBye: number;
 }
 
 /** What a random draw is for: part of its key. */
@@ -320,7 +324,16 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
 
   const tIndex = new Map(teams.map((t, i) => [t.id, i]));
   const lastPeriod = input.periodOf(lastDay);
-  const agg = teams.map(() => ({ wins: 0, pf: 0, po: 0, seed1: 0, final: 0, champ: 0 }));
+  const agg = teams.map(() => ({
+    wins: 0,
+    pf: 0,
+    po: 0,
+    seed1: 0,
+    bye: 0,
+    final: 0,
+    champ: 0,
+    champBye: 0,
+  }));
 
   // Points already banked, per team per period.
   const banked = teams.map((t) => {
@@ -431,8 +444,10 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       expPointsFor: agg[i]!.pf / S,
       playoffs: agg[i]!.po / S,
       seed1: agg[i]!.seed1 / S,
+      bye: agg[i]!.bye / S,
       final: agg[i]!.final / S,
       champ: agg[i]!.champ / S,
+      champBye: agg[i]!.champBye / S,
     }));
   };
 
@@ -708,6 +723,10 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
           endRosters = rosterIds();
         }
       }
+    }
+    for (const i of seeds.slice(0, 2)) {
+      agg[i]!.bye++;
+      agg[i]!.champBye += shares[i]!;
     }
     input.inspect?.(s, {
       rosters: endRosters,

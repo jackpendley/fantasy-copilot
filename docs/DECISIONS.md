@@ -699,3 +699,17 @@
 - **Game results** look the same everywhere (`fpTone`): 25%+ above his average is green, 40%+ below is red, and a game he didn't play is neither. This covers the card's recent games, the player page's log and `FpChart`'s bars. The chart also draws his season average and today's projection.
 - **Card:** one fixed height for every tab, so switching tabs never resizes it. It closes when a link inside it changes the page.
 - **Player page:** the card's sections plus every game, for this season or last (`?season=last`).
+
+## ADR-055: first-round byes in the simulation; sortable standings (2026-11-02)
+
+- **Why:** the top 2 seeds skip the quarterfinal. Jack wants the bye chance beside the #1 seed chance (he chose to show both), how much a bye is worth for the title, and standings he can sort by any column.
+- **Simulator:** `SimTeamResult` gains `bye` (a top-2 seed) and `champBye` (title and bye in the same season, playoff replays counted as shares).
+  - Every existing number is unchanged to the last bit; the golden test records the new ones.
+  - A test checks that byes sum to exactly 2 a season.
+  - The worker's chunks carry them too.
+- **What a bye is worth**, from each run's own seasons:
+  - League-wide: title given a bye = Σ champBye / 2; title as a 3-6 seed = (1 − Σ champBye) / 4. Every season has 2 byes and 4 other playoff teams, and every title goes to one of them.
+  - Jack's own split shows only when each side has 200+ seasons behind it.
+  - On Nov 3 (2,000 seasons): 27% with a bye vs 12% as a 3-6 seed (2.3×). For Jack, 24% vs 10%: 70% of his title odds come with a bye.
+- **Standings:** a client table (`components/fc/standings-table.tsx`), sortable by every column, with phone cards and a sort menu. `?sort=` is kept in the URL.
+- Runs from before this change have no bye numbers and show "—" until the next run.

@@ -4,7 +4,8 @@
 
 import Link from "next/link";
 import { ArrowLeftRight, RefreshCw } from "lucide-react";
-import { PageHeader, ProbBar, SectionTitle, StatTile } from "@/components/fc/bits";
+import { PageHeader, SectionTitle, StatTile } from "@/components/fc/bits";
+import { StandingsTable, type StandingsRow } from "@/components/fc/standings-table";
 import { WhatChanged } from "@/components/fc/what-changed";
 import { LiveRefresh } from "@/components/live-refresh";
 import { OddsChart } from "@/components/odds-chart";
@@ -29,7 +30,7 @@ import {
   provisionalOutlook,
   type OutlookTeam,
 } from "@/lib/nba/outlook-run";
-import { cn } from "@/lib/utils";
+import { STANDINGS_SORTS, type StandingsSort } from "@/lib/standings";
 
 // A visit can start a re-run in the background (after the response): ~80 s on Vercel, more
 // when the instance is busy, so it gets the same budget as the nightly job.
@@ -92,7 +93,15 @@ async function loadOutlook(myId: number) {
   };
 }
 
-export default async function LeaguePage() {
+export default async function LeaguePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string }>;
+}) {
+  const { sort: sortParam } = await searchParams;
+  const sort = STANDINGS_SORTS.includes(sortParam as StandingsSort)
+    ? (sortParam as StandingsSort)
+    : "rank";
   const myId = Number(process.env.ESPN_TEAM_ID);
   let v;
   let o;
@@ -111,7 +120,32 @@ export default async function LeaguePage() {
     (a, b) =>
       b.team.wins - a.team.wins || b.team.pointsFor - a.team.pointsFor || b.perWeek - a.perWeek,
   );
-  const maxTitle = Math.max(0.0001, ...(shown?.results ?? []).map((r) => r.champ));
+  const rows: StandingsRow[] = standings.map((t, i) => {
+    const r = odds.get(t.team.id);
+    return {
+      id: t.team.id,
+      rank: i + 1,
+      name: t.team.name,
+      mine: t.mine,
+      wins: t.team.wins,
+      losses: t.team.losses,
+      pf: t.team.pointsFor,
+      perWeek: t.perWeek,
+      power: v.power.get(t.team.id)!,
+      odds: r
+        ? {
+            expWins: r.expWins,
+            playoffs: r.playoffs,
+            seed1: r.seed1,
+            bye: r.bye ?? null,
+            final: r.final,
+            champ: r.champ,
+            act: r.act,
+          }
+        : null,
+    };
+  });
+  const byeValue = shown ? byeEffect(shown.results, shown.seasons, myId) : null;
 
   return (
     <>
@@ -160,7 +194,20 @@ export default async function LeaguePage() {
             delta={delta(me.champ, before?.champ)}
             sub={`Final ${pct(me.final)}`}
           />
-          <StatTile label="#1 seed" value={pct(me.seed1)} delta={delta(me.seed1, before?.seed1)} />
+          {me.bye != null ? (
+            <StatTile
+              label="First-round bye"
+              value={pct(me.bye)}
+              delta={delta(me.bye, before?.bye)}
+              sub={`#1 seed ${pct(me.seed1)}`}
+            />
+          ) : (
+            <StatTile
+              label="#1 seed"
+              value={pct(me.seed1)}
+              delta={delta(me.seed1, before?.seed1)}
+            />
+          )}
           <StatTile
             label="Playoffs"
             value={pct(me.playoffs)}
@@ -173,6 +220,32 @@ export default async function LeaguePage() {
             sub={`${me.wins}-${me.losses} so far`}
           />
         </div>
+      )}
+
+      {byeValue && (
+        <section className="space-y-1.5">
+          <SectionTitle aside={`${byeValue.seasons.toLocaleString("en-US")} simulated seasons`}>
+            What a bye is worth
+          </SectionTitle>
+          <div className="rounded-xl border bg-card px-3 py-2.5 text-sm">
+            <p>
+              Across the league, a team with a first-round bye wins the title{" "}
+              <span className="font-semibold">{pct(byeValue.league.withBye)}</span> of the time; a
+              3-6 seed wins it <span className="font-semibold">{pct(byeValue.league.without)}</span>
+              {byeValue.league.without > 0 && (
+                <> ({(byeValue.league.withBye / byeValue.league.without).toFixed(1)}× as often)</>
+              )}
+              .
+            </p>
+            {byeValue.mine && (
+              <p className="mt-1 text-muted-foreground">
+                For you: {pct(byeValue.mine.withBye)} with a bye, {pct(byeValue.mine.without)}{" "}
+                without (as a 3-6 seed). With your {pct(byeValue.mine.bye)} chance of a bye, it
+                accounts for {pct(byeValue.mine.shareOfTitle)} of your title odds.
+              </p>
+            )}
+          </div>
+        </section>
       )}
 
       {o?.latest && o.previous && (
@@ -205,178 +278,40 @@ export default async function LeaguePage() {
       <section className="space-y-1.5">
         <SectionTitle aside="Tap a team for its roster">Standings</SectionTitle>
 
-        {/* Phones and tablets: one card per team. */}
-        <div className="divide-y overflow-hidden rounded-xl border bg-card lg:hidden">
-          {standings.map((t, i) => (
-            <TeamCard
-              key={t.team.id}
-              rank={i + 1}
-              id={t.team.id}
-              name={t.team.name}
-              mine={t.mine}
-              record={`${t.team.wins}-${t.team.losses}`}
-              pf={t.team.pointsFor}
-              perWeek={t.perWeek}
-              power={v.power.get(t.team.id)!}
-              odds={odds.get(t.team.id) ?? null}
-            />
-          ))}
-        </div>
-
-        {/* Desktop: one table. */}
-        <div className="hidden overflow-hidden rounded-xl border bg-card lg:block">
-          <table className="w-full text-sm tabular-nums">
-            <thead>
-              <tr className="border-b text-xs text-muted-foreground">
-                <th className="w-8 px-3 py-2.5 text-left font-medium">#</th>
-                <th className="px-2 py-2.5 text-left font-medium">Team</th>
-                <th className="px-2 py-2.5 text-right font-medium">W-L</th>
-                <th className="px-2 py-2.5 text-right font-medium">PF</th>
-                <th className="px-2 py-2.5 text-right font-medium">Pts/wk</th>
-                {shown && (
-                  <>
-                    <th className="px-2 py-2.5 text-right font-medium">Exp. W</th>
-                    <th className="w-32 px-2 py-2.5 text-left font-medium">Playoffs</th>
-                    <th className="px-2 py-2.5 text-right font-medium">#1</th>
-                    <th className="px-2 py-2.5 text-right font-medium">Final</th>
-                    <th className="w-32 px-2 py-2.5 text-left font-medium">Title</th>
-                    <th className="px-3 py-2.5 text-right font-medium">Active</th>
-                  </>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {standings.map((t, i) => {
-                const r = odds.get(t.team.id);
-                return (
-                  <tr key={t.team.id} className={cn(t.mine && "bg-primary/5")}>
-                    <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                    <td className="px-2 py-2">
-                      <Link
-                        href={`/nba/league/${t.team.id}`}
-                        className={cn(
-                          "break-words hover:underline",
-                          t.mine && "font-semibold text-primary",
-                        )}
-                      >
-                        {t.team.name}
-                      </Link>
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      {t.team.wins}-{t.team.losses}
-                    </td>
-                    <td className="px-2 py-2 text-right text-muted-foreground">
-                      {Math.round(t.team.pointsFor)}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      <span className="font-semibold">{Math.round(t.perWeek)}</span>{" "}
-                      <span className="text-xs text-muted-foreground">
-                        #{v.power.get(t.team.id)}
-                      </span>
-                    </td>
-                    {shown && (
-                      <>
-                        <td className="px-2 py-2 text-right">{r ? r.expWins.toFixed(1) : "—"}</td>
-                        <td className="px-2 py-2">
-                          {r && (
-                            <div className="flex items-center gap-2">
-                              <ProbBar value={r.playoffs} tone="info" />
-                              <span className="w-9 text-right">{pct(r.playoffs)}</span>
-                            </div>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-right">{r ? pct(r.seed1) : "—"}</td>
-                        <td className="px-2 py-2 text-right">{r ? pct(r.final) : "—"}</td>
-                        <td className="px-2 py-2">
-                          {r && (
-                            <div className="flex items-center gap-2">
-                              <ProbBar value={r.champ / maxTitle} />
-                              <span className="w-9 text-right font-semibold">{pct(r.champ)}</span>
-                            </div>
-                          )}
-                        </td>
-                        <td
-                          className={cn(
-                            "px-3 py-2 text-right",
-                            r && r.act < 0.4 ? "text-danger" : "text-muted-foreground",
-                          )}
-                        >
-                          {r ? `${Math.round(r.act * 100)}%` : "—"}
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <StandingsTable rows={rows} initialSort={sort} showOdds={!!shown} />
         <p className="px-1 text-xs text-muted-foreground">
           PF = points scored. Pts/wk = projected starting-lineup points per regular-season week from
           today (each day&apos;s best lineup from the players with a game); # is its power rank.
           Average strength: {fmtPts(v.teams.reduce((a, t) => a + t.perWeek, 0) / v.teams.length)}{" "}
           pts/wk.
           {shown &&
-            " Odds: a Monte Carlo of the rest of the season on the real NBA and league schedules (daily lineups, streaky injuries, form swings, and each manager's lineup and waiver habits). 6-team playoffs in weeks 20-22; completed weeks keep their real results. Active = the share of days the simulation expects the manager to set a lineup, from this season's lineup moves (last season's only when the same ESPN owner returns; a new owner starts at 70%). Title bars are scaled to the favorite."}
+            " Odds: a Monte Carlo of the rest of the season on the real NBA and league schedules (daily lineups, streaky injuries, form swings, and each manager's lineup and waiver habits). 6-team playoffs in weeks 20-22; completed weeks keep their real results. Active = the share of days the simulation expects the manager to set a lineup, from this season's lineup moves (last season's only when the same ESPN owner returns; a new owner starts at 70%). Bye = a top-2 seed, which skips the first playoff round. Title bars are scaled to the favorite. Tap a column to sort; tap again to flip."}
         </p>
       </section>
     </>
   );
 }
 
-function TeamCard({
-  rank,
-  id,
-  name,
-  mine,
-  record,
-  pf,
-  perWeek,
-  power,
-  odds,
-}: {
-  rank: number;
-  id: number;
-  name: string;
-  mine: boolean;
-  record: string;
-  pf: number;
-  perWeek: number;
-  power: number;
-  odds: OutlookTeam | null;
-}) {
-  return (
-    <Link
-      href={`/nba/league/${id}`}
-      className={cn("flex items-center gap-3 px-3 py-3 hover:bg-muted/50", mine && "bg-primary/5")}
-    >
-      <span className="w-5 text-center text-sm text-muted-foreground tabular-nums">{rank}</span>
-      <div className="min-w-0 flex-1">
-        <div className={cn("text-sm break-words", mine && "font-semibold text-primary")}>
-          {name}
-        </div>
-        <div className="mt-1 text-[11px] text-muted-foreground tabular-nums">
-          <span className="font-medium text-foreground">{record}</span>
-          {[
-            `${Math.round(pf)} PF`,
-            `${Math.round(perWeek)} pts/wk (#${power})`,
-            ...(odds
-              ? [
-                  `${odds.expWins.toFixed(1)} exp W`,
-                  `playoffs ${pct(odds.playoffs)}`,
-                  `${Math.round(odds.act * 100)}% active`,
-                ]
-              : []),
-          ].map((x) => ` · ${x}`)}
-        </div>
-        {odds && <ProbBar value={odds.playoffs} tone="info" className="mt-1.5" />}
-      </div>
-      {odds && (
-        <div className="w-14 text-right">
-          <div className="text-lg font-semibold tabular-nums">{pct(odds.champ)}</div>
-          <div className="text-[10px] text-muted-foreground">title</div>
-        </div>
-      )}
-    </Link>
-  );
+/**
+ * Title odds with a first-round bye vs as a 3-6 seed, league-wide and for one team (shown only
+ * when each side has at least 200 of the simulated seasons behind it). Null on runs from before
+ * byes were counted.
+ */
+function byeEffect(results: OutlookTeam[], seasons: number, myId: number) {
+  if (results.some((r) => r.bye == null || r.champBye == null)) return null;
+  const champBye = results.reduce((a, r) => a + r.champBye!, 0);
+  // Two byes and four other playoff spots a season; every title goes to one of them.
+  const league = { withBye: champBye / 2, without: (1 - champBye) / 4 };
+  const me = results.find((r) => r.teamId === myId);
+  const enough = (share: number) => share * seasons >= 200;
+  const mine =
+    me && enough(me.bye!) && enough(me.playoffs - me.bye!)
+      ? {
+          bye: me.bye!,
+          withBye: me.champBye! / me.bye!,
+          without: (me.champ - me.champBye!) / (me.playoffs - me.bye!),
+          shareOfTitle: me.champ > 0 ? me.champBye! / me.champ : 0,
+        }
+      : null;
+  return { seasons, league, mine };
 }

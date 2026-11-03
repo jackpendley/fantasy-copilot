@@ -82,3 +82,6 @@ export function longDay(ymd: string): string {
     timeZone: "UTC",
   });
 }
+
+/** The current time (ms), for server pages that stamp "now" on a chart. */
+export const nowMs = () => Date.now();

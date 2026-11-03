@@ -17,7 +17,11 @@ import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "
 import { rosterWatch, workerEnabled } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { logOfficialReport } from "./nba/official-report";
-import { recordMatchupSnapshot, recordMatchupStates } from "./nba/matchup-snapshots";
+import {
+  recordMatchupSnapshot,
+  recordMatchupStates,
+  recordTimeline,
+} from "./nba/matchup-snapshots";
 import { latestOutlook, runOutlook } from "./nba/outlook-run";
 import { enqueueSimJob } from "./nba/sim-jobs";
 import { refreshMoveChecks } from "./nba/move-checks";
@@ -68,6 +72,8 @@ const BEFORE_FIRST_TIP_MS = 90 * 60_000;
 /** Games tipping within this window get their props captured as the closing line. */
 const CLOSE_WINDOW_MS = 90 * 60_000;
 const AFTER_LAST_TIP_MS = 15 * 60_000;
+/** Games are surely over this long after the last tip. */
+const TIMELINE_AFTER_MS = 3.5 * 3600_000;
 
 /**
  * Every 5 minutes: re-run the outlook if a roster move landed, then log status changes and
@@ -111,6 +117,15 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   const tips = games.map((g) => g.date);
   const t = now.getTime();
 
+  // The Matchup chart's line through the day: every 15 minutes from the first tip until the
+  // last game is surely over (3.5 hours after the last tip).
+  const timeline =
+    t >= Math.min(...tips) &&
+    t <= Math.max(...tips) + TIMELINE_AFTER_MS &&
+    now.getUTCMinutes() % 15 < 5
+      ? await step("matchup-timeline", () => recordTimeline(data, sp))
+      : null;
+
   // Today's win-chance point, if the nightly job couldn't record it (before the first tip only,
   // so it's still a pregame snapshot).
   if (t < Math.min(...tips) && etHour(now) >= 8) await snapshotIfMissing(sp, now);
@@ -140,6 +155,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     return {
       ...watch,
       darko,
+      timeline,
       availability,
       tradesRefreshed: trades,
       skipped: "outside game window",
@@ -188,6 +204,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     date,
     ...watch,
     darko,
+    timeline,
     closingProps: market?.props ?? 0,
     tradesRefreshed: trades,
     events: events.length,

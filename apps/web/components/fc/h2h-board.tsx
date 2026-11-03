@@ -62,7 +62,22 @@ function Score({ c, right }: { c: H2HCell; right: boolean }) {
           c.points == null && "text-muted-foreground",
         )}
       >
-        {c.points != null ? fmtPts(c.points) : c.game ? "–" : ""}
+        <span className="relative">
+          {c.points != null ? fmtPts(c.points) : c.game ? "–" : ""}
+          {/* While his game is on: green on the court, grey on the bench (outside the text, so
+              nothing moves). */}
+          {live && c.onCourt != null && (
+            <span
+              className={cn(
+                "absolute top-1/2 size-1.5 -translate-y-1/2 rounded-full",
+                right ? "-right-2.5" : "-left-2.5",
+                c.onCourt ? "bg-success" : "bg-muted-foreground/40",
+              )}
+              title={c.onCourt ? "On the court" : "On the bench"}
+              aria-label={c.onCourt ? "On the court" : "On the bench"}
+            />
+          )}
+        </span>
       </div>
       {c.proj != null && (
         <div

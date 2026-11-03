@@ -4,3 +4,4 @@ export * from "./scoring";
 export * from "./availability";
 export { hungarian } from "./assignment";
 export * from "./sim";
+export * from "./sim-wire";

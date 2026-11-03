@@ -1,0 +1,64 @@
+# Season simulations for the app (ADR-053): the Outlook and deep checks of waiver moves, run
+# here instead of on Vercel (whose free plan has 4 CPU-hours a month). The app starts this
+# workflow when rosters change (workflow_dispatch); the schedule is a fallback. Eight runners
+# take chunks of seasons from the app until every move's title change is known to ±0.5 points.
+# Secrets: WORKER_SECRET only (the app's /api/worker key). No ESPN or database credentials.
+
+name: Simulate
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/15 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simulate
+  cancel-in-progress: false
+
+env:
+  APP_URL: ${{ vars.APP_URL || 'https://fantasycopilot.vercel.app' }}
+
+jobs:
+  peek:
+    # Scheduled runs first ask whether there's anything to do.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      work: ${{ steps.peek.outputs.work }}
+    steps:
+      - id: peek
+        env:
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $WORKER_SECRET" "$APP_URL/api/worker/peek")
+          echo "work=$([ "$code" = 200 ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+
+  simulate:
+    needs: peek
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.peek.outputs.work == 'yes') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            packages/fantasy-core
+            .nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Bundle the worker
+        run: npx --yes esbuild@0.24.0 packages/fantasy-core/worker/worker.ts --bundle --platform=node --format=esm --outfile=worker.mjs
+      - name: Simulate
+        env:
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: node worker.mjs

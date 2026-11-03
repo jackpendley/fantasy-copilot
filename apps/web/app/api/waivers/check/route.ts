@@ -2,8 +2,10 @@
 // recommended one). Read-only on ESPN: it simulates and stores the result, it never adds or
 // drops anyone.
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { checkMove } from "@/lib/nba/move-checks";
+import { workerEnabled } from "@/lib/nba/outlook-refresh";
+import { requestMoveCheck } from "@/lib/nba/sim-jobs";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -26,7 +28,12 @@ export async function POST(request: NextRequest) {
         { status: 404 },
       );
     }
-    return NextResponse.json({ effect });
+    // The deep check (thousands of seasons on the worker) follows within minutes.
+    if (workerEnabled()) {
+      const key = `${addId}:${dropId ?? ""}:${ilId ?? ""}`;
+      after(() => requestMoveCheck(key).catch(() => null));
+    }
+    return NextResponse.json({ effect, deep: workerEnabled() });
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }

@@ -69,6 +69,8 @@ export async function outlookSetup(now = new Date()) {
   const midDay = today < LAST_SCORING_PERIOD && dayStarted(tips, league.scoreboard, now);
   const freeAgents = parsePlayerPool(faRaw, cfg.season);
   return {
+    /** When the rosters were read (a run is stamped with it). */
+    readAt: now,
     data: { ...league, teams: league.ahead.teams, me: league.ahead.me },
     previousTeams,
     freeAgents,

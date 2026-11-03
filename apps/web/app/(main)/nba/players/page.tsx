@@ -9,12 +9,14 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
-import { moveChecks, moveKey, type MoveChecks } from "@/lib/nba/move-checks";
+import { moveChecks, moveKey, rosterKey, type MoveChecks } from "@/lib/nba/move-checks";
 import type { MoveEffect } from "@/lib/nba/move-sim";
+import { LiveRefresh } from "@/components/live-refresh";
 import { MoveCard, type MoveOption, type MoveSim } from "@/components/fc/move-card";
 import { PlayersNav } from "@/components/fc/players-nav";
 import { redirect } from "next/navigation";
 import { latestOutlook } from "@/lib/nba/outlook-run";
+import { latestDeepChecks } from "@/lib/nba/sim-jobs";
 import { dbConfigured } from "@/lib/db";
 import { winChanceLabel } from "@/lib/nba/week";
 import type { StreamOption, WaiverCandidate } from "@/lib/nba/waivers";
@@ -80,7 +82,11 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
           are replayed 10 times so the title odds aren&apos;t swamped by playoff luck.
           &ldquo;Now&rdquo; is your latest Outlook; &ldquo;With move&rdquo; adds the simulated
           change. ± is the margin of error (two standard errors): a change smaller than it could be
-          chance. Close calls get a second batch of seasons for a tighter margin.
+          chance. A <b className="text-foreground">deep check</b> (run on a separate machine within
+          minutes of any roster change) plays thousands of seasons per move until each title change
+          is known to ±0.5 points, and says how likely the move is to help at all and to be the best
+          one; a quick check (hundreds of seasons) fills in until then. More seasons remove the
+          simulation&apos;s own randomness, not the projections&apos; error.
         </li>
         <li>
           <b className="text-foreground">This week&apos;s matchup</b>: your win chance against this
@@ -152,10 +158,14 @@ export default async function MovesPage({
     .map((f) => f.waiverUntil ?? 0)
     .filter(Boolean)
     .sort((a, b) => a - b)[0];
-  const [checks, outlookRun] = await Promise.all([
+  const [checks, outlookRun, deep] = await Promise.all([
     moveChecks(v).catch(() => null),
     dbConfigured() ? latestOutlook().catch(() => null) : Promise.resolve(null),
+    latestDeepChecks().catch(() => null),
   ]);
+  // Deep checks (the worker's thousands of seasons) for Jack's roster as it is now.
+  const deepNow = deep && deep.rosterKey === rosterKey(v) ? deep : null;
+  const deepBy = new Map((deepNow?.effects ?? []).map((e) => [e.key, e]));
   const myOutlook = outlookRun?.results.find((t) => t.teamId === v.data.me.id);
   const outlook = myOutlook
     ? {
@@ -177,6 +187,28 @@ export default async function MovesPage({
       },
     ]),
   );
+  for (const e of deepBy.values()) {
+    if (!e.seasons) continue;
+    sims[e.key] = {
+      title: e.title,
+      playoffs: e.playoffs,
+      seed1: e.seed1,
+      wins: e.wins,
+      seasons: e.seasons,
+      deep: true,
+      pBetter: e.pBetter,
+      pBest: e.pBest,
+      refining: e.active && !deepNow!.final,
+      dropped: e.dropped,
+    };
+  }
+  // With deep checks, each add opens on its best-simulated drop.
+  const deepBest = (o: StreamOption) => {
+    const checked = (analysis.dropOptions.get(o.add.player.id) ?? [])
+      .map((x) => ({ x, e: deepBy.get(moveKey(x)) }))
+      .filter((y) => y.e && y.e.seasons > 0);
+    return checked.sort((a, b) => b.e!.title.d - a.e!.title.d)[0] ?? null;
+  };
   const card = (o: StreamOption) => {
     const options = (analysis.dropOptions.get(o.add.player.id) ?? [o]).map(optionOf);
     return (
@@ -190,15 +222,24 @@ export default async function MovesPage({
         addsLeft={addsLeft}
         addsCap={addsCap}
         options={options}
-        initialKey={moveKey(o)}
+        initialKey={moveKey(deepBest(o)?.x ?? o)}
         sims={sims}
         outlook={outlook}
         weekWin={analysis.baseWin}
-        stale={!!checks && !checks.fresh}
+        stale={!deepNow && !!checks && !checks.fresh}
       />
     );
   };
-  const best = rankByChecks(analysis.best.slice(0, 8), checks);
+  // Deep-checked adds first, by their best simulated title change; then the quick order.
+  const quick = rankByChecks(analysis.best.slice(0, 8), checks);
+  const best = deepNow
+    ? [...quick].sort((x, y) => {
+        const ex = deepBest(x)?.e;
+        const ey = deepBest(y)?.e;
+        if (ex && ey) return ey.title.d - ex.title.d;
+        return Number(!!ey) - Number(!!ex);
+      })
+    : quick;
   const shown = new Set(best.map((o) => o.add.player.id));
   // Streams that help this week but cost more later than they gain now.
   const streams = analysis.thisWeek
@@ -230,6 +271,14 @@ export default async function MovesPage({
           Best moves
         </SectionTitle>
         <HowToRead winsPerPoint={analysis.winsPerPoint} />
+        {deepNow && (
+          <p className="px-1 text-xs text-muted-foreground">
+            {deepNow.final
+              ? `Deep check done: ${deepBy.size} moves, up to ${deepNow.seasons.toLocaleString("en-US")} seasons each.`
+              : `Deep check running: ${deepBy.size} moves, ${deepNow.seasons.toLocaleString("en-US")} seasons so far; numbers sharpen as it goes.`}
+          </p>
+        )}
+        {deepNow && !deepNow.final && <LiveRefresh active seconds={20} />}
         {best.length ? (
           <div className="divide-y overflow-hidden rounded-xl border bg-card">{best.map(card)}</div>
         ) : (

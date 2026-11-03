@@ -45,7 +45,7 @@ export function shortlist(v: WaiverView): StreamOption[] {
 }
 
 /** Jack's roster as the simulation sees it: players, slots and their injury news. */
-function rosterKey(v: WaiverView): string {
+export function rosterKey(v: WaiverView): string {
   const news = new Map(v.data.injuries.map((i) => [i.playerId, [i.status, i.returnDate ?? null]]));
   return fingerprintOf(
     v.data.ahead.me.roster
@@ -62,6 +62,9 @@ function fingerprint(v: WaiverView, moves: StreamOption[]): string {
     moves: moves.map((o) => [moveKey(o), news.get(o.add.player.id) ?? null]),
   });
 }
+
+/** The short list and the roster it was checked against (changes when either does). */
+export const waiverFingerprint = (v: WaiverView) => fingerprint(v, shortlist(v));
 
 const spec = (o: StreamOption): MoveSpec => ({
   key: moveKey(o),

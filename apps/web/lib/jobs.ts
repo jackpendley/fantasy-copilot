@@ -14,11 +14,12 @@ import { refreshPbpPlayers } from "./nba/advanced";
 import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
-import { rosterWatch } from "./nba/outlook-refresh";
+import { rosterWatch, workerEnabled } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { logOfficialReport } from "./nba/official-report";
 import { recordMatchupSnapshot, recordMatchupStates } from "./nba/matchup-snapshots";
-import { runOutlook } from "./nba/outlook-run";
+import { latestOutlook, runOutlook } from "./nba/outlook-run";
+import { enqueueSimJob } from "./nba/sim-jobs";
 import { refreshMoveChecks } from "./nba/move-checks";
 import { refreshTradeTargets } from "./nba/trade-view";
 
@@ -208,10 +209,20 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     const matchup = await step("matchup-snapshot", () => recordMatchupSnapshot(), [20_000, 60_000]);
     // Every league matchup's state, for calibrating the weekly win probability.
     const states = await step("matchup-states", () => recordMatchupStates(), [20_000]);
-    const { scoringPeriod, teams } = await runOutlook();
+    // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
+    // deep move checks arrive within minutes), otherwise here.
+    const queued = workerEnabled()
+      ? await step("sim-job", () => enqueueSimJob(null).then((id) => ({ job: id })))
+      : null;
+    const { scoringPeriod, teams } = queued
+      ? await latestOutlook().then((r) => ({
+          scoringPeriod: r?.scoring_period ?? 0,
+          teams: r?.results ?? [],
+        }))
+      : await runOutlook();
     // A new day's projections: have the trade ideas ready for the first visit.
     const trades = await step("trade-targets", () => refreshTradeTargets());
-    const moves = await step("move-checks", () => refreshMoveChecks());
+    const moves = queued ? null : await step("move-checks", () => refreshMoveChecks());
     // PBP Stats season numbers for the player cards (this season and last).
     const season = Number(process.env.ESPN_SEASON || 2027);
     const pbp = await step("pbp-players", () => refreshPbpPlayers([season, season - 1]));

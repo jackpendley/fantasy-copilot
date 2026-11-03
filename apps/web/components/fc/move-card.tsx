@@ -44,6 +44,16 @@ export interface MoveSim {
   seed1: Delta;
   wins: Delta;
   seasons: number;
+  /** From the worker's deep check (thousands of seasons). */
+  deep?: boolean;
+  /** Chance the move raises the title odds at all. */
+  pBetter?: number;
+  /** Chance it's the best of the moves checked. */
+  pBest?: number | null;
+  /** Still getting seasons. */
+  refining?: boolean;
+  /** Stopped early: clearly worse than doing nothing. */
+  dropped?: boolean;
 }
 
 export interface Outlook {
@@ -55,6 +65,9 @@ export interface Outlook {
 
 const signed = (n: number, digits = 1) => `${n >= 0 ? "+" : ""}${n.toFixed(digits)}`;
 const pct = (p: number) => `${(p * 100).toFixed(1)}%`;
+/** A probability for reading: never a flat 0% or 100% from a finite simulation. */
+const chance = (p: number) =>
+  p >= 0.995 ? ">99%" : p <= 0.005 ? "<1%" : `${Math.round(p * 100)}%`;
 const tone = (n: number, eps: number) =>
   n > eps ? "text-success" : n < -eps ? "text-danger" : "text-muted-foreground";
 
@@ -122,6 +135,8 @@ export function MoveCard({
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? `HTTP ${res.status}`);
       const e = out.effect;
+      if (out.deep)
+        toast.info("Quick check done. A deep check (thousands of seasons) follows within minutes.");
       setMine((m) => ({
         ...m,
         [k]: {
@@ -236,7 +251,9 @@ export function MoveCard({
           <thead>
             <tr className="border-b bg-muted/40 text-[11px] text-muted-foreground">
               <th className="py-1 pr-2 pl-2 text-left font-medium">
-                {sim ? `Season sim (${sim.seasons.toLocaleString("en-US")})` : "Season"}
+                {sim
+                  ? `${sim.deep ? "Deep check" : "Season sim"} (${sim.seasons.toLocaleString("en-US")}${sim.refining ? ", refining" : ""})`
+                  : "Season"}
               </th>
               <th className="px-1 py-1 text-right font-medium">Now</th>
               <th className="px-1 py-1 text-right font-medium">With move</th>
@@ -270,6 +287,17 @@ export function MoveCard({
             </tr>
           </tbody>
         </table>
+        {sim?.deep && sim.pBetter != null && (
+          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground tabular-nums">
+            {sim.dropped
+              ? "Clearly worse than doing nothing; the deep check stopped early."
+              : `Chance it raises your title odds: ${chance(sim.pBetter)}${
+                  sim.pBest != null
+                    ? ` · chance it's the best of the moves checked: ${chance(sim.pBest)}`
+                    : ""
+                }`}
+          </p>
+        )}
         {sim && old && (
           <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
             Simulated before your latest roster or injury news; re-checked overnight, or simulate it

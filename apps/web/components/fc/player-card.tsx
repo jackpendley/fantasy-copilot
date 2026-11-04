@@ -28,6 +28,8 @@ import { TeamLogo } from "./team-logo";
 interface CardApi {
   open: (id: number) => void;
   prefetch: (id: number) => void;
+  /** A player's card data (cached like the card's), e.g. for comparing two players. */
+  load: (id: number) => Promise<PlayerCardData>;
 }
 
 const CardContext = createContext<CardApi | null>(null);
@@ -120,7 +122,7 @@ export function PlayerCardProvider({ children }: { children: React.ReactNode }) 
   }, [openId, live, fetchCard, show]);
 
   return (
-    <CardContext.Provider value={{ open, prefetch }}>
+    <CardContext.Provider value={{ open, prefetch, load }}>
       {children}
       <Dialog
         open={openId != null}

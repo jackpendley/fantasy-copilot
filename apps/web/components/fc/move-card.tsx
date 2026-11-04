@@ -7,6 +7,8 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AddDropButton } from "@/components/add-drop-button";
+import { LiveRefresh } from "@/components/live-refresh";
+import { ComparePlayers } from "@/components/fc/player-compare";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -110,10 +112,15 @@ export function MoveCard({
   const [mine, setMine] = useState<Record<string, MoveSim>>({});
   const [running, setRunning] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  // Moves whose quick check ran here and whose deep check is on its way.
+  const [awaiting, setAwaiting] = useState<string[]>([]);
   const o = options.find((x) => x.key === key) ?? options[0]!;
-  const sim = mine[o.key] ?? sims[o.key];
+  // The deep check, once it has this move, replaces the quick check run here.
+  const deepSim = sims[o.key]?.deep ? sims[o.key] : undefined;
+  const sim = deepSim ?? mine[o.key] ?? sims[o.key];
   // A check run from this card is current; the page's stored ones may predate a change.
-  const old = stale && !mine[o.key];
+  const old = stale && !mine[o.key] && !deepSim;
+  const waiting = awaiting.filter((k) => !sims[k]?.deep);
 
   useEffect(() => {
     if (!running) return;
@@ -121,6 +128,13 @@ export function MoveCard({
     const timer = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [running]);
+
+  // Give up refreshing for the deep check after 10 minutes (the worker didn't get to it).
+  useEffect(() => {
+    if (!awaiting.length) return;
+    const t = setTimeout(() => setAwaiting([]), 10 * 60_000);
+    return () => clearTimeout(t);
+  }, [awaiting]);
 
   async function simulate() {
     const k = o.key;
@@ -135,8 +149,10 @@ export function MoveCard({
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? `HTTP ${res.status}`);
       const e = out.effect;
-      if (out.deep)
-        toast.info("Quick check done. A deep check (thousands of seasons) follows within minutes.");
+      if (out.deep) {
+        toast.info("Quick check done. The deep check (thousands of seasons) replaces it here.");
+        setAwaiting((a) => [...a.filter((x) => x !== k), k]);
+      }
       setMine((m) => ({
         ...m,
         [k]: {
@@ -200,6 +216,7 @@ export function MoveCard({
 
   return (
     <div className="space-y-2.5 px-3 py-3">
+      <LiveRefresh active={waiting.length > 0} seconds={15} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">{who}</div>
         {o.ilName ? (
@@ -223,7 +240,7 @@ export function MoveCard({
         )}
       </div>
 
-      <label className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-[50px] text-xs">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-[50px] text-xs">
         <span className={cn("font-medium", o.ilName ? "text-warning" : "text-danger")}>
           {o.ilName ? "Move to IL" : "Drop"}
         </span>
@@ -241,7 +258,8 @@ export function MoveCard({
             </option>
           ))}
         </select>
-      </label>
+        {o.dropId != null && <ComparePlayers addId={addId} dropId={o.dropId} />}
+      </div>
 
       {o.addStarts != null && o.addGames != null && (
         <p className="pl-[50px] text-xs text-muted-foreground">
@@ -261,7 +279,7 @@ export function MoveCard({
             <tr className="border-b bg-muted/40 text-[11px] text-muted-foreground">
               <th className="py-1 pr-2 pl-2 text-left font-medium">
                 {sim
-                  ? `${sim.deep ? "Deep check" : "Season sim"} (${sim.seasons.toLocaleString("en-US")}${sim.refining ? ", refining" : ""})`
+                  ? `${sim.deep ? "Deep check" : "Quick check"} (${sim.seasons.toLocaleString("en-US")}${sim.refining ? ", refining" : ""})`
                   : "Season"}
               </th>
               <th className="px-1 py-1 text-right font-medium">Now</th>
@@ -305,6 +323,13 @@ export function MoveCard({
                     ? ` · chance it's the best of the moves checked: ${chance(sim.pBest)}`
                     : ""
                 }`}
+          </p>
+        )}
+        {!sim?.deep && waiting.includes(o.key) && (
+          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+            A quick check is only a rough read: a change smaller than its ± can be chance. The deep
+            check is running now and replaces these numbers here, usually within 2–5 minutes. Wait
+            for it before you decide.
           </p>
         )}
         {sim && old && (

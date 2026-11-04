@@ -84,8 +84,9 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
           chance. A <b className="text-foreground">deep check</b> (run on a separate machine within
           minutes of any roster change) plays thousands of seasons per move until each title change
           is known to ±0.5 points, and says how likely the move is to help at all and to be the best
-          one; a quick check (hundreds of seasons) fills in until then. More seasons remove the
-          simulation&apos;s own randomness, not the projections&apos; error.
+          one. A drop you simulate yourself gets a quick check (hundreds of seasons, a rough read)
+          in seconds, then the deep check replaces it on the card within minutes. More seasons
+          remove the simulation&apos;s own randomness, not the projections&apos; error.
         </li>
         <li>
           <b className="text-foreground">This week&apos;s matchup</b>: your win chance against this
@@ -117,6 +118,8 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
           <b className="text-foreground">Drop</b>: the best drop is picked for you; choose another
           player to see that move&apos;s numbers. The number after each name is its points estimate;
           ✓ marks drops the simulation has checked (it checks the top moves automatically).
+          <b className="text-foreground">Compare</b> puts the two players side by side: projections,
+          this season, where their points come from and advanced stats with league percentiles.
         </li>
       </ul>
     </details>

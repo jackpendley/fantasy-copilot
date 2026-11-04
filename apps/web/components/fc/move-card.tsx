@@ -31,6 +31,8 @@ export interface MoveOption {
   addStarts: number | null;
   addGames: number | null;
   dropStarts: number | null;
+  /** With this move, who comes back from IR and whom you'd cut for him. */
+  ilCuts: { back: string; drop: string }[];
   /** Rest-of-season points given up, for the confirm dialog. */
   rosCost: number;
 }
@@ -270,6 +272,12 @@ export function MoveCard({
               · {last(o.dropName)} would have started {o.dropStarts}
             </>
           )}
+          {o.ilCuts.map((c) => (
+            <span key={c.back}>
+              {" "}
+              · when {last(c.back)} is back from IL, you&apos;d drop {last(c.drop)}
+            </span>
+          ))}
         </p>
       )}
 

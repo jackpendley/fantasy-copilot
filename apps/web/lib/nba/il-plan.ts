@@ -1,5 +1,5 @@
 // When a player on the IR slot comes back, someone has to go. The season model (teamValue)
-// already decides who: the player who'd add the fewest lineup points from that day on.
+// already decides who: the player the lineup would miss least from that day on.
 // This surfaces that plan for a team.
 
 import type { FantasyTeam, LeagueSettings, ProGame } from "@fantasy-copilot/espn";
@@ -39,7 +39,7 @@ export function ilReturnPlan(
 export function describeReturn(r: ReturnPlan, who = "you'd"): string {
   return `${r.player.name} (IL) ${returnLabel(r.absence)}: ${
     r.drop
-      ? `${who} drop ${r.drop.name}, who'd add the fewest lineup points from then on`
+      ? `${who} drop ${r.drop.name}, whom your lineup would miss least from then on`
       : "an open roster spot is waiting"
   }`;
 }

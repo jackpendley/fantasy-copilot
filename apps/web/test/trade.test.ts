@@ -85,6 +85,48 @@ describe("teamValue with injuries", () => {
     expect(v.playoffs).toBeCloseTo(4 * 75 * k, 6);
   });
 
+  it("cuts the player it would miss least, not whoever starts least", () => {
+    // Days 1-6 (regular season). G, the only point guard, plays days 2, 4 and 6; B1 and B3 every
+    // day; B2 days 2, 4 and 6. The IR center (30) is back on day 1. Lineup: PG, C, UTIL x2.
+    const plays: Record<number, number[]> = {
+      1: [2, 4, 6],
+      2: [1, 2, 3, 4, 5, 6],
+      3: [2, 4, 6],
+      4: [1, 2, 3, 4, 5, 6],
+      9: [1, 2, 3, 4, 5, 6],
+    };
+    const sched: ProGame[] = Object.entries(plays).flatMap(([id, days]) =>
+      days.map((d) => ({
+        gameId: d * 100 + Number(id),
+        scoringPeriodId: d,
+        date: 0,
+        homeProTeamId: Number(id),
+        awayProTeamId: 50 + Number(id),
+      })),
+    );
+    const c = valueContext(
+      sched,
+      { PG: 1, C: 1, UTIL: 2, IR: 1 },
+      1,
+      6,
+      1,
+      new Map([[9, { outUntil: 1 }]]),
+    );
+    const roster = [
+      p(1, "PG", 20), // G
+      p(2, "C", 25), // B1
+      p(3, "C", 24), // B2
+      p(4, "C", 23), // B3
+      { ...p(9, "C", 30), slot: "IR" },
+    ];
+    const v = teamValue(roster, c);
+    // G starts the fewest points (3 x 20) but no one can play point guard for him. Without B2
+    // (3 x 24), B3 starts on his days instead: only 3 points lost. B2 goes.
+    expect(v.activations.map((a) => a.drop?.id)).toEqual([3]);
+    // Days 1, 3, 5: C30, B1 25, B3 23. Days 2, 4, 6: G20 as well.
+    expect(v.regular).toBeCloseTo((3 * 78 + 3 * 98) * k, 6);
+  });
+
   it("cuts a player who's out for the season before anyone useful", () => {
     const ctxIR = valueContext(
       games,

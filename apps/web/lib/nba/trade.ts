@@ -105,8 +105,8 @@ export interface Activation {
 /**
  * Projected starting-lineup points for the rest of the season. Injured players count from
  * their estimated return (`ctx.outUntil`). A player returning from the IR slot needs an
- * active spot: when the roster is full, the team drops whoever would add the fewest lineup
- * points from that day on (the same rule for every team).
+ * active spot: when the roster is full, the team drops whoever it would miss least, i.e. the
+ * fewest lineup points lost from that day on (the same rule for every team).
  */
 export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue {
   const players = roster
@@ -152,18 +152,43 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
       activations.push({ player: p, day, drop: null });
       continue;
     }
-    // Lineup points each player would add from his return on; the fewest goes. A player out
-    // for the rest of the season adds nothing: he's the natural cut.
+    // What losing each player would cost the lineup from his return on (the next-best player
+    // fills in); the cheapest goes. Not simply whoever starts least: a good player who starts
+    // less but has no one like him behind him costs more to lose. A player out for the rest of
+    // the season costs nothing: he's the natural cut.
     const pts = new Array<number>(players.length).fill(0);
     for (let d = day; d <= ctx.lastDay; d++) {
       if (!mask[d]) continue;
       const w = playoffDay(d) ? PLAYOFF_WEIGHT : 1;
       for (const k of starters(mask[d]!)) pts[k]! += w * players[k]!.v;
     }
+    const lineup = (m: number) => starters(m).reduce((s, k) => s + players[k]!.v, 0);
+    const cost = (k: number) => {
+      let c = 0;
+      for (let d = day; d <= ctx.lastDay; d++) {
+        const m = mask[d]!;
+        if (!(m & (1 << k))) continue;
+        const w = playoffDay(d) ? PLAYOFF_WEIGHT : 1;
+        c += w * (lineup(m) - lineup(m & ~(1 << k)));
+      }
+      return c;
+    };
+    // A player who wouldn't start at all costs nothing to lose: that settles it without
+    // checking the rest.
     const pool = players
       .map((x, k) => ({ ...x, k }))
-      .filter(({ p: x, k }) => x.slot !== "IR" && last[k] === ctx.lastDay);
-    const drop = pool.sort((a, b) => pts[a.k]! - pts[b.k]! || a.v - b.v)[0];
+      .filter(({ p: x, k }) => x.slot !== "IR" && last[k] === ctx.lastDay)
+      .sort((a, b) => pts[a.k]! - pts[b.k]! || a.v - b.v);
+    let drop: (typeof pool)[number] | undefined;
+    let least = Infinity;
+    for (const x of pool) {
+      const c = pts[x.k] ? cost(x.k) : 0;
+      if (c < least || (c === least && drop && x.v < drop.v)) {
+        drop = x;
+        least = c;
+      }
+      if (least === 0) break;
+    }
     if (drop) {
       last[drop.k] = day - 1;
       for (let d = day; d <= ctx.lastDay; d++) mask[d]! &= ~(1 << drop.k);

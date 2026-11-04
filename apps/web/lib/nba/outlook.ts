@@ -91,7 +91,7 @@ export function buildOutlookInput(a: OutlookArgs): {
   const currentPeriod = matchupPeriodOf(a.fromDay);
   const previous = new Map((a.previousTeams ?? []).map((t) => [t.id, t]));
   const activity = new Map<number, Activity>();
-  // An IR return to a full roster cuts whoever adds the fewest lineup points from that day on:
+  // An IR return to a full roster cuts whoever the lineup would miss least from that day on:
   // the same rule as the Waivers ranking (teamValue), decided once per team here.
   const ctx = valueContext(
     a.games,

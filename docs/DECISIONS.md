@@ -730,3 +730,16 @@
   - It counts rest and coach's decisions too, and a traded NBA player counts his current team's games. The page says so.
 - **Odds over time** per team (`outlookHistory`), as on the League page.
 - **Not attempted:** separating a move's effect from same-day news when runs are far apart. Those moves stay marked ≈ rather than guessed.
+
+## ADR-057: an IR return cuts the player the lineup would miss least (2026-11-03)
+
+- **Refines ADR-049.**
+  - "Fewest lineup points from his return on" counted a player's own starter points. It ignored who would fill in for him.
+  - On a roster where everyone starts sometimes, that cut a player with no one like him behind him, ahead of one whose backup is nearly as good.
+- **Case (Nov 3):** in the world with Jalen Smith added and Collins dropped, Duren's return cut Isaiah Jackson. That made the move's rest of season −75 points and the deep check neutral. Smith for Sharpe kept Collins as the cut and showed +87.
+- **Rule now:** cut whoever's loss costs the fewest lineup points from that day on (playoff days ×2): the lineup with him minus the lineup without him, each day. Ties go to the lower projection.
+  - A player who wouldn't start at all costs nothing, so the search stops there.
+  - Otherwise every candidate is checked: ~0.5 ms per `teamValue` with a bench player, ~1.7 ms in the worst case (synthetic 14-man roster, 160 days).
+- **Same rule everywhere:** the quick ranking, the IR plan note, the Outlook's `irCut` for every team, and the deep checks.
+- **Moves shows the cut per drop option** ("when Duren is back from IL, you'd drop X"), because it drives the rest-of-season number.
+- **Test:** the only point guard (fewest own starter points) stays, and the center whose backup covers his games goes.

@@ -64,6 +64,10 @@ Nothing right now.
   - A run of 8 runners finished in ~3 min.
   - Moves showed "Deep check done: 15 moves, up to 12,000 seasons each" (top: +Lively −Collins, +0.8 ±0.3 title points, >99% helps, 43% best).
   - #72 fixed asking again for a move already queued, which didn't start a runner.
+- **#75 (Nov 3):**
+  - **Problem:** "Simulate this drop" kept showing its 400-season quick check until the page was reloaded. Jack saw "positive" at 400 seasons, then "neutral" at 11,200 after reopening.
+  - **Fix:** the card now refreshes every 15 s and swaps in the deep check when it lands (giving up after 10 min). Until then it says the quick check is rough and to wait.
+  - **Compare** button on each move: the add and the drop side by side, covering projections, rest of season, this season, box score, fantasy points by stat and advanced stats with percentiles. The better value is shown in green.
 
 ## Next tasks
 

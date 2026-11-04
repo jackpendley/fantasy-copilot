@@ -65,7 +65,7 @@ describe("buildOutlookInput", () => {
 });
 
 describe("IR returns in the simulation", () => {
-  it("cuts whoever adds the fewest lineup points, like the Waivers ranking", () => {
+  it("cuts whoever the lineup would miss least, like the Waivers ranking", () => {
     // Synthetic team: one guard and four centers for C, G and UTIL; the 18-point guard starts
     // every game at G, the 20-point fourth center never does. A center returns from IR on day 3.
     const p = (id: number, fppg: number, positions: string[], slot = "BE"): RosterPlayer => ({

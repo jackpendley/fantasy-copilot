@@ -47,6 +47,13 @@ The player card has a fixed size and closes on navigation. It shows advanced sta
 - Functions Storage 7.12 of 10 GB (this is what the warning email was about).
 - After #63, CPU grew ~2 min in 5 h, and #67 stops the storage growth.
 - Recommendation given: stay on Hobby. Pro ($20) only if usage stays near the limits.
+- **#76:** each drop option says whom the roster cuts when an IR player returns ("when Duren is back from IL, you'd drop X").
+- **#77, ADR-057:** an IR return now cuts the player the lineup would **miss least**, instead of whoever starts fewest points. This is used everywhere, including the simulator's `irCut`.
+  - It fixed Smith for Collins: the model had cut Isaiah Jackson later, giving rest of season −75. It now cuts Sharpe, giving +80.
+  - **Deep check, Nov 3 (11,200 seasons):**
+    - Smith for Collins: +0.2 ±0.3 title, +1.3 ±0.7 playoffs, +0.10 wins, 87% it helps.
+    - The top move is Lively for Collins: +0.5 ±0.3, >99%, 24% best.
+  - **Verified on production:** quick check (800) → deep check swapped in on the card in ~4 min with no reload; Compare works.
 
 ## Waiting on Jack
 

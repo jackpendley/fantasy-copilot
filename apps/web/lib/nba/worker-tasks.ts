@@ -80,6 +80,22 @@ export async function hasTasks(): Promise<boolean> {
   return rows.length > 0;
 }
 
+/**
+ * Should the task runner stay up? Tasks waiting or being run, or simulation runners working
+ * right now (a roster move often brings a task later). A job merely queued doesn't count: its
+ * runners come with the next run, which can't start while this one is up.
+ */
+export async function taskRunnerNeeded(): Promise<boolean> {
+  const rows = await db()`
+    select 1 from worker_tasks where status = 'queued'
+      or (status = 'running' and started_at > now() - ${LEASE}::interval)
+    union all
+    select 1 from sim_jobs where last_worker_at > now() - interval '45 seconds'
+    limit 1
+  `;
+  return rows.length > 0;
+}
+
 /** The oldest task to run (or one whose runner went quiet), claimed; null when none. */
 export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: unknown } | null> {
   await heartbeat(POLL_LOCK);

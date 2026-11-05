@@ -215,10 +215,11 @@ export async function refreshLogged(trigger?: string | null) {
   } else {
     await m.step("outlook", () => refreshVercel(trigger));
   }
-  // Rosters changed: have the trade ideas ready before a visit. (Waiver moves are re-checked
-  // by the nightly run; simulations are too costly to repeat after every league move.)
+  // Rosters changed: have the trade ideas ready before a visit. Jack's own moves refresh them
+  // now; other teams' at most every 3 hours (the search costs ~7.5 s of CPU).
+  const own = trigger?.startsWith("You ") ?? false;
   try {
-    if (await m.step("trades", () => refreshTradeTargets()))
+    if (await m.step("trades", () => refreshTradeTargets({ force: own })))
       await record("trade-targets", "ok", "refreshed");
   } catch (e) {
     await record("trade-targets", "error", (e as Error).message);

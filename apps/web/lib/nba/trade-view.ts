@@ -6,6 +6,10 @@ import "server-only";
 // the stored ideas that still make sense (every player still where the idea expects him)
 // while a fresh search runs after the response. Roster moves and the nightly job refresh it
 // ahead of time, so the page rarely waits.
+//
+// The search is the costliest thing the app does on Vercel (~7.5 s of CPU, docs/COMPUTE.md),
+// so other teams' moves, injury news and page visits refresh it at most every 3 hours; Jack's
+// own moves and the nightly run refresh it right away.
 
 import { after } from "next/server";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
@@ -17,6 +21,12 @@ import { findTradeTargets, type RosterMoves, type TradeIdea } from "./trade";
 type LeagueView = Awaited<ReturnType<typeof loadLeagueView>>;
 
 const KEY = "trade-targets";
+/** Changes other than Jack's own moves refresh the ideas at most this often. */
+export const TRADE_REFRESH_GAP_MS = 3 * 3600_000;
+
+/** Is a refresh allowed now (no stored ideas, or they're older than the gap)? */
+export const refreshDue = (computedAt: Date | null, now = Date.now()) =>
+  computedAt == null || now - computedAt.getTime() >= TRADE_REFRESH_GAP_MS;
 
 type StoredMoves = Record<keyof RosterMoves, number[]>;
 export interface StoredIdea extends Omit<TradeIdea, "give" | "get" | "moves"> {
@@ -112,38 +122,49 @@ async function computeAndStore(v: LeagueView, fingerprint: string): Promise<Trad
 
 export interface TradeTargets {
   ideas: TradeIdea[];
-  /** False while a fresh search runs for changed rosters (the ideas shown are the last ones). */
+  /** False when rosters or news changed since the search (the ideas shown are the last ones). */
   fresh: boolean;
+  /** A fresh search is running now (otherwise the next comes within TRADE_REFRESH_GAP_MS). */
+  updating: boolean;
   computedAt: Date;
 }
 
 /** The page's trade targets: stored when current, otherwise the last ones while refreshing. */
 export async function tradeTargets(v: LeagueView): Promise<TradeTargets> {
-  if (!dbConfigured()) return { ideas: search(v), fresh: true, computedAt: new Date() };
+  if (!dbConfigured())
+    return { ideas: search(v), fresh: true, updating: false, computedAt: new Date() };
   const fingerprint = tradeFingerprint(v);
   const row = await readView<StoredIdea[]>(KEY).catch(() => null);
   if (row?.fingerprint === fingerprint) {
-    return { ideas: hydrate(row.value, v), fresh: true, computedAt: row.computedAt };
+    return {
+      ideas: hydrate(row.value, v),
+      fresh: true,
+      updating: false,
+      computedAt: row.computedAt,
+    };
   }
   if (row) {
-    after(() => refreshTradeTargets().catch(() => {}));
-    return { ideas: hydrate(row.value, v), fresh: false, computedAt: row.computedAt };
+    const updating = refreshDue(row.computedAt);
+    if (updating) after(() => refreshTradeTargets({ force: true }).catch(() => {}));
+    return { ideas: hydrate(row.value, v), fresh: false, updating, computedAt: row.computedAt };
   }
   const ideas = await computeAndStore(v, fingerprint);
-  return { ideas, fresh: true, computedAt: new Date() };
+  return { ideas, fresh: true, updating: false, computedAt: new Date() };
 }
 
 let running: Promise<boolean> | null = null;
 
 /**
  * Bring the stored targets up to date (after a roster move, a new injury, and nightly).
- * True when it searched; false when they were current. One search at a time per instance.
+ * True when it searched; false when they were current, or (without `force`) searched less
+ * than TRADE_REFRESH_GAP_MS ago. One search at a time per instance.
  */
-export function refreshTradeTargets(): Promise<boolean> {
+export function refreshTradeTargets({ force = false }: { force?: boolean } = {}): Promise<boolean> {
   running ??= (async () => {
+    const row = await readView<StoredIdea[]>(KEY).catch(() => null);
+    if (!force && row && !refreshDue(row.computedAt)) return false;
     const v = await loadLeagueView();
     const fingerprint = tradeFingerprint(v);
-    const row = await readView<StoredIdea[]>(KEY).catch(() => null);
     if (row?.fingerprint === fingerprint) return false;
     await computeAndStore(v, fingerprint);
     return true;

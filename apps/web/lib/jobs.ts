@@ -298,7 +298,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
         }))
       : await m.step("outlook", () => runOutlook());
     // A new day's projections: have the trade ideas ready for the first visit.
-    const trades = await metered("trade-targets", () => refreshTradeTargets());
+    const trades = await metered("trade-targets", () => refreshTradeTargets({ force: true }));
     const moves = queued ? null : await metered("move-checks", () => refreshMoveChecks());
     // PBP Stats season numbers for the player cards (this season and last).
     const season = Number(process.env.ESPN_SEASON || 2027);

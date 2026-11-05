@@ -10,7 +10,7 @@ import { SimulateTrade } from "@/components/simulate-trade";
 import { Button } from "@/components/ui/button";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
-import { fmtPts } from "@/lib/format";
+import { fmtDayTime, fmtPts } from "@/lib/format";
 import { loadLeagueView } from "@/lib/nba/league-view";
 import { marketValue, type MarketContext, type Realism } from "@/lib/nba/market";
 import { perGameProjection } from "@/lib/nba/projection";
@@ -240,18 +240,24 @@ async function Targets({
   others: FantasyTeam[];
   size: string | null;
 }) {
-  const { ideas, fresh } = await tradeTargets(view);
+  const { ideas, fresh, updating, computedAt } = await tradeTargets(view);
   const name = new Map(others.map((t) => [t.id, t.name]));
   const count = (s: string) => ideas.filter((i) => tradeSize(i) === s).length;
   const shown = ideas.filter((i) => !size || tradeSize(i) === size).slice(0, 15);
   return (
     <>
-      {!fresh && (
-        <p className="px-1 text-xs text-muted-foreground">
-          Rosters changed: updating these ideas (a few seconds)…
-          <LiveRefresh active seconds={8} />
-        </p>
-      )}
+      {!fresh &&
+        (updating ? (
+          <p className="px-1 text-xs text-muted-foreground">
+            Rosters changed: updating these ideas (a few seconds)…
+            <LiveRefresh active seconds={8} />
+          </p>
+        ) : (
+          <p className="px-1 text-xs text-muted-foreground">
+            Searched {fmtDayTime(computedAt)}. Ideas whose players have moved are hidden; the search
+            reruns every few hours, and right away after your own moves.
+          </p>
+        ))}
       <div className="flex flex-wrap gap-1.5">
         {["All", ...SIZE_ORDER].map((s) => {
           const active = (s === "All" && !size) || s === size;

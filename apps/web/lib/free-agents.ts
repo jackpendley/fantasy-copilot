@@ -17,6 +17,8 @@ export interface FreeAgentRow {
   change: number | null;
   /** Projected points from games after this week. */
   season: number;
+  /** His best checked move's title change (deep check), its margin and whom it drops. */
+  title: { d: number; se: number; drop: string | null; updating: boolean } | null;
 }
 
 export const POSITIONS = ["All", "PG", "SG", "SF", "PF", "C", "G", "F"] as const;
@@ -35,6 +37,7 @@ export const COLUMNS = [
   { key: "owned", label: "Owned", value: (r: FreeAgentRow) => r.owned },
   { key: "change", label: "+/−", value: (r: FreeAgentRow) => r.change },
   { key: "season", label: "Season", value: (r: FreeAgentRow) => r.season },
+  { key: "title", label: "Title", value: (r: FreeAgentRow) => r.title?.d ?? null },
 ] as const;
 export type SortKey = (typeof COLUMNS)[number]["key"];
 

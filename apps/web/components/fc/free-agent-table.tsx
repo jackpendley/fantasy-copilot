@@ -166,8 +166,38 @@ export function FreeAgentTable({
                 >
                   {r.change != null ? signed(r.change) : "—"}
                 </td>
-                <td className="py-2 pr-3 pl-2 text-right text-muted-foreground tabular-nums">
+                <td className="px-2 py-2 text-right text-muted-foreground tabular-nums">
                   {Math.round(r.season)}
+                </td>
+                <td
+                  className="py-2 pr-3 pl-2 text-right text-xs whitespace-nowrap tabular-nums"
+                  title={
+                    r.title
+                      ? `${r.title.drop ? `Dropping ${r.title.drop}` : "Best checked move"}${r.title.updating ? " (updating)" : ""}`
+                      : "Not checked by the deep check"
+                  }
+                >
+                  {r.title ? (
+                    <>
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          Math.abs(r.title.d) <= 2 * r.title.se
+                            ? "text-muted-foreground"
+                            : r.title.d > 0
+                              ? "text-success"
+                              : "text-danger",
+                        )}
+                      >
+                        {signed(r.title.d * 100)}
+                      </span>
+                      <span className="ml-0.5 text-[10px] text-muted-foreground">
+                        ±{(2 * r.title.se * 100).toFixed(1)}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </td>
               </tr>
             ))}

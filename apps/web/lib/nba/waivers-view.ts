@@ -66,7 +66,12 @@ export async function loadFreeAgentPool(now = new Date()) {
     lastDay: LAST_SCORING_PERIOD,
   });
   const rank = rosteredPercentile(data.teams.flatMap((t) => t.roster));
-  return candidates.map((c) => ({ ...c, fppgPct: rank(c.fppg) }));
+  return {
+    candidates: candidates.map((c) => ({ ...c, fppgPct: rank(c.fppg) })),
+    /** Jack's roster as of tomorrow, and the injury feed (to match deep checks to it). */
+    roster: data.ahead.me.roster,
+    injuries: data.injuries,
+  };
 }
 
 async function readWaiverView(now = new Date()) {

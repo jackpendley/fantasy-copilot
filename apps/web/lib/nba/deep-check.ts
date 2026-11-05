@@ -15,6 +15,8 @@ export const TARGET_TITLE_2SE = 0.005;
 /** ...but not before this many seasons, and never past this many. */
 export const MIN_SEASONS = 4_000;
 export const MAX_SEASONS = 20_000;
+/** A move worse than doing nothing by four standard errors stops after this many (ADR-058). */
+export const EARLY_SEASONS = 1_000;
 /** The Outlook (the base run) gets at least this many seasons. */
 export const MIN_BASE_SEASONS = 8_000;
 
@@ -65,9 +67,11 @@ export function needsMore(e: Pick<DeepEffect, "seasons" | "title" | "wins">): {
   dropped: boolean;
 } {
   if (e.seasons >= MAX_SEASONS) return { more: false, dropped: false };
+  const worse = (x: Delta, k: number) => x.d + k * x.se < 0;
+  if (e.seasons >= EARLY_SEASONS && worse(e.title, 4) && worse(e.wins, 4))
+    return { more: false, dropped: true };
   if (e.seasons < MIN_SEASONS) return { more: true, dropped: false };
-  const worse = (x: Delta) => x.d + 2 * x.se < 0;
-  if (worse(e.title) && worse(e.wins)) return { more: false, dropped: true };
+  if (worse(e.title, 2) && worse(e.wins, 2)) return { more: false, dropped: true };
   return { more: 2 * e.title.se > TARGET_TITLE_2SE, dropped: false };
 }
 
@@ -83,68 +87,119 @@ function rng(seed: number) {
   };
 }
 
-/**
- * Each move's effect from the chunks so far. P(best) resamples the chunks every candidate
- * shares (the moves still in the running), so the comparison stays paired.
- */
-export function combine(chunks: ChunkResult[], keys: string[]): DeepEffect[] {
-  const effects = keys.map((key) => {
-    const sums = Object.fromEntries(
-      METRICS.map((m) => [m, { n: 0, sum: 0, sumsq: 0 } as MetricSums]),
-    ) as Record<Metric, MetricSums>;
-    for (const c of chunks) {
-      const r = c.moves[key];
-      if (!r) continue;
-      for (const m of METRICS) {
-        sums[m].n += r[m].n;
-        sums[m].sum += r[m].sum;
-        sums[m].sumsq += r[m].sumsq;
-      }
-    }
+/** A move's summed per-season differences from the base roster, per metric. */
+export type MoveSums = Record<Metric, MetricSums>;
+
+const emptySums = () =>
+  Object.fromEntries(METRICS.map((m) => [m, { n: 0, sum: 0, sumsq: 0 }])) as MoveSums;
+
+/** Each move's effect from its sums over all chunks so far (P(best) still unset). */
+export function effectsFromSums(keys: string[], sums: Map<string, MoveSums>): DeepEffect[] {
+  return keys.map((key) => {
+    const s = sums.get(key) ?? emptySums();
     const e = {
       key,
-      seasons: sums.title.n,
-      title: deltaOf(sums.title),
-      playoffs: deltaOf(sums.playoffs),
-      seed1: deltaOf(sums.seed1),
-      bye: deltaOf(sums.bye),
-      wins: deltaOf(sums.wins),
+      seasons: s.title.n,
+      title: deltaOf(s.title),
+      playoffs: deltaOf(s.playoffs),
+      seed1: deltaOf(s.seed1),
+      bye: deltaOf(s.bye),
+      wins: deltaOf(s.wins),
     };
     const next = needsMore(e);
     return {
       ...e,
       pBetter: e.title.se > 0 ? normalCdf(e.title.d / e.title.se) : e.title.d > 0 ? 1 : 0,
-      pBest: null as number | null,
+      pBest: null,
       active: next.more,
       dropped: next.dropped,
     };
   });
+}
 
-  // P(best) among the moves not dropped, over the chunks they all have.
-  const contenders = effects.filter((e) => !e.dropped && e.seasons > 0);
-  const shared = chunks.filter((c) => contenders.every((e) => c.moves[e.key]));
-  if (contenders.length > 1 && shared.length >= 8) {
-    const means = shared.map((c) =>
-      contenders.map((e) => c.moves[e.key]!.title.sum / c.moves[e.key]!.title.n),
-    );
-    const wins = new Array<number>(contenders.length).fill(0);
-    const draw = rng(shared.length * 31 + contenders.length);
-    const B = 2000;
-    for (let b = 0; b < B; b++) {
-      const total = new Array<number>(contenders.length).fill(0);
-      for (let i = 0; i < shared.length; i++) {
-        const row = means[Math.floor(draw() * shared.length)]!;
-        for (let j = 0; j < row.length; j++) total[j]! += row[j]!;
-      }
-      let best = 0;
-      for (let j = 1; j < total.length; j++) if (total[j]! > total[best]!) best = j;
-      wins[best]!++;
-    }
-    contenders.forEach((e, j) => (e.pBest = wins[j]! / B));
-  } else if (contenders.length === 1) {
+/** At most this many moves compete for "best"; the rest are out of reach. */
+const MAX_CONTENDERS = 12;
+
+/**
+ * The moves that could still be the best: not dropped, and within three standard errors of
+ * the leader's title change (`among`: the keys that count, e.g. waiver moves only).
+ */
+export function contendersOf(effects: DeepEffect[], among?: Set<string>): DeepEffect[] {
+  const live = effects.filter((e) => !e.dropped && e.seasons > 0 && (!among || among.has(e.key)));
+  const top = live.reduce<DeepEffect | null>((b, e) => (!b || e.title.d > b.title.d ? e : b), null);
+  if (!top) return [];
+  const floor = top.title.d - 3 * top.title.se;
+  return live
+    .filter((e) => e.title.d + 3 * e.title.se >= floor)
+    .sort((a, b) => b.title.d - a.title.d)
+    .slice(0, MAX_CONTENDERS);
+}
+
+/**
+ * P(best) for the contenders, by resampling the chunks they all have (paired: a chunk number
+ * is the same seasons for every move); every other move gets 0. `titleMeans`: per contender,
+ * its mean title difference in each chunk.
+ */
+export function withPBest(
+  effects: DeepEffect[],
+  contenders: DeepEffect[],
+  titleMeans: Map<string, Map<number, number>>,
+): DeepEffect[] {
+  const outOfReach = () => {
+    for (const e of effects) if (e.seasons > 0 && !e.dropped) e.pBest = 0;
+  };
+  if (contenders.length === 1) {
+    outOfReach();
     contenders[0]!.pBest = 1;
+    return effects;
   }
+  if (contenders.length < 2) return effects;
+  const first = titleMeans.get(contenders[0]!.key) ?? new Map<number, number>();
+  const shared = [...first.keys()].filter((c) =>
+    contenders.every((e) => titleMeans.get(e.key)?.has(c)),
+  );
+  if (shared.length < 8) return effects;
+  outOfReach();
+  const means = shared.map((c) => contenders.map((e) => titleMeans.get(e.key)!.get(c)!));
+  const wins = new Array<number>(contenders.length).fill(0);
+  const draw = rng(shared.length * 31 + contenders.length);
+  const B = 2000;
+  for (let b = 0; b < B; b++) {
+    const total = new Array<number>(contenders.length).fill(0);
+    for (let i = 0; i < shared.length; i++) {
+      const row = means[Math.floor(draw() * shared.length)]!;
+      for (let j = 0; j < row.length; j++) total[j]! += row[j]!;
+    }
+    let best = 0;
+    for (let j = 1; j < total.length; j++) if (total[j]! > total[best]!) best = j;
+    wins[best]!++;
+  }
+  contenders.forEach((e, j) => (e.pBest = wins[j]! / B));
   return effects;
+}
+
+/** Each move's effect from the chunks so far (the same as the database's sums give). */
+export function combine(chunks: ChunkResult[], keys: string[]): DeepEffect[] {
+  const sums = new Map<string, MoveSums>();
+  const titleMeans = new Map<string, Map<number, number>>();
+  for (const key of keys) {
+    const acc = emptySums();
+    const byChunk = new Map<number, number>();
+    for (const c of chunks) {
+      const r = c.moves[key];
+      if (!r) continue;
+      for (const m of METRICS) {
+        acc[m].n += r[m].n;
+        acc[m].sum += r[m].sum;
+        acc[m].sumsq += r[m].sumsq;
+      }
+      byChunk.set(c.chunk, r.title.sum / r.title.n);
+    }
+    sums.set(key, acc);
+    titleMeans.set(key, byChunk);
+  }
+  const effects = effectsFromSums(keys, sums);
+  return withPBest(effects, contendersOf(effects), titleMeans);
 }
 
 /** The base run's odds for every team (the Outlook), weighted by each chunk's seasons. */

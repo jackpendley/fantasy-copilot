@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ChunkResult } from "@fantasy-copilot/fantasy-core";
-import { combine, combineOutlook, needsMore, MAX_SEASONS, MIN_SEASONS } from "@/lib/nba/deep-check";
+import {
+  combine,
+  combineOutlook,
+  contendersOf,
+  needsMore,
+  EARLY_SEASONS,
+  MAX_SEASONS,
+  MIN_SEASONS,
+} from "@/lib/nba/deep-check";
 
 // Synthetic chunks: per-season title differences with a known mean and spread.
 function chunk(
@@ -83,6 +91,51 @@ describe("deep move checks", () => {
     const [good, meh] = combine(chunks, ["good", "meh"]);
     expect(good!.pBest!).toBeGreaterThan(0.95);
     expect(meh!.pBest!).toBeLessThan(0.05);
+  });
+
+  it("stops a clearly worse move after 1,000 seasons, a merely worse one only at the minimum", () => {
+    const d = (x: number, se: number) => ({ d: x, se });
+    // 5 SE worse on both: done.
+    expect(needsMore({ seasons: EARLY_SEASONS, title: d(-0.05, 0.01), wins: d(-1, 0.2) })).toEqual({
+      more: false,
+      dropped: true,
+    });
+    // 3 SE worse: keeps going to the minimum; worse on title only: keeps going.
+    expect(
+      needsMore({ seasons: EARLY_SEASONS, title: d(-0.03, 0.01), wins: d(-0.6, 0.2) }).more,
+    ).toBe(true);
+    expect(needsMore({ seasons: EARLY_SEASONS, title: d(-0.05, 0.01), wins: d(0, 0.2) }).more).toBe(
+      true,
+    );
+    expect(
+      needsMore({ seasons: EARLY_SEASONS - 200, title: d(-0.05, 0.01), wins: d(-1, 0.2) }).more,
+    ).toBe(true);
+  });
+
+  it("pairs P(best) by chunk number across groups (separate chunk results, same seasons)", () => {
+    // Group A's and group B's chunks are posted separately but cover the same chunk numbers.
+    const chunks = Array.from({ length: 30 }, (_, i) => [
+      chunk(i, { good: { mean: 0.03, sd: 0.1 } }),
+      chunk(i, { meh: { mean: 0.0, sd: 0.1 } }),
+    ]).flat();
+    const [good, meh] = combine(chunks, ["good", "meh"]);
+    expect(good!.seasons).toBe(6000);
+    expect(good!.pBest!).toBeGreaterThan(0.95);
+    expect(meh!.pBest!).toBeLessThan(0.05);
+  });
+
+  it("only moves within reach of the leader compete for best; the rest get 0", () => {
+    const chunks = Array.from({ length: 30 }, (_, i) =>
+      chunk(i, {
+        a: { mean: 0.03, sd: 0.1 },
+        b: { mean: 0.029, sd: 0.1 },
+        far: { mean: -0.005, sd: 0.3 }, // behind, but not dropped
+      }),
+    );
+    const effects = combine(chunks, ["a", "b", "far"]);
+    expect(contendersOf(effects).map((e) => e.key)).toEqual(["a", "b"]);
+    expect(effects[2]!.pBest).toBe(0);
+    expect(effects[0]!.pBest! + effects[1]!.pBest!).toBeCloseTo(1, 9);
   });
 
   it("averages the Outlook over chunks by seasons", () => {

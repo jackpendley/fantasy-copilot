@@ -743,3 +743,36 @@
 - **Same rule everywhere:** the quick ranking, the IR plan note, the Outlook's `irCut` for every team, and the deep checks.
 - **Moves shows the cut per drop option** ("when Duren is back from IL, you'd drop X"), because it drives the rest-of-season number.
 - **Test:** the only point guard (fewest own starter points) stays, and the center whose backup covers his games goes.
+
+## ADR-058: deep checks of every move, in groups, most important first (2026-11-05)
+
+- **Refines ADR-053.**
+  - A job used to check only the top 15 moves. Anything else needed "Simulate this drop".
+  - Jack wants every number there without a click, kept current after any roster move.
+- **Moves in a job, in order:**
+  1. each Moves card's opening drop and the top 15 by the points estimate;
+  2. every other drop of the adds on Moves;
+  3. for the other evaluated adds (up to 45, the Free agents tab), their best 3 drops.
+
+  That's about 150–300 moves, and moves Jack asks for come first.
+
+- **Groups:** the moves are split into groups of 12. Each group has its own chunk counter and active set (`sim_groups`).
+  - A group's chunk replays the base on that chunk's seed, so every move stays paired with the base. This costs about 1/12 extra.
+  - A group may have a limited number of chunks out before its results come back:
+    - the opening groups go straight to the 4,000-season minimum;
+    - the others start with 6 chunks;
+    - later the limit grows with what a group has posted (at most 32).
+  - When every group is at its limit, the most important one takes more, so runners never sit idle.
+- **Earlier stop:** a move 4 SE worse than doing nothing on both title and wins stops after 1,000 seasons. This is most drops of a starter.
+  - The 2-SE rule still applies from 4,000 seasons, and close moves still run to ±0.5 title points or 20,000 seasons.
+- **P(best)** is computed among the moves within 3 SE of the leader (at most 12), paired by chunk number across groups. The rest get 0.
+- **Lean moves:** a move carries only the rosters it changes, plus the free agents it takes out of or puts into the base pool.
+  - It's built by patching the base: Jack's roster, his IR cut, and the pool. A full rebuild cost ~20 ms per move.
+  - A test checks the patch equals the full rebuild.
+  - Jobs from before still play, because `runChunk` also accepts the old shape.
+- **Vercel CPU and the database:**
+  - Each chunk's per-move sums are rows (`sim_move_sums`), and the base run's are in `sim_chunks`. The app sums them in SQL instead of reloading every chunk on every post.
+  - Runners post once per round.
+  - The checks are recomputed at most every 4 s, and whenever every chunk out is back.
+  - Jobs older than 2 days are deleted nightly.
+- **Runners:** 16 (from 8). Standard runners are free for a public repo, and GitHub Free allows 20 jobs at once.

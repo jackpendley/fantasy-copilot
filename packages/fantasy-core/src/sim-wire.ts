@@ -59,12 +59,44 @@ export function fromWire(
   };
 }
 
-/** A move as the worker plays it: the team's roster with it, and the free agents left. */
+/**
+ * A move as the worker plays it: the rosters it changes, and the free agents it takes out of
+ * the base pool or puts in (the pool stays sorted best first). Jobs queued before Nov 5 carry
+ * the moving team's `roster`, `irCut` and the whole pool instead.
+ */
 export interface WireMove {
   key: string;
-  roster: SimPlayer[];
+  teams?: { id: number; roster: SimPlayer[]; irCut?: number }[];
+  faOut?: number[];
+  faIn?: SimPlayer[];
+  roster?: SimPlayer[];
   irCut?: number;
-  freeAgents: SimPlayer[];
+  freeAgents?: SimPlayer[];
+}
+
+/** The season with a move made (`teamId`: the team a legacy move changes). */
+export function applyMove(base: WireInput, teamId: number, mv: WireMove): WireInput {
+  const changed = new Map((mv.teams ?? []).map((t) => [t.id, t]));
+  if (mv.roster) changed.set(teamId, { id: teamId, roster: mv.roster, irCut: mv.irCut });
+  const out = new Set(mv.faOut ?? []);
+  return {
+    ...base,
+    teams: base.teams.map((t) => {
+      const c = changed.get(t.id);
+      if (!c) return t;
+      const next = { ...t, roster: c.roster };
+      if (c.irCut != null) next.irCut = c.irCut;
+      else delete next.irCut;
+      return next;
+    }),
+    freeAgents:
+      mv.freeAgents ??
+      (out.size || mv.faIn?.length
+        ? [...base.freeAgents.filter((p) => !out.has(p.id)), ...(mv.faIn ?? [])].sort(
+            (x, y) => y.fppg - x.fppg,
+          )
+        : base.freeAgents),
+  };
 }
 
 /** One team's per-season outcomes the move checks compare. */
@@ -141,14 +173,7 @@ export function runChunk(
     moves: {},
   };
   for (const mv of moves) {
-    const w: WireInput = {
-      ...base,
-      teams: base.teams.map((t) =>
-        t.id === teamId ? { ...t, roster: mv.roster, irCut: mv.irCut } : t,
-      ),
-      freeAgents: mv.freeAgents,
-    };
-    const o = play(w).out;
+    const o = play(applyMove(base, teamId, mv)).out;
     result.moves[mv.key] = Object.fromEntries(
       METRICS.map((m) => {
         let sum = 0;

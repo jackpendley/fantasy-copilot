@@ -15,6 +15,7 @@ import {
   type MoveSimResult,
   type MoveSpec,
 } from "./move-sim";
+import { moveKey } from "./sim-moves";
 import type { StreamOption } from "./waivers";
 import { loadWaiverView } from "./waivers-view";
 
@@ -25,8 +26,7 @@ const KEY = "move-checks";
 const SHORTLIST = 6;
 const COOLDOWN_MS = 30 * 60_000;
 
-export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
-  `${o.add.player.id}:${o.drop?.id ?? ""}:${o.il?.id ?? ""}`;
+export { moveKey };
 
 interface Stored extends MoveSimResult {
   rosterKey: string;

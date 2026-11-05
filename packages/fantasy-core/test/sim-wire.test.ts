@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { simulateSeason, type SimInput, type SimPlayer, type SimTeam } from "../src/sim";
-import { fromWire, runChunk, toWire } from "../src/sim-wire";
+import { applyMove, fromWire, runChunk, toWire } from "../src/sim-wire";
 import type { Position } from "../src/slots";
 
 // Synthetic 8-team league (not real data), as in sim.test.ts.
@@ -93,5 +93,31 @@ describe("simulations over the wire", { timeout: 60_000 }, () => {
     };
     const r = runChunk(w, 2, [better], 1, 200, 4);
     expect(r.moves["add star"]!.wins.sum / 200).toBeGreaterThan(0.3);
+  });
+
+  it("a lean move (changed rosters, pool in and out) plays exactly like the whole-pool form", () => {
+    const w = toWire(league());
+    const roster = w.teams[1]!.roster;
+    const legacy = {
+      key: "m",
+      roster: [...roster.slice(0, 11), { ...w.freeAgents[0]! }],
+      freeAgents: [{ ...roster[11]! }],
+    };
+    const lean = {
+      key: "m",
+      teams: [{ id: 2, roster: legacy.roster }],
+      faOut: [w.freeAgents[0]!.id],
+      faIn: [{ ...roster[11]! }],
+    };
+    expect(applyMove(w, 2, lean)).toEqual(applyMove(w, 2, legacy));
+    expect(runChunk(w, 2, [lean], 2, 40, 2)).toEqual(runChunk(w, 2, [legacy], 2, 40, 2));
+  });
+
+  it("keeps the pool sorted best first when a move puts players in", () => {
+    const w = toWire(league());
+    const low = { id: 1, eligible: ["PG" as const], proTeamId: 1, fppg: 1, gp: 80, sd: 0.1 };
+    const top = { ...low, id: 2, fppg: 99 };
+    const out = applyMove(w, 2, { key: "x", faIn: [low, top] }).freeAgents.map((p) => p.id);
+    expect(out).toEqual([2, 999, 1]);
   });
 });

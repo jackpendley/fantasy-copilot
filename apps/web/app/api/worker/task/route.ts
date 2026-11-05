@@ -1,11 +1,17 @@
 // Worker tasks besides simulations (lib/nba/worker-tasks.ts). GET claims the next one (204
-// when there's none); POST returns its result, or its error.
+// when there's none); POST returns its result, or its error, and stores the result where
+// its pages read it.
 
 import { NextResponse, type NextRequest } from "next/server";
+import type { WireMove } from "@fantasy-copilot/fantasy-core";
+import { storeBuiltJob } from "@/lib/nba/sim-jobs";
+import type { StoredIdea } from "@/lib/nba/trade-task";
 import { claimTask, finishTask } from "@/lib/nba/worker-tasks";
+import { writeView } from "@/lib/view-cache";
 import { workerAuthorized } from "@/lib/worker-auth";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
   if (!workerAuthorized(request))
@@ -25,6 +31,16 @@ export async function POST(request: NextRequest) {
   if (!body?.id || (body.result === undefined && !body.error)) {
     return NextResponse.json({ error: "id and result (or error) are required" }, { status: 400 });
   }
-  const ok = await finishTask(body.id, body.result, body.error);
-  return NextResponse.json({ ok });
+  const task = await finishTask(body.id, body.error);
+  if (!task || body.error) return NextResponse.json({ ok: Boolean(task) });
+  if (task.kind === "trade-search") {
+    await writeView("trade-targets", task.fingerprint, body.result as StoredIdea[], 0);
+  } else if (task.kind === "sim-build") {
+    const job = await storeBuiltJob(
+      body.id,
+      body.result as { moves: WireMove[]; leading: number; others: number },
+    );
+    return NextResponse.json({ ok: true, job });
+  }
+  return NextResponse.json({ ok: true });
 }

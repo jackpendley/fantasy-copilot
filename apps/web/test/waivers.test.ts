@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { decodeWire, encodeWire } from "@/lib/wire-json";
 import {
   parseSettings,
   parseTeams,
@@ -271,5 +272,20 @@ describe("waiverAnalysis by lineup fit", () => {
     for (let i = 1; i < options.length; i++) {
       expect(options[i - 1]!.netWins).toBeGreaterThanOrEqual(options[i]!.netWins);
     }
+  });
+});
+
+describe("the waiver analysis as a worker task", () => {
+  it("gives exactly the same result from its JSON input (Maps and Sets included)", () => {
+    const inputs = {
+      ...base,
+      freeAgents: [fa(1, "Daily Guard", 99, 22, ["PG", "SG"]), fa(2, "Idle Big", 98, 30, ["C"])],
+      lockedToday: new Set([roster[0]!.id]),
+      week: { ...base.week, availableFrom: new Map([[1, 2]]), outUntil: new Map([[2, 3]]) },
+      season: valueContext(games, settings.slotCounts, 1, 160, 20, new Map([[2, { outUntil: 3 }]])),
+    };
+    const wire = JSON.parse(JSON.stringify(encodeWire(inputs)));
+    const strip = (x: unknown) => JSON.parse(JSON.stringify(encodeWire(x)));
+    expect(strip(waiverAnalysis(decodeWire(wire)))).toEqual(strip(waiverAnalysis(inputs)));
   });
 });

@@ -6,7 +6,8 @@ import type { SimPlayer, WireInput, WireMove } from "@fantasy-copilot/fantasy-co
 import { LAST_SCORING_PERIOD } from "./calendar";
 import { SIM_FREE_AGENTS, simFreeAgents, simRoster } from "./outlook";
 import { valueContext } from "./trade";
-import { shownMoves, type StreamOption, type waiverAnalysis } from "./waivers";
+import { absences } from "./availability";
+import { shownMoves, waiverAnalysis, type StreamOption, type WaiverInputs } from "./waivers";
 
 /** Moves played together on the same chunks of seasons (one base run per chunk). */
 export const GROUP_SIZE = 12;
@@ -257,4 +258,52 @@ export function buildTradeMoves(
     });
   }
   return out;
+}
+
+/** Everything a simulation job's moves are built from (the worker's sim-build task input). */
+export interface SimBuildInput extends Omit<MoveBuildArgs, "injured"> {
+  /** The add-and-drop analysis' inputs (lib/nba/waivers-view.ts). */
+  waiver: WaiverInputs;
+  /** Moves asked for, ahead of the rest. */
+  extraKeys: string[];
+  /** Known absences (the season setup's), and the injury feed for the adds' own. */
+  injured: Map<number, { outUntil: number }>;
+  injuries: Parameters<typeof absences>[1];
+  teams: { id: number; roster: RosterPlayer[] }[];
+  ideas: TradeSpec[];
+}
+
+/**
+ * A job's moves, in order: run the add-and-drop analysis, pick the moves to check
+ * (jobMoveOptions), then build each as a patch, trade ideas before the Free agents tab's moves.
+ */
+export function buildSimMoves(i: SimBuildInput): {
+  moves: WireMove[];
+  leading: number;
+  others: number;
+} {
+  const analysis = waiverAnalysis(i.waiver);
+  const { options, leading, others } = jobMoveOptions(analysis, i.extraKeys);
+  // The adds' own absences (they're not on a roster, so not in the setup's).
+  const injured = new Map(i.injured);
+  const adds = options.map((o) => o.add.player);
+  for (const [id, a] of absences(adds, i.injuries, i.fromDay)) injured.set(id, a);
+  const args: MoveBuildArgs = {
+    base: i.base,
+    teamId: i.teamId,
+    roster: i.roster,
+    freeAgents: i.freeAgents,
+    games: i.games,
+    slotCounts: i.slotCounts,
+    fromDay: i.fromDay,
+    regularWeeks: i.regularWeeks,
+    injured,
+  };
+  const waiver = buildWireMoves(args, options);
+  const trades = buildTradeMoves({ ...args, teams: i.teams }, i.ideas);
+  return {
+    moves: [...waiver.slice(0, others), ...trades, ...waiver.slice(others)],
+    leading,
+    others,
+  };
 }

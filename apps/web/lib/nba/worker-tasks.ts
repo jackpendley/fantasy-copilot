@@ -5,14 +5,10 @@ import "server-only";
 // queued one of the same kind.
 
 import { db, dbConfigured } from "@/lib/db";
-import { writeView } from "@/lib/view-cache";
 import { dispatchWorker } from "./github-dispatch";
-import type { StoredIdea } from "./trade-task";
 
-export type TaskKind = "trade-search";
-
-/** Where each kind's result goes. */
-const RESULT_VIEW: Record<TaskKind, string> = { "trade-search": "trade-targets" };
+/** trade-search: the trade idea search; sim-build: a simulation job's moves (ADR-059). */
+export type TaskKind = "trade-search" | "sim-build";
 
 /** A claimed task runs at most this long before it's handed out again. */
 const LEASE = "5 minutes";
@@ -57,9 +53,16 @@ export async function taskPending(kind: TaskKind): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** Any task waiting (for the worker's first question). */
+/**
+ * Any task waiting or being run (for the worker's first question; simulation runners also wait
+ * for a sim-build being run, whose job is theirs).
+ */
 export async function hasTasks(): Promise<boolean> {
-  const rows = await db()`select 1 from worker_tasks where status = 'queued' limit 1`;
+  const rows = await db()`
+    select 1 from worker_tasks where status = 'queued'
+      or (status = 'running' and started_at > now() - ${LEASE}::interval)
+    limit 1
+  `;
   return rows.length > 0;
 }
 
@@ -84,17 +87,25 @@ export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: 
   return t ?? null;
 }
 
-/** Store a task's result where its pages read it, and close it. */
-export async function finishTask(id: number, result: unknown, error?: string): Promise<boolean> {
+/**
+ * Close a task; its kind and fingerprint (null when it wasn't running, e.g. handed out again
+ * since). Its input is cleared (it can be megabytes; Neon's free plan has 0.5 GB), except the
+ * small part a sim-build's result still needs (`keep`, read by the caller first).
+ */
+export async function finishTask(
+  id: number,
+  error?: string,
+): Promise<{ kind: TaskKind; fingerprint: string } | null> {
   const [t] = await db()<{ kind: TaskKind; fingerprint: string }[]>`
     update worker_tasks set status = ${error ? "failed" : "done"}, finished_at = now(),
-      error = ${error ?? null}
+      error = ${error ?? null},
+      input = case when kind = 'sim-build'
+        then jsonb_build_object('ctx', input->'ctx', 'base', input->'build'->'base')
+        else '{}'::jsonb end
     where id = ${id} and status = 'running'
     returning kind, fingerprint
   `;
-  if (!t) return false;
-  if (!error) await writeView(RESULT_VIEW[t.kind], t.fingerprint, result as StoredIdea[], 0);
-  return true;
+  return t ?? null;
 }
 
 /** Delete finished tasks older than two days (nightly). */

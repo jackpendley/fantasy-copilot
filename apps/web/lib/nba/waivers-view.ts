@@ -18,14 +18,27 @@ import { rosterLocked } from "./roster";
 import { valueContext } from "./trade";
 import { bestPerGame } from "./best";
 import { rosteredPercentile } from "./projection";
-import { waiverAnalysis, waiverCandidates } from "./waivers";
+import { waiverAnalysis, waiverCandidates, type WaiverInputs } from "./waivers";
 import { memoAsync } from "@/lib/fetch-memo";
 
 /**
  * Moves' data, kept 30 seconds per server instance so switching tabs and coming back doesn't
  * redo the add-and-drop analysis (forgetResponses(), e.g. before an add, clears it).
  */
-export const loadWaiverView = memoAsync(30_000, () => gameDate(), readWaiverView);
+export const loadWaiverView = memoAsync(
+  30_000,
+  () => gameDate(),
+  async () => {
+    const v = await loadWaiverInputs();
+    return { ...v, analysis: waiverAnalysis(v.inputs) };
+  },
+);
+
+/**
+ * Everything the add-and-drop analysis needs, without running it (the worker runs it for the
+ * simulation jobs, docs/COMPUTE.md). Kept 30 seconds per instance like the view.
+ */
+export const loadWaiverInputs = memoAsync(30_000, () => gameDate(), readWaiverInputs);
 
 /** Which teams' games today have started (an add can't play in them). */
 function startedTeams(data: Awaited<ReturnType<typeof loadLeague>>, sp: number, now: Date) {
@@ -74,7 +87,7 @@ export async function loadFreeAgentPool(now = new Date()) {
   };
 }
 
-async function readWaiverView(now = new Date()) {
+async function readWaiverInputs(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
   const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
@@ -119,7 +132,7 @@ async function readWaiverView(now = new Date()) {
     data.scoreboard,
     now,
   );
-  const analysis = waiverAnalysis({
+  const inputs: WaiverInputs = {
     roster: data.ahead.me.roster,
     leaving: view.myPending.drops,
     freeAgents,
@@ -143,7 +156,7 @@ async function readWaiverView(now = new Date()) {
       data.settings.regularSeasonWeeks,
       absences([...data.ahead.me.roster, ...freeAgents.map((f) => f.player)], data.injuries, sp),
     ),
-  });
+  };
   const addsCap = data.settings.addsPerWeek ?? 3;
   const addsUsed = data.me.activity?.addsByPeriod[view.mp] ?? 0;
   return {
@@ -152,7 +165,7 @@ async function readWaiverView(now = new Date()) {
     data,
     view,
     freeAgents,
-    analysis,
+    inputs,
     lockedToday,
     rosterLocked: locked,
     addsCap,

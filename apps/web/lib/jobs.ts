@@ -9,7 +9,13 @@ import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
 import { gamedayAlerts } from "./nba/alerts";
 import { scoringPeriodForDate, LAST_SCORING_PERIOD, gameDate } from "./nba/calendar";
-import { loadFreeAgents, loadLeague } from "./nba/data";
+import { loadFreeAgents, loadLeague, nbaSchedule } from "./nba/data";
+import {
+  AFTER_LAST_TIP_MS,
+  BEFORE_FIRST_TIP_MS,
+  TIMELINE_AFTER_MS,
+  gamedayPlan,
+} from "./nba/gameday-plan";
 import { refreshBlend } from "./nba/accuracy";
 import { refreshPbpPlayers } from "./nba/advanced";
 import { refreshDefense } from "./nba/defense";
@@ -71,13 +77,8 @@ async function step<T>(
   }
 }
 
-/** Window around today's games when the 5-minute checks do real work. */
-const BEFORE_FIRST_TIP_MS = 90 * 60_000;
 /** Games tipping within this window get their props captured as the closing line. */
 const CLOSE_WINDOW_MS = 90 * 60_000;
-const AFTER_LAST_TIP_MS = 15 * 60_000;
-/** Games are surely over this long after the last tip. */
-const TIMELINE_AFTER_MS = 3.5 * 3600_000;
 
 /**
  * Every 5 minutes: re-run the outlook if a roster move landed, then log status changes and
@@ -124,6 +125,22 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       return { watch: "error" };
     }),
   );
+
+  // What's due this run, from the schedule (cached): most runs need no league at all.
+  const schedule = await m.step("schedule", () =>
+    nbaSchedule(Number(process.env.ESPN_SEASON || 2027)),
+  );
+  const plan = gamedayPlan({
+    t: now.getTime(),
+    minute: now.getUTCMinutes(),
+    etHour: etHour(now),
+    tips: schedule.filter((g) => g.scoringPeriodId === sp).map((g) => g.date),
+    moveSeen: watch.watch !== "quiet",
+  });
+  if (!plan.load) {
+    if (plan.snapshot) await m.step("snapshot", () => snapshotIfMissing(sp, now));
+    return { ...watch, skipped: "nothing due" };
+  }
 
   let data;
   try {
@@ -186,21 +203,19 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
 
   // Today's win-chance point, if the nightly job couldn't record it (before the first tip only,
   // so it's still a pregame snapshot).
-  if (t < Math.min(...tips) && etHour(now) >= 8)
-    await m.step("snapshot", () => snapshotIfMissing(sp, now));
+  if (plan.snapshot) await m.step("snapshot", () => snapshotIfMissing(sp, now));
 
   // Availability forward test (MODEL_CARD 2026-10-30): the official injury report and ESPN's
   // feed for every listed player, from 9 AM on game days (its midday snapshot comes long before
-  // the game window opens).
-  const availability =
-    etHour(now) >= 9 && t <= Math.max(...tips) + AFTER_LAST_TIP_MS
-      ? await m.step("availability", () =>
-          logAvailabilitySources(data, date, now).catch(async (e: Error) => {
-            await log("official-report", "error", e.message);
-            return { error: e.message };
-          }),
-        )
-      : null;
+  // the game window opens): every 10 minutes before the window, every 5 in it (gamedayPlan).
+  const availability = plan.availability
+    ? await m.step("availability", () =>
+        logAvailabilitySources(data, date, now).catch(async (e: Error) => {
+          await log("official-report", "error", e.message);
+          return { error: e.message };
+        }),
+      )
+    : null;
 
   const morningNews =
     availability && "rosteredNews" in availability ? availability.rosteredNews : 0;

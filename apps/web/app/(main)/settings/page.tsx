@@ -45,11 +45,45 @@ async function simulationCpu() {
 }
 const minutes = (s: number) => `${(s / 60).toFixed(s < 600 ? 1 : 0)} min`;
 
+/** Vercel CPU of scheduled and background work over the last 24 hours, by job and step. */
+async function computeUse() {
+  if (!dbConfigured()) return null;
+  const [bySource, bySteps, [jobs]] = await Promise.all([
+    db()<{ source: string; runs: number; ms: number; unchanged: number; known: number }[]>`
+      select source,
+        (count(*) + coalesce(sum((detail->'held'->>'runs')::int), 0))::int as runs,
+        (sum(cpu_ms) + coalesce(sum((detail->'held'->>'ms')::int), 0))::int as ms,
+        count(*) filter (where detail->>'leagueChanged' = 'false')::int as unchanged,
+        count(*) filter (where detail->>'leagueChanged' in ('true', 'false'))::int as known
+      from cpu_log where ran_at > now() - interval '24 hours'
+      group by source order by ms desc
+    `,
+    db()<{ source: string; step: string; ms: number }[]>`
+      select source, step, sum(ms)::int as ms from (
+        select source, e.key as step, e.value::int as ms
+        from cpu_log, jsonb_each_text(steps) e where ran_at > now() - interval '24 hours'
+        union all
+        select source, e.key, e.value::int
+        from cpu_log, jsonb_each_text(coalesce(detail->'held'->'steps', '{}')) e
+        where ran_at > now() - interval '24 hours'
+      ) s group by 1, 2 order by 3 desc
+    `,
+    db()<{ jobs: number; ms: number | null; secs: number | null; moves: number | null }[]>`
+      select count(*)::int as jobs, avg(vercel_cpu_ms)::float as ms,
+        avg(extract(epoch from updated_at - created_at)) filter (where status = 'done')::float as secs,
+        avg(jsonb_array_length(moves))::float as moves
+      from sim_jobs where created_at > now() - interval '24 hours'
+    `,
+  ]);
+  return { bySource, bySteps, jobs };
+}
+
 export default async function SettingsPage() {
-  const [jobs, status, cpu] = await Promise.all([
+  const [jobs, status, cpu, compute] = await Promise.all([
     recentJobs().catch(() => []),
     jobStatus().catch(() => []),
     simulationCpu().catch(() => null),
+    computeUse().catch(() => null),
   ]);
   const cpuOf = (job: string) => cpu?.get(job) ?? { month: 0, day: 0 };
   const cpuTotal = ["move-sim", "outlook-sim", "trade-sim"].reduce((a, j) => a + cpuOf(j).month, 0);
@@ -119,6 +153,50 @@ export default async function SettingsPage() {
           ))}
         </CardContent>
       </Card>
+      {compute && compute.bySource.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Vercel CPU, last 24 hours</CardTitle>
+            <CardDescription>
+              Scheduled and background work, by job and step (pages are in Vercel → Observability).
+              Hobby allows 240 CPU minutes in any 30 days: 8 a day. Figures can include other work
+              running on the same server at the time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm tabular-nums">
+            {compute.bySource.map((r) => (
+              <div key={r.source}>
+                <div className="flex justify-between gap-2 font-medium">
+                  <span>{r.source}</span>
+                  <span>
+                    {minutes(r.ms / 1000)} · {r.runs} runs ·{" "}
+                    {Math.round(r.ms / Math.max(1, r.runs))} ms each
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {compute.bySteps
+                    .filter((x) => x.source === r.source)
+                    .slice(0, 6)
+                    .map((x) => `${x.step} ${(x.ms / 1000).toFixed(1)} s`)
+                    .join(" · ")}
+                  {r.known > 0 &&
+                    ` · league unchanged since the last run in ${Math.round((100 * r.unchanged) / r.known)}% of runs`}
+                </p>
+              </div>
+            ))}
+            {compute.jobs && compute.jobs.jobs > 0 && (
+              <p className="border-t pt-1 text-xs text-muted-foreground">
+                Simulation jobs: {compute.jobs.jobs}, ~{Math.round(compute.jobs.moves ?? 0)} moves
+                each; the worker&apos;s requests cost Vercel{" "}
+                {((compute.jobs.ms ?? 0) / 1000).toFixed(1)} s per job
+                {compute.jobs.secs != null &&
+                  `; done in ${(compute.jobs.secs / 60).toFixed(1)} min on average`}
+                .
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {cpu && (
         <Card>
           <CardHeader>

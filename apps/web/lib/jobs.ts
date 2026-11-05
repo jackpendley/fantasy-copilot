@@ -3,6 +3,7 @@ import "server-only";
 
 import { EspnError } from "@fantasy-copilot/espn";
 import { fetchDarko } from "@fantasy-copilot/nba-data";
+import { CpuMeter, recordCpu } from "./cpu";
 import { db } from "./db";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
@@ -27,6 +28,7 @@ import { enqueueSimJob, pruneSimJobs } from "./nba/sim-jobs";
 import { refreshMoveChecks } from "./nba/move-checks";
 import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
+import { fingerprintOf } from "./view-cache";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -82,19 +84,48 @@ const TIMELINE_AFTER_MS = 3.5 * 3600_000;
  * touching the database unless a move is recent (Neon sleeps).
  */
 export async function gamedayJob(now = new Date()): Promise<Record<string, unknown>> {
+  const m = new CpuMeter();
+  let result: Record<string, unknown> = {};
+  try {
+    result = await gamedayRun(now, m);
+    return result;
+  } finally {
+    // A quiet run (no move, no news logging, outside the game window) leaves Neon asleep: its
+    // CPU joins the next stored row.
+    const quiet =
+      result.watch === "quiet" &&
+      !result.availability &&
+      !result.timeline &&
+      !result.darko &&
+      result.skipped != null;
+    await recordCpu(
+      "gameday",
+      m,
+      { skipped: result.skipped ?? null, leagueChanged: result.leagueChanged ?? null },
+      quiet,
+    );
+  }
+}
+
+/** The league's fingerprint at the last gameday run on this instance (did anything change?). */
+let lastLeague: string | null = null;
+
+async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknown>> {
   const date = gameDate(now);
   const sp = scoringPeriodForDate(date);
   if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
 
   // Any league roster move re-runs the season outlook within a few minutes, game day or not.
-  const watch = await rosterWatch(now).catch(async (e: Error) => {
-    await log("roster-watch", "error", e.message).catch(() => {});
-    return { watch: "error" };
-  });
+  const watch = await m.step("watch", () =>
+    rosterWatch(now).catch(async (e: Error) => {
+      await log("roster-watch", "error", e.message).catch(() => {});
+      return { watch: "error" };
+    }),
+  );
 
   let data;
   try {
-    data = await loadLeague(sp, date);
+    data = await m.step("league", () => loadLeague(sp, date));
   } catch (e) {
     if (e instanceof EspnError && e.status === 401) {
       await sendAlertOnce(`sync-fail:${date}`, {
@@ -108,13 +139,24 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   }
 
   // DARKO publishes once a day at no fixed time: look hourly, game day or not.
-  const darko = await darkoCheck(now, data, sp).catch(async (e: Error) => {
-    await log("darko", "error", errorText(e)).catch(() => {});
-    return null;
-  });
+  // Rosters, slots and injury news: unchanged since this instance's last run means the work
+  // below repeats on the same data (docs/COMPUTE.md measures how often).
+  const fp = fingerprintOf([
+    data.teams.map((t) => [t.id, t.roster.map((p) => [p.id, p.slot, p.injuryStatus])]),
+    data.injuries.map((i) => [i.playerId, i.status, i.returnDate ?? null]),
+  ]);
+  const leagueChanged = lastLeague == null ? null : fp !== lastLeague;
+  lastLeague = fp;
+
+  const darko = await m.step("darko", () =>
+    darkoCheck(now, data, sp).catch(async (e: Error) => {
+      await log("darko", "error", errorText(e)).catch(() => {});
+      return null;
+    }),
+  );
 
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
-  if (!games.length) return { ...watch, darko, skipped: "no games today" };
+  if (!games.length) return { ...watch, leagueChanged, darko, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
 
@@ -124,37 +166,43 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     t >= Math.min(...tips) &&
     t <= Math.max(...tips) + TIMELINE_AFTER_MS &&
     now.getUTCMinutes() % 15 < 5
-      ? await step("matchup-timeline", () => recordTimeline(data, sp))
+      ? await m.step("timeline", () => step("matchup-timeline", () => recordTimeline(data, sp)))
       : null;
 
   // Today's win-chance point, if the nightly job couldn't record it (before the first tip only,
   // so it's still a pregame snapshot).
-  if (t < Math.min(...tips) && etHour(now) >= 8) await snapshotIfMissing(sp, now);
+  if (t < Math.min(...tips) && etHour(now) >= 8)
+    await m.step("snapshot", () => snapshotIfMissing(sp, now));
 
   // Availability forward test (MODEL_CARD 2026-10-30): the official injury report and ESPN's
   // feed for every listed player, from 9 AM on game days (its midday snapshot comes long before
   // the game window opens).
   const availability =
     etHour(now) >= 9 && t <= Math.max(...tips) + AFTER_LAST_TIP_MS
-      ? await logAvailabilitySources(data, date, now).catch(async (e: Error) => {
-          await log("official-report", "error", e.message);
-          return { error: e.message };
-        })
+      ? await m.step("availability", () =>
+          logAvailabilitySources(data, date, now).catch(async (e: Error) => {
+            await log("official-report", "error", e.message);
+            return { error: e.message };
+          }),
+        )
       : null;
 
   const morningNews =
     availability && "rosteredNews" in availability ? availability.rosteredNews : 0;
   // New injury news changes trade values: refresh the stored trade ideas.
   const refreshTrades = () =>
-    refreshTradeTargets().catch(async (e: Error) => {
-      await log("trade-targets", "error", e.message);
-      return null;
-    });
+    m.step("trades", () =>
+      refreshTradeTargets().catch(async (e: Error) => {
+        await log("trade-targets", "error", e.message);
+        return null;
+      }),
+    );
 
   if (t < Math.min(...tips) - BEFORE_FIRST_TIP_MS || t > Math.max(...tips) + AFTER_LAST_TIP_MS) {
     const trades = morningNews ? await refreshTrades() : null;
     return {
       ...watch,
+      leagueChanged,
       darko,
       timeline,
       availability,
@@ -163,20 +211,22 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     };
   }
 
-  const { events, newEvents } = await logStatusEvents(data, date);
+  const { events, newEvents } = await m.step("status", () => logStatusEvents(data, date));
   const trades = newEvents + morningNews ? await refreshTrades() : null;
 
   // Closing lines: re-captured every 5 minutes until tip for games starting soon.
   const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
   const market = closing.length
-    ? await collectMarketData(closing, date.replace(/-/g, ""), "close", now, {
-        players: new Map(data.ahead.teams.flatMap((t) => t.roster).map((p) => [p.id, p])),
-        scoring: data.settings.scoring,
-        sp,
-      }).catch(async (e) => {
-        await log("market-data", "error", (e as Error).message);
-        return null;
-      })
+    ? await m.step("market", () =>
+        collectMarketData(closing, date.replace(/-/g, ""), "close", now, {
+          players: new Map(data.ahead.teams.flatMap((t) => t.roster).map((p) => [p.id, p])),
+          scoring: data.settings.scoring,
+          sp,
+        }).catch(async (e) => {
+          await log("market-data", "error", (e as Error).message);
+          return null;
+        }),
+      )
     : null;
 
   const board = buildDayBoard({
@@ -204,6 +254,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   const result = {
     date,
     ...watch,
+    leagueChanged,
     darko,
     timeline,
     closingProps: market?.props ?? 0,
@@ -220,42 +271,50 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
 
 /** Once a day, before the games: re-run the season outlook with yesterday's results. */
 export async function nightlyJob(): Promise<Record<string, unknown>> {
+  const m = new CpuMeter();
+  // Each step's CPU too (lib/cpu.ts).
+  const metered = <T>(job: string, run: () => Promise<T>, retries: number[] = []) =>
+    m.step(job, () => step(job, run, retries));
   try {
     // Before today's games: this week's win chance, for the matchup page's chart. Two retries
     // (a transient ESPN or network error would otherwise leave a day off the chart); the
     // 5-minute job tries again before the first tip if it's still missing.
-    const matchup = await step("matchup-snapshot", () => recordMatchupSnapshot(), [20_000, 60_000]);
+    const matchup = await metered(
+      "matchup-snapshot",
+      () => recordMatchupSnapshot(),
+      [20_000, 60_000],
+    );
     // Every league matchup's state, for calibrating the weekly win probability.
-    const states = await step("matchup-states", () => recordMatchupStates(), [20_000]);
+    const states = await metered("matchup-states", () => recordMatchupStates(), [20_000]);
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
     // deep move checks arrive within minutes), otherwise here.
     const queued = workerEnabled()
-      ? await step("sim-job", () => enqueueSimJob(null).then((id) => ({ job: id })))
+      ? await metered("sim-job", () => enqueueSimJob(null).then((id) => ({ job: id })))
       : null;
     const { scoringPeriod, teams } = queued
       ? await latestOutlook().then((r) => ({
           scoringPeriod: r?.scoring_period ?? 0,
           teams: r?.results ?? [],
         }))
-      : await runOutlook();
+      : await m.step("outlook", () => runOutlook());
     // A new day's projections: have the trade ideas ready for the first visit.
-    const trades = await step("trade-targets", () => refreshTradeTargets());
-    const moves = queued ? null : await step("move-checks", () => refreshMoveChecks());
+    const trades = await metered("trade-targets", () => refreshTradeTargets());
+    const moves = queued ? null : await metered("move-checks", () => refreshMoveChecks());
     // PBP Stats season numbers for the player cards (this season and last).
     const season = Number(process.env.ESPN_SEASON || 2027);
-    const pbp = await step("pbp-players", () => refreshPbpPlayers([season, season - 1]));
+    const pbp = await metered("pbp-players", () => refreshPbpPlayers([season, season - 1]));
     // Old simulation jobs (each holds its moves and chunks): the last two days are kept.
-    const simJobsPruned = await step("sim-prune", () => pruneSimJobs());
+    const simJobsPruned = await metered("sim-prune", () => pruneSimJobs());
     // The league's roster moves, for the team pages' move history (ADR-056).
-    const transactions = await step("transactions", () =>
+    const transactions = await metered("transactions", () =>
       syncTransactions(
         Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD),
       ),
     );
     // Morning lines and the day's DARKO projections, for the model. Never fails the job.
-    const market = await step("market-data", () => collectToday("morning", true));
+    const market = await metered("market-data", () => collectToday("morning", true));
     // Opponent defense by position from every result so far (after yesterday's box scores).
-    const defense = await step("defense", () => refreshDefense());
+    const defense = await metered("defense", () => refreshDefense());
     const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
     const result = {
       scoringPeriod,
@@ -272,6 +331,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       ...market,
     };
     await log("nightly", "ok", JSON.stringify(result));
+    await recordCpu("nightly", m);
     return result;
   } catch (e) {
     await log("nightly", "error", errorText(e));

@@ -8,6 +8,7 @@ import "server-only";
 
 import { after } from "next/server";
 import { fetchLeague, parseTransactions, type LeagueTransaction } from "@fantasy-copilot/espn";
+import { CpuMeter, recordCpu } from "@/lib/cpu";
 import { db } from "@/lib/db";
 import { forgetResponses } from "@/lib/fetch-memo";
 import { espnConfig } from "@/lib/env";
@@ -196,6 +197,7 @@ async function refreshVercel(trigger?: string | null) {
  * refresh the trade ideas; log the outcome (nobody is waiting on a response).
  */
 export async function refreshLogged(trigger?: string | null) {
+  const m = new CpuMeter();
   if (workerEnabled()) {
     try {
       const last = await latestOutlook();
@@ -205,19 +207,21 @@ export async function refreshLogged(trigger?: string | null) {
           : last
             ? await describeMoves(last.run_at, last.scoring_period).catch(() => null)
             : null;
-      await record("sim-job", "ok", `queued job ${await enqueueSimJob(label)}`);
+      await record("sim-job", "ok", `queued job ${await enqueueSimJob(label, [], m)}`);
     } catch (e) {
       await record("sim-job", "error", (e as Error).message);
-      await refreshVercel(trigger);
+      await m.step("outlook", () => refreshVercel(trigger));
     }
   } else {
-    await refreshVercel(trigger);
+    await m.step("outlook", () => refreshVercel(trigger));
   }
   // Rosters changed: have the trade ideas ready before a visit. (Waiver moves are re-checked
   // by the nightly run; simulations are too costly to repeat after every league move.)
   try {
-    if (await refreshTradeTargets()) await record("trade-targets", "ok", "refreshed");
+    if (await m.step("trades", () => refreshTradeTargets()))
+      await record("trade-targets", "ok", "refreshed");
   } catch (e) {
     await record("trade-targets", "error", (e as Error).message);
   }
+  await recordCpu("roster-move", m, { trigger: trigger ?? null });
 }

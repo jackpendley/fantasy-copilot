@@ -564,6 +564,12 @@ A3 beats B0 but not B1, so it fails the gate.
 
 **Ships only if** the interval is entirely below 0. The first evaluation runs once there are ≥1,500 non-Out rows; one evaluation, no peeking before then.
 
+**Note (2026-11-05, no rows evaluated yet):** to save Vercel CPU (docs/COMPUTE.md), Jack approved logging every 10 minutes before the game window opens (90 min before the first tip); it stays every 5 minutes in the window.
+
+- **Official reports** come every 15 minutes, and each carries its printed time, so every report is still read and placed by that time.
+- **The pre-tip cutoff** (tip − 1 h) is inside the window, so it's unchanged.
+- **The only effect:** the midday cutoff's ESPN observation can be up to 10 minutes old instead of 5. This works slightly against the baseline, and is recorded here before any evaluation.
+
 ## Pre-registration: day-to-day players on later days (2026-11-02, before any run)
 
 **Question:** how likely is a player listed day-to-day today to play his team's games on the next few days?

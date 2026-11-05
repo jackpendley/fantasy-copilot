@@ -136,6 +136,32 @@ Vercel is ~3–4× slower than the local profile.
 
 That's under, but close to, the 8 min a day Hobby sustains. Next: build the job's inputs on the worker (−~2 min a day), and skip the league load when no step needs it (−~1 min a day).
 
+**After #89–#94 (Nov 5, 22:00 UTC):**
+
+| Work                          | Vercel CPU                                                                                                            |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Roster move                   | **~0.9 s** (from ~5.3 s): inputs ~0.6 s, queueing the worker build ~0.1 s, queueing the trade search ~0.15 s          |
+| Gameday run, steady state     | ~0.55 s: league 0.35 s, availability 0.13 s, watch 0.08 s; the league was unchanged since the last run in 78% of runs |
+| The worker's requests per job | ~3.9 s                                                                                                                |
+
+- **On the worker:** the job build (`sim-build`) takes 2.8 s and the trade search 9.6 s.
+- **Projection:**
+
+| Source          | Per day       |
+| --------------- | ------------- |
+| Gameday         | ~2.7 min      |
+| Roster moves    | ~0.3 min      |
+| Worker requests | ~1 min        |
+| Pages           | ~1.5 min      |
+| **Total**       | **≈ 5.5 min** |
+
+Still above the ~4 min a day needed until ~Nov 19.
+
+- **Remaining levers:**
+  - availability logging every 10 min instead of 5 outside the game window (it's a pre-registered test's cadence: Jack's call);
+  - skip the league load at night;
+  - fewer, larger result posts from the worker.
+
 **Simulation worker (Nov 5, 19:29 UTC):**
 
 - 288 moves (273 drops + 15 trade ideas);

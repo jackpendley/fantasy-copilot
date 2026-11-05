@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { acceptance, marketContext, marketValue } from "@/lib/nba/market";
+import { compact, runTradeSearch, tradeSearchInput } from "@/lib/nba/trade-task";
 import {
   applyTrade,
   evaluateTrade,
@@ -335,5 +336,22 @@ describe("findTradeTargets", () => {
     expect(
       ideas.some((i) => i.get.some((x) => x.id === 5) && i.give.every((x) => x.id === 4)),
     ).toBe(false);
+  });
+});
+
+describe("the trade search as a worker task", () => {
+  it("finds exactly the same ideas from its JSON input", () => {
+    // The 2-for-1 case above, with an injury so the context's absences go through JSON too.
+    const jack = [p(11, "C", 20, 23), p(12, "C", 20, 23), p(13, "PG", 10, 1), p(14, "PG", 9, 1)];
+    const rival = [p(15, "C", 40, 40), p(16, "PG", 5, 1), p(17, "PG", 4, 1), p(18, "C", 3, 1)];
+    const free = [p(19, "PG", 18, 1)];
+    const hurt = valueContext(games, SLOTS, 1, 10, 1, new Map([[14, { outUntil: 4 }]]));
+    const mkt = marketContext([...jack, ...rival, ...free], new Map([[15, 3]]));
+    const me = { teamId: 1, roster: jack };
+    const others = [{ teamId: 2, roster: rival }];
+    const direct = findTradeTargets(me, others, hurt, mkt, free).map(compact);
+    const input = JSON.parse(JSON.stringify(tradeSearchInput(me, others, hurt, mkt, free)));
+    expect(direct.length).toBeGreaterThan(0);
+    expect(runTradeSearch(input)).toEqual(direct);
   });
 });

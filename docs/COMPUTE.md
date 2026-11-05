@@ -197,7 +197,7 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 4. **Pages:** cache the waiver analysis by input fingerprint in the database (shared across instances and visits).
 5. **The 1-minute watch:** a light route, only after (2) shows the room.
 
-**Free tier (GitHub Actions):** 6. Move the waiver analysis, the move building and the trade-idea search to the worker. Vercel sends inputs (the stored league), and the worker returns the move list and checks. 7. Generalize `sim_jobs` into a job queue for NFL/MLB and the ML models.
+**Free tier (GitHub Actions):** 6. Move the trade-idea search to the worker (**shipped Nov 5**, ADR-059: `worker_tasks`, the `tasks` job). Next, the waiver analysis and the move building: Vercel sends inputs (the stored league), and the worker returns the move list and checks. 7. Generalize `sim_jobs` into a job queue for NFL/MLB and the ML models.
 
 **Billing risk (needs approval):** 8. Google Cloud Run Jobs, if the conditions in §4 arise. 9. Vercel Pro ($20/month), if Hobby limits bind despite the above.
 

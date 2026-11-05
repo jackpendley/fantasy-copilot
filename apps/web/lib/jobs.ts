@@ -28,6 +28,7 @@ import { enqueueSimJob, pruneSimJobs } from "./nba/sim-jobs";
 import { refreshMoveChecks } from "./nba/move-checks";
 import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
+import { pruneTasks } from "./nba/worker-tasks";
 import { fingerprintOf } from "./view-cache";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
@@ -305,6 +306,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     const pbp = await metered("pbp-players", () => refreshPbpPlayers([season, season - 1]));
     // Old simulation jobs (each holds its moves and chunks): the last two days are kept.
     const simJobsPruned = await metered("sim-prune", () => pruneSimJobs());
+    const tasksPruned = await metered("task-prune", () => pruneTasks());
     // The league's roster moves, for the team pages' move history (ADR-056).
     const transactions = await metered("transactions", () =>
       syncTransactions(
@@ -325,6 +327,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       movesChecked: moves,
       pbpPlayers: pbp,
       simJobsPruned,
+      tasksPruned,
       transactions,
       defense,
       ...states,

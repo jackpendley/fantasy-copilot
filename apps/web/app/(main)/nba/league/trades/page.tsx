@@ -249,13 +249,13 @@ async function Targets({
       {!fresh &&
         (updating ? (
           <p className="px-1 text-xs text-muted-foreground">
-            Rosters changed: updating these ideas (a few seconds)…
-            <LiveRefresh active seconds={8} />
+            Rosters changed: updating these ideas (usually within a minute)…
+            <LiveRefresh active seconds={15} />
           </p>
         ) : (
           <p className="px-1 text-xs text-muted-foreground">
             Searched {fmtDayTime(computedAt)}. Ideas whose players have moved are hidden; the search
-            reruns every few hours, and right away after your own moves.
+            reruns at most every 15 minutes, and right away after your own moves.
           </p>
         ))}
       <div className="flex flex-wrap gap-1.5">

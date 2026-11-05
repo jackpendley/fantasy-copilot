@@ -7,33 +7,39 @@ import "server-only";
 // while a fresh search runs after the response. Roster moves and the nightly job refresh it
 // ahead of time, so the page rarely waits.
 //
-// The search is the costliest thing the app does on Vercel (~7.5 s of CPU, docs/COMPUTE.md),
-// so other teams' moves, injury news and page visits refresh it at most every 3 hours; Jack's
-// own moves and the nightly run refresh it right away.
+// The search is the costliest thing the app did on Vercel (~7.5 s of CPU, docs/COMPUTE.md):
+// with the worker set up it runs there (a worker task), and Vercel only builds its input.
+// Other teams' moves, injury news and page visits refresh it at most every 15 minutes (every
+// 3 hours when it runs on Vercel); Jack's own moves and the nightly run refresh it right away.
 
 import { after } from "next/server";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import { loadLeagueView } from "./league-view";
-import { findTradeTargets, type RosterMoves, type TradeIdea } from "./trade";
+import { findTradeTargets, type TradeIdea } from "./trade";
+import { compact, tradeSearchInput, type StoredIdea } from "./trade-task";
+import { enqueueTask, taskPending } from "./worker-tasks";
+
+export { compact, type StoredIdea };
 
 type LeagueView = Awaited<ReturnType<typeof loadLeagueView>>;
 
 const KEY = "trade-targets";
-/** Changes other than Jack's own moves refresh the ideas at most this often. */
+/** Changes other than Jack's own moves refresh the ideas at most this often (on Vercel)... */
 export const TRADE_REFRESH_GAP_MS = 3 * 3600_000;
+/** ...or on the worker. */
+export const WORKER_REFRESH_GAP_MS = 15 * 60_000;
+
+/** The search runs on the GitHub Actions worker (it's set up, and results can be stored). */
+const onWorker = () => Boolean(process.env.WORKER_SECRET) && dbConfigured();
 
 /** Is a refresh allowed now (no stored ideas, or they're older than the gap)? */
-export const refreshDue = (computedAt: Date | null, now = Date.now()) =>
-  computedAt == null || now - computedAt.getTime() >= TRADE_REFRESH_GAP_MS;
-
-type StoredMoves = Record<keyof RosterMoves, number[]>;
-export interface StoredIdea extends Omit<TradeIdea, "give" | "get" | "moves"> {
-  give: number[];
-  get: number[];
-  moves: { mine: StoredMoves; theirs: StoredMoves };
-}
+export const refreshDue = (
+  computedAt: Date | null,
+  now = Date.now(),
+  gap = onWorker() ? WORKER_REFRESH_GAP_MS : TRADE_REFRESH_GAP_MS,
+) => computedAt == null || now - computedAt.getTime() >= gap;
 
 /** Everything the search depends on. */
 export function tradeFingerprint(v: LeagueView): string {
@@ -45,22 +51,6 @@ export function tradeFingerprint(v: LeagueView): string {
     injured: [...v.injured].map(([id, a]) => [id, a.outUntil]).sort(),
     freeAgents: v.freeAgents.map((p) => p.id).sort(),
   });
-}
-
-const ids = (ps: RosterPlayer[]) => ps.map((p) => p.id);
-const storeMoves = (m: RosterMoves): StoredMoves => ({
-  dropped: ids(m.dropped),
-  added: ids(m.added),
-  toIL: ids(m.toIL),
-});
-
-export function compact(i: TradeIdea): StoredIdea {
-  return {
-    ...i,
-    give: ids(i.give),
-    get: ids(i.get),
-    moves: { mine: storeMoves(i.moves.mine), theirs: storeMoves(i.moves.theirs) },
-  };
 }
 
 /**
@@ -120,6 +110,20 @@ async function computeAndStore(v: LeagueView, fingerprint: string): Promise<Trad
   return ideas;
 }
 
+/** Queue the search for the worker (its result lands in view_cache under KEY). */
+function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
+  const input = tradeSearchInput(
+    { teamId: v.data.me.id, roster: v.data.me.roster },
+    v.data.teams
+      .filter((t) => t.id !== v.data.me.id)
+      .map((t) => ({ teamId: t.id, roster: t.roster })),
+    v.ctx,
+    v.market,
+    v.freeAgents,
+  );
+  return enqueueTask("trade-search", fingerprint, input);
+}
+
 export interface TradeTargets {
   ideas: TradeIdea[];
   /** False when rosters or news changed since the search (the ideas shown are the last ones). */
@@ -144,9 +148,14 @@ export async function tradeTargets(v: LeagueView): Promise<TradeTargets> {
     };
   }
   if (row) {
-    const updating = refreshDue(row.computedAt);
-    if (updating) after(() => refreshTradeTargets({ force: true }).catch(() => {}));
+    const due = refreshDue(row.computedAt);
+    if (due) after(() => refreshTradeTargets({ force: true }).catch(() => {}));
+    const updating = due || (onWorker() && (await taskPending("trade-search").catch(() => false)));
     return { ideas: hydrate(row.value, v), fresh: false, updating, computedAt: row.computedAt };
+  }
+  if (onWorker()) {
+    await queueSearch(v, fingerprint);
+    return { ideas: [], fresh: false, updating: true, computedAt: new Date() };
   }
   const ideas = await computeAndStore(v, fingerprint);
   return { ideas, fresh: true, updating: false, computedAt: new Date() };
@@ -166,6 +175,7 @@ export function refreshTradeTargets({ force = false }: { force?: boolean } = {})
     const v = await loadLeagueView();
     const fingerprint = tradeFingerprint(v);
     if (row?.fingerprint === fingerprint) return false;
+    if (onWorker()) return queueSearch(v, fingerprint);
     await computeAndStore(v, fingerprint);
     return true;
   })().finally(() => {

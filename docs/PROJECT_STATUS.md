@@ -44,6 +44,11 @@
   - the worker's requests ~2.8 s per job.
 - **Projection:** ≈5.5 min a day after #90. The 30-day window (3 h 10 m on Nov 5) needs ≤ ~4 min a day until ~Nov 19, when the heavy late-October days start rolling off. **Check Vercel → Usage daily until then.**
 
+## Daily CPU check (until ~Nov 20)
+
+- Claude checks Vercel → Usage every morning (8:47 MST) in this session and reports in 2–4 lines: the 30-day total, yesterday's use, the projection, and any action needed.
+- If the session ends, a new one should keep checking until the heavy late-October days have rolled out of the window (~Nov 20).
+
 ## Waiting on Jack
 
 - **Vercel's Git auto-deploy** was slow or missing on Nov 5 (merged commits sat 5–30 min, with no commit status). Jack OK'd deploying `main` from the dashboard meanwhile. If it recurs, check github.com/settings/installations → Vercel for a pending permission request (that page needs his password).
@@ -55,7 +60,7 @@
 1. **CPU, until ~Nov 19:**
    - **#96 (Jack approved):** availability logging every 10 min before the game window (MODEL_CARD note), and no league load on runs with nothing due (`gamedayPlan`).
    - **Check on Nov 6:** overnight runs show "skipped: nothing due" and Settings shows gameday CPU per day down.
-   - **Still open:** post the worker's results less often (~4–5 s of Vercel CPU per job).
+   - **#98:** the worker's traffic (Observability: ~15–20 s of Vercel CPU per job, ~98 s in 12 h) is cut by half the requests, lighter assignments and fewer recomputes. Measure on the next jobs.
    - Re-measure 24 h and update COMPUTE.md.
 2. **Check in production:**
    - the trade search's first run on the worker (it runs when the ideas' inputs change);

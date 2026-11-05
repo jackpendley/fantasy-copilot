@@ -26,6 +26,7 @@ import {
   type DeepEffect,
   type MoveSums,
 } from "./deep-check";
+import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
 import { rosterKey, waiverFingerprint } from "./move-checks";
 import { buildOutlookInput } from "./outlook";
@@ -92,18 +93,20 @@ const groupHasWork = (g: SimGroup, maxChunks: number) =>
 export async function enqueueSimJob(
   trigger: string | null,
   extraKeys: string[] = [],
+  m = new CpuMeter(),
 ): Promise<number | null> {
   if (!dbConfigured()) return null;
-  const built = await buildJob(extraKeys);
-  return storeJob({ ...built, trigger, myId: built.setup.data.me.id });
+  const built = await buildJob(extraKeys, false, m);
+  return m.step("store", () => storeJob({ ...built, trigger, myId: built.setup.data.me.id }));
 }
 
 /**
  * The season as it stands, as plain JSON, and the moves to check in order (`only`: just
  * extraKeys). `leading`: how many of them are the Moves page's opening moves.
  */
-async function buildJob(extraKeys: string[], only = false) {
-  const [setup, v] = await Promise.all([outlookSetup(), loadWaiverView()]);
+async function buildJob(extraKeys: string[], only = false, m = new CpuMeter()) {
+  // Read and parsed together (both read the league): one step.
+  const [setup, v] = await m.step("inputs", () => Promise.all([outlookSetup(), loadWaiverView()]));
   const { data } = setup;
   const myId = data.me.id;
   const base = buildOutlookInput({
@@ -133,19 +136,21 @@ async function buildJob(extraKeys: string[], only = false) {
   const injured = new Map(setup.injured);
   const adds = options.map((o) => o.add.player);
   for (const [id, a] of absences(adds, data.injuries, setup.fromDay)) injured.set(id, a);
-  const moves = buildWireMoves(
-    {
-      base: wire,
-      teamId: myId,
-      roster: data.me.roster,
-      freeAgents: setup.freeAgents,
-      games: data.games,
-      slotCounts: data.settings.slotCounts,
-      fromDay: setup.fromDay,
-      regularWeeks: data.settings.regularSeasonWeeks,
-      injured,
-    },
-    options,
+  const moves = await m.step("build-moves", () =>
+    buildWireMoves(
+      {
+        base: wire,
+        teamId: myId,
+        roster: data.me.roster,
+        freeAgents: setup.freeAgents,
+        games: data.games,
+        slotCounts: data.settings.slotCounts,
+        fromDay: setup.fromDay,
+        regularWeeks: data.settings.regularSeasonWeeks,
+        injured,
+      },
+      options,
+    ),
   );
   return { setup, v, base, wire, moves, leading };
 }
@@ -598,6 +603,15 @@ export async function closeQuietJobs(): Promise<{ closed: number; unstarted: num
   return { closed: quiet.length, unstarted: u?.n ?? 0 };
 }
 
+/** Add a worker request's Vercel CPU to its job (what the worker costs Vercel per job). */
+export async function addJobCpu(jobId: number, since: NodeJS.CpuUsage): Promise<void> {
+  const u = process.cpuUsage(since);
+  const ms = Math.round((u.user + u.system) / 1000);
+  await db()`update sim_jobs set vercel_cpu_ms = vercel_cpu_ms + ${ms} where id = ${jobId}`.catch(
+    () => {},
+  );
+}
+
 /** Delete jobs older than two days and their chunks (nightly), keeping the last finished one. */
 export async function pruneSimJobs(): Promise<number> {
   if (!dbConfigured()) return 0;
@@ -606,6 +620,8 @@ export async function pruneSimJobs(): Promise<number> {
       and id <> coalesce((select max(id) from sim_jobs where status = 'done'), 0)
     returning id
   `;
+  // CPU measurements are kept for 30 days (Vercel's window).
+  await db()`delete from cpu_log where ran_at < now() - interval '30 days'`;
   return rows.length;
 }
 

@@ -115,6 +115,33 @@ All of them share player-level work (stat projections, availability) that doesn'
 - **M3.** The trade idea search is ~75% of a roster move's Vercel cost. It ran after every league move, after new injury news in the game window, and on Trades page visits.
 - **M4.** H1 below is mostly **rejected:** reloading the league costs ~0.1 s, so 288 runs a day are ~0.5 min. Skipping it is a small win, not the main one.
 
+**Measured in production, Nov 5 evening** (`cpu_log`, Settings → "Vercel CPU, last 24 hours"):
+
+| Work                                     | Vercel CPU                                                                                      |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Gameday run                              | ~0.6 s typical: league load ~0.37 s, availability ~0.14 s, transaction watch ~0.11 s            |
+| Roster move, building the simulation job | ~5.3 s: inputs (Outlook setup + waiver analysis) ~3.9 s, ~300 move patches ~1.2 s, store ~0.1 s |
+| The worker's requests per job            | ~2.8 s                                                                                          |
+
+Vercel is ~3–4× slower than the local profile.
+
+**Projection after #81–#87:**
+
+| Source                          | Per day     |
+| ------------------------------- | ----------- |
+| Gameday (288 runs)              | ~2.5–3 min  |
+| Roster moves (~20 a day × ~8 s) | ~2.7 min    |
+| Pages                           | ~1.5 min    |
+| **Total**                       | **≈ 7 min** |
+
+That's under, but close to, the 8 min a day Hobby sustains. Next: build the job's inputs on the worker (−~2 min a day), and skip the league load when no step needs it (−~1 min a day).
+
+**Simulation worker (Nov 5, 19:29 UTC):**
+
+- 288 moves (273 drops + 15 trade ideas);
+- the opening moves were settled by ~4 min, and all were done in 13.5 min;
+- 1,280 chunks on 16 runners.
+
 **Hypotheses** (the `cpu_log` meter, deployed Nov 5, confirms or rejects each one by step):
 
 - **H1.** Every gameday run re-fetches and re-parses the whole league and tomorrow's rosters, even when nothing changed (`leagueChanged` measures how often).

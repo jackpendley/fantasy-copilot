@@ -29,6 +29,7 @@ import {
 import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
 import { rosterKey, waiverFingerprint } from "./move-checks";
+import type { LiveJob, SettledResult } from "./move-shown";
 import { buildOutlookInput } from "./outlook";
 import { outlookSetup, type OutlookTeam } from "./outlook-run";
 import {
@@ -534,6 +535,8 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   // Each group keeps only its moves still getting seasons.
   const active = new Set(effects.filter((e) => e.active).map((e) => e.key));
   const next = groups.map((g) => ({ ...g, active: g.active.filter((k) => active.has(k)) }));
+  // Moves that stopped getting seasons since the last refresh are settled.
+  const settled = new Set(groups.flatMap((g) => g.active.filter((k) => !active.has(k))));
   for (const [i, g] of next.entries()) {
     if (g.active.length === groups[i]!.active.length) continue;
     await db()`update sim_groups set active = ${g.active} where job_id = ${jobId} and grp = ${g.grp}`;
@@ -575,6 +578,13 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
       at: new Date().toISOString(),
     };
     await writeView(DEEP_KEY, job.waiver_fingerprint ?? "", value, 0);
+    // Each move's settled numbers, kept while later checks run (every move once the job's done,
+    // for the final P(best)).
+    await storeSettled(
+      jobId,
+      job.roster_key ?? "",
+      effects.filter((e) => e.seasons > 0 && (done || settled.has(e.key))),
+    );
   }
   await db()`
     update sim_jobs set outlook_run_id = ${runId}, refreshed_at = now(),
@@ -623,6 +633,72 @@ export async function pruneSimJobs(): Promise<number> {
   // CPU measurements are kept for 30 days (Vercel's window).
   await db()`delete from cpu_log where ran_at < now() - interval '30 days'`;
   return rows.length;
+}
+
+/** Store moves' settled results (a newer job's result is never replaced by an older one's). */
+async function storeSettled(jobId: number, rosterKey: string, effects: DeepEffect[]) {
+  if (!effects.length) return;
+  await db()`
+    insert into move_results ${db()(
+      effects.map((e) => ({
+        key: e.key,
+        job_id: jobId,
+        roster_key: rosterKey,
+        effect: db().json(e as never),
+      })),
+    )}
+    on conflict (key) do update set job_id = excluded.job_id, roster_key = excluded.roster_key,
+      effect = excluded.effect, settled_at = now()
+    where move_results.job_id <= excluded.job_id
+  `;
+}
+
+/** The latest worker job, with its results when the stored deep checks are this job's. */
+export async function liveJob(): Promise<
+  (LiveJob & { trigger: string | null; createdAt: Date; settled: number; total: number }) | null
+> {
+  if (!dbConfigured()) return null;
+  const [[j], deep] = await Promise.all([
+    db()<
+      {
+        id: number;
+        status: string;
+        trigger: string | null;
+        roster_key: string | null;
+        created_at: Date;
+      }[]
+    >`
+      select id, status, trigger, roster_key, created_at from sim_jobs
+      where status <> 'superseded' order by id desc limit 1
+    `,
+    latestDeepChecks(),
+  ]);
+  if (!j) return null;
+  const mine = deep?.jobId === j.id ? deep : null;
+  const effects = mine ? new Map(mine.effects.map((e) => [e.key, e])) : null;
+  const keys = await db()<{ n: number }[]>`
+    select coalesce(sum(cardinality(keys)), 0)::int as n from sim_groups where job_id = ${j.id}
+  `;
+  return {
+    id: j.id,
+    rosterKey: j.roster_key ?? "",
+    live: j.status === "queued" || j.status === "running",
+    final: j.status === "done",
+    effects,
+    trigger: j.trigger,
+    createdAt: j.created_at,
+    settled: mine ? mine.effects.filter((e) => !e.active).length : 0,
+    total: keys[0]?.n ?? 0,
+  };
+}
+
+/** Moves' last settled results, by key. */
+export async function settledResults(keys: string[]): Promise<Map<string, SettledResult>> {
+  if (!dbConfigured() || !keys.length) return new Map();
+  const rows = await db()<{ key: string; roster_key: string; effect: DeepEffect }[]>`
+    select key, roster_key, effect from move_results where key = any(${keys})
+  `;
+  return new Map(rows.map((r) => [r.key, { rosterKey: r.roster_key, effect: r.effect }]));
 }
 
 /** The latest deep checks (for the Moves page). */

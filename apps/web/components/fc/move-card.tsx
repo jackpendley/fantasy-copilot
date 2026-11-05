@@ -5,11 +5,13 @@
 // other player on the roster; the numbers follow the choice.
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { AddDropButton } from "@/components/add-drop-button";
-import { LiveRefresh } from "@/components/live-refresh";
+import { useDeepView } from "@/components/fc/deep-live";
 import { ComparePlayers } from "@/components/fc/player-compare";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 export interface MoveOption {
@@ -88,7 +90,7 @@ export function MoveCard({
   sims,
   outlook,
   weekWin,
-  stale,
+  canSimulate,
 }: {
   who: React.ReactNode;
   addId: number;
@@ -100,29 +102,27 @@ export function MoveCard({
   /** Every way to make room for him, best first. */
   options: MoveOption[];
   initialKey: string;
-  /** Season-simulation results by move key (the moves checked so far). */
+  /** Quick checks run on Vercel, by move key (only without the worker). */
   sims: Record<string, MoveSim>;
   /** The latest Outlook for Jack's team ("Now"); null before the first run. */
   outlook: Outlook | null;
   /** This week's win chance now (null on a bye). */
   weekWin: number | null;
-  /** The stored checks predate a roster or injury change (re-checked overnight). */
-  stale: boolean;
+  /** No worker: a drop can be checked here on request (a quick check on Vercel). */
+  canSimulate: boolean;
 }) {
   const [key, setKey] = useState(initialKey);
-  // Checks run from this card (a swapped drop), on top of the page's.
+  // Quick checks run from this card (a swapped drop), without the worker.
   const [mine, setMine] = useState<Record<string, MoveSim>>({});
   const [running, setRunning] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  // Moves whose quick check ran here and whose deep check is on its way.
-  const [awaiting, setAwaiting] = useState<string[]>([]);
+  // The worker's deep checks for every drop, kept current while it re-checks (deep-live.tsx).
+  const deep = useDeepView();
   const o = options.find((x) => x.key === key) ?? options[0]!;
-  // The deep check, once it has this move, replaces the quick check run here.
-  const deepSim = sims[o.key]?.deep ? sims[o.key] : undefined;
-  const sim = deepSim ?? mine[o.key] ?? sims[o.key];
-  // A check run from this card is current; the page's stored ones may predate a change.
-  const old = stale && !mine[o.key] && !deepSim;
-  const waiting = awaiting.filter((k) => !sims[k]?.deep);
+  const simOf = (k: string): MoveSim | undefined => deep?.sims[k] ?? mine[k] ?? sims[k];
+  const sim = simOf(o.key);
+  const state = deep?.states[o.key];
+  const job = deep?.job;
 
   useEffect(() => {
     if (!running) return;
@@ -130,13 +130,6 @@ export function MoveCard({
     const timer = setInterval(() => setElapsed(Math.round((Date.now() - t0) / 1000)), 1000);
     return () => clearInterval(timer);
   }, [running]);
-
-  // Give up refreshing for the deep check after 10 minutes (the worker didn't get to it).
-  useEffect(() => {
-    if (!awaiting.length) return;
-    const t = setTimeout(() => setAwaiting([]), 10 * 60_000);
-    return () => clearTimeout(t);
-  }, [awaiting]);
 
   async function simulate() {
     const k = o.key;
@@ -151,10 +144,6 @@ export function MoveCard({
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? `HTTP ${res.status}`);
       const e = out.effect;
-      if (out.deep) {
-        toast.info("Quick check done. The deep check (thousands of seasons) replaces it here.");
-        setAwaiting((a) => [...a.filter((x) => x !== k), k]);
-      }
       setMine((m) => ({
         ...m,
         [k]: {
@@ -174,12 +163,29 @@ export function MoveCard({
   const last = (name: string) => name.split(" ").at(-1);
 
   // Season rows: Outlook now, with the move (now + the simulated change), the change ± margin.
+  const loading = state === "loading" && !sim;
   const seasonRow = (
     label: string,
     now: number | undefined,
     d: Delta | undefined,
     wins = false,
   ) => {
+    if (loading) {
+      return (
+        <tr key={label}>
+          <th className="py-1 pr-2 text-left font-normal text-muted-foreground">{label}</th>
+          <td className="px-1 py-1 text-right tabular-nums">
+            {now != null ? (wins ? now.toFixed(2) : pct(now)) : "—"}
+          </td>
+          <td className="px-1 py-1">
+            <Skeleton className="ml-auto h-3 w-10" />
+          </td>
+          <td className="py-1 pl-1">
+            <Skeleton className="ml-auto h-3 w-14" />
+          </td>
+        </tr>
+      );
+    }
     const fmt = (x: number) => (wins ? x.toFixed(2) : pct(x));
     const k = wins ? 1 : 100;
     return (
@@ -218,7 +224,6 @@ export function MoveCard({
 
   return (
     <div className="space-y-2.5 px-3 py-3">
-      <LiveRefresh active={waiting.length > 0} seconds={15} />
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">{who}</div>
         {o.ilName ? (
@@ -250,13 +255,17 @@ export function MoveCard({
           value={o.key}
           onChange={(e) => setKey(e.target.value)}
           className="min-w-0 max-w-full rounded-md border bg-background px-2 py-1 text-xs text-foreground"
-          aria-label={`Who to drop for ${addName} (points estimate in wins; ✓ = simulated)`}
+          aria-label={`Who to drop for ${addName} (title change in points when simulated, otherwise the points estimate in wins)`}
         >
           {options.map((x) => (
             <option key={x.key} value={x.key}>
               {x.ilName ? `${x.ilName} to IL` : (x.dropName ?? "Nobody (open spot)")}
-              {` · ${signed(x.netWins, 2)}`}
-              {(mine[x.key] ?? sims[x.key]) ? " ✓" : ""}
+              {(() => {
+                const xs = simOf(x.key);
+                return xs
+                  ? ` · title ${signed(xs.title.d * 100)}`
+                  : ` · ≈${signed(x.netWins, 2)} wins`;
+              })()}
             </option>
           ))}
         </select>
@@ -286,9 +295,20 @@ export function MoveCard({
           <thead>
             <tr className="border-b bg-muted/40 text-[11px] text-muted-foreground">
               <th className="py-1 pr-2 pl-2 text-left font-medium">
-                {sim
-                  ? `${sim.deep ? "Deep check" : "Quick check"} (${sim.seasons.toLocaleString("en-US")}${sim.refining ? ", refining" : ""})`
-                  : "Season"}
+                {loading ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="size-3 animate-spin" aria-hidden /> Checking…
+                  </span>
+                ) : sim ? (
+                  <span className="inline-flex items-center gap-1">
+                    {`${sim.deep ? "Deep check" : "Quick check"} (${sim.seasons.toLocaleString("en-US")}${sim.refining ? ", refining" : ""})`}
+                    {state === "updating" && (
+                      <Loader2 className="size-3 animate-spin" aria-label="Updating" />
+                    )}
+                  </span>
+                ) : (
+                  "Season"
+                )}
               </th>
               <th className="px-1 py-1 text-right font-medium">Now</th>
               <th className="px-1 py-1 text-right font-medium">With move</th>
@@ -333,27 +353,30 @@ export function MoveCard({
                 }`}
           </p>
         )}
-        {!sim?.deep && waiting.includes(o.key) && (
+        {state === "updating" && (
           <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
-            A quick check is only a rough read: a change smaller than its ± can be chance. The deep
-            check is running now and replaces these numbers here, usually within 2–5 minutes. Wait
-            for it before you decide.
+            Updating{job?.trigger ? ` after: ${job.trigger}` : ""}. These are the last numbers for
+            your roster; the new ones replace them here when they&apos;re done.
           </p>
         )}
-        {sim && old && (
+        {loading && (
           <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
-            Simulated before your latest roster or injury news; re-checked overnight, or simulate it
-            again now below.
+            {job?.current
+              ? "Checking this drop now; numbers appear here in a few minutes."
+              : "Checking after your roster change; first numbers in about 2 minutes."}
           </p>
         )}
-        {(!sim || old) && (
+        {!sim && !loading && !canSimulate && (
+          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+            Not checked yet; the next deep check (after any roster move, and nightly) includes it.
+          </p>
+        )}
+        {!sim && !loading && canSimulate && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t px-2 py-1.5 text-[11px] text-muted-foreground">
             <span>
               {running === o.key
                 ? `Simulating… ${elapsed}s (usually 10–30 s)`
-                : sim
-                  ? "Re-run with the latest rosters."
-                  : "Not simulated yet for this drop."}
+                : "Not simulated yet for this drop."}
             </span>
             <Button
               size="sm"

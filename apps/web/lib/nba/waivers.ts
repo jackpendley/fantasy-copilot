@@ -373,3 +373,16 @@ export function pointsToWins(week: number): number {
     2
   );
 }
+
+/** The adds the Moves page shows: the 8 best moves, then up to 5 this-week-only streams. */
+export function shownMoves(a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek">): {
+  best: StreamOption[];
+  streams: StreamOption[];
+} {
+  const best = a.best.slice(0, 8);
+  const shown = new Set(best.map((o) => o.add.player.id));
+  const streams = a.thisWeek
+    .filter((o) => !shown.has(o.add.player.id) && (o.deltaWin ?? 0) > 0.005)
+    .slice(0, 5);
+  return { best, streams };
+}

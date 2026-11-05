@@ -20,6 +20,8 @@ interface Task {
 
 interface Assignment {
   jobId: number;
+  /** The group of moves these chunks are for (absent from apps deployed before Nov 5). */
+  group?: number;
   teamId: number;
   replays: number;
   chunkSeasons: number;
@@ -58,7 +60,7 @@ async function main() {
   try {
     while (Date.now() < deadline) {
       const res = await fetch(
-        `${app}/api/worker/next?count=${cores}${job ? `&have=${job.id}` : ""}`,
+        `${app}/api/worker/next?count=${cores}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
         { headers },
       );
       if (res.status === 204) break;
@@ -71,7 +73,15 @@ async function main() {
       }
       const moves = job.moves.filter((m) => a.active.includes(m.key));
       const current = job;
-      await Promise.all(
+      const post = async (body: object) => {
+        const r = await fetch(`${app}/api/worker/result`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
+      };
+      const results = await Promise.all(
         a.chunks.map(async (chunk, i) => {
           const result = await run(pool[i % pool.length]!, {
             setup: current.setup,
@@ -81,15 +91,14 @@ async function main() {
             seasons: a.chunkSeasons,
             replays: a.replays,
           });
-          const r = await fetch(`${app}/api/worker/result`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ jobId: a.jobId, result }),
-          });
-          if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
-          posted++;
+          // An app from before groups takes one chunk per post.
+          if (a.group == null) await post({ jobId: a.jobId, result });
+          return result;
         }),
       );
+      // One post per round: the app updates the checks once for all of them.
+      if (a.group != null) await post({ jobId: a.jobId, group: a.group, results });
+      posted += results.length;
     }
   } finally {
     await Promise.all(pool.map((w) => w.terminate()));

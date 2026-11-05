@@ -1,5 +1,5 @@
 // A runner's next chunks of seasons (204 when there's nothing left). `have`: the job it
-// already holds, so the simulation input isn't sent again.
+// already holds and `moves` how many of its moves, so the simulation input isn't sent again.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { nextAssignment } from "@/lib/nba/sim-jobs";
@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams;
   const count = Math.min(Math.max(Number(q.get("count")) || 4, 1), 16);
   const have = Number(q.get("have")) || null;
-  const a = await nextAssignment(count, have);
+  const moves = q.has("moves") ? Number(q.get("moves")) : null;
+  const a = await nextAssignment(count, have, Number.isInteger(moves) ? moves : null);
   return a ? NextResponse.json(a) : new NextResponse(null, { status: 204 });
 }

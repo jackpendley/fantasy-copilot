@@ -18,7 +18,7 @@ import { latestOutlook } from "@/lib/nba/outlook-run";
 import { latestDeepChecks } from "@/lib/nba/sim-jobs";
 import { dbConfigured } from "@/lib/db";
 import { winChanceLabel } from "@/lib/nba/week";
-import type { StreamOption, WaiverCandidate } from "@/lib/nba/waivers";
+import { shownMoves, type StreamOption, type WaiverCandidate } from "@/lib/nba/waivers";
 
 const clearsAt = (ms: number) =>
   `${new Date(ms).toLocaleDateString("en-US", { weekday: "short", timeZone: process.env.DISPLAY_TZ || "America/Phoenix" })} ${fmtTip(new Date(ms).toISOString())}`;
@@ -244,7 +244,8 @@ export default async function MovesPage({
     );
   };
   // Deep-checked adds first, by their best simulated title change; then the quick order.
-  const quick = rankByChecks(analysis.best.slice(0, 8), checks);
+  const shownNow = shownMoves(analysis);
+  const quick = rankByChecks(shownNow.best, checks);
   const best = deepNow
     ? [...quick].sort((x, y) => {
         const ex = deepBest(x)?.e;
@@ -253,11 +254,8 @@ export default async function MovesPage({
         return Number(!!ey) - Number(!!ex);
       })
     : quick;
-  const shown = new Set(best.map((o) => o.add.player.id));
   // Streams that help this week but cost more later than they gain now.
-  const streams = analysis.thisWeek
-    .filter((o) => !shown.has(o.add.player.id) && (o.deltaWin ?? 0) > 0.005)
-    .slice(0, 5);
+  const { streams } = shownNow;
   return (
     <>
       <p className="px-1 text-sm text-muted-foreground">

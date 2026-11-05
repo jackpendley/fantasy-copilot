@@ -43,7 +43,8 @@ export async function enqueueTask(kind: TaskKind, fingerprint: string, input: un
     on conflict (kind, fingerprint) where status in ('queued', 'running') do nothing
     returning id
   `;
-  if (rows.length) await startWorkerForTasks();
+  // New, or the same input already waiting: make sure a runner is coming (one may have left).
+  await startWorkerForTasks();
   return rows.length > 0;
 }
 

@@ -100,17 +100,17 @@ All of them share player-level work (stat projections, availability) that doesn'
 
 **Measured locally, Nov 5** (`apps/web/scripts/profile-cpu.ts`, read-only, live league data, Apple silicon; Vercel's shared CPUs are likely slower):
 
-| Step | CPU ms |
-|---|---|
-| Transaction watch (today + tomorrow) | 51 |
-| League fetch + parse | 120 (parse only: 104) |
-| Timeline (projections + every matchup) | 30 |
-| **Waiver view** (Moves page, sim-job input) | **1,418** |
-| Outlook setup (sim-job input) | 28 |
-| Sim job: base + 273 move patches (0.45 MB) | 491 |
-| League view | 16 |
-| **Trade idea search** | **7,476** |
-| Player card (warm league) | 109 |
+| Step                                        | CPU ms                |
+| ------------------------------------------- | --------------------- |
+| Transaction watch (today + tomorrow)        | 51                    |
+| League fetch + parse                        | 120 (parse only: 104) |
+| Timeline (projections + every matchup)      | 30                    |
+| **Waiver view** (Moves page, sim-job input) | **1,418**             |
+| Outlook setup (sim-job input)               | 28                    |
+| Sim job: base + 273 move patches (0.45 MB)  | 491                   |
+| League view                                 | 16                    |
+| **Trade idea search**                       | **7,476**             |
+| Player card (warm league)                   | 109                   |
 
 - **M3.** The trade idea search is ~75% of a roster move's Vercel cost. It ran after every league move, after new injury news in the game window, and on Trades page visits.
 - **M4.** H1 below is mostly **rejected:** reloading the league costs ~0.1 s, so 288 runs a day are ~0.5 min. Skipping it is a small win, not the main one.

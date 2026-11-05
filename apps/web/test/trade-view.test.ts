@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
-import { compact, hydrate, tradeFingerprint } from "@/lib/nba/trade-view";
+import {
+  TRADE_REFRESH_GAP_MS,
+  compact,
+  hydrate,
+  refreshDue,
+  tradeFingerprint,
+} from "@/lib/nba/trade-view";
 import type { TradeIdea } from "@/lib/nba/trade";
 
 // Synthetic league: Jack (team 1) and one partner (team 2), plus two free agents.
@@ -90,5 +96,14 @@ describe("stored trade targets", () => {
       tradeFingerprint(view([mine[0]!, { ...mine[1]!, injuryStatus: "OUT" }], theirs, free)),
     ).not.toBe(base);
     expect(tradeFingerprint(view(mine, theirs, [free[0]!]))).not.toBe(base);
+  });
+});
+
+describe("trade idea refresh gap", () => {
+  it("lets other changes refresh the ideas at most every 3 hours", () => {
+    const now = Date.parse("2026-11-05T20:00:00Z");
+    expect(refreshDue(null, now)).toBe(true);
+    expect(refreshDue(new Date(now - TRADE_REFRESH_GAP_MS + 60_000), now)).toBe(false);
+    expect(refreshDue(new Date(now - TRADE_REFRESH_GAP_MS), now)).toBe(true);
   });
 });

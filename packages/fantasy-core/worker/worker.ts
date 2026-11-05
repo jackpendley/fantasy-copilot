@@ -65,43 +65,54 @@ async function main() {
   let job: { id: number; setup: WireInput; moves: WireMove[] } | null = null;
   let posted = 0;
   const t0 = Date.now();
-  // With nothing to simulate, wait while the app still has tasks under way (a job's moves are
-  // built by a task first), up to this long.
+  // While a job is being built (the app answers "wait"), ask again this often, up to WAIT_MS.
+  const WAIT_EVERY_MS = 20_000;
   const WAIT_MS = 3 * 60_000;
-  let idleSince: number | null = null;
+  let waitingSince: number | null = null;
+  // Two chunks per core per request: half the requests the app answers.
+  const count = 2 * cores;
+  type Step = { go: Assignment } | "wait" | "leave";
+  const ask = async (): Promise<Step> => {
+    const res = await fetch(
+      `${app}/api/worker/next?count=${count}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
+      { headers },
+    );
+    if (res.status === 204) return "leave";
+    if (res.status === 202) return "wait";
+    if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
+    return { go: (await res.json()) as Assignment };
+  };
+  const post = async (body: object) => {
+    const r = await fetch(`${app}/api/worker/result`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
+    return (await r.json()) as { next?: Assignment | null; wait?: boolean };
+  };
 
   try {
+    let step = await ask();
     while (Date.now() < deadline) {
-      const res = await fetch(
-        // Two chunks per core per request: half the requests (and posts) the app answers.
-        `${app}/api/worker/next?count=${2 * cores}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
-        { headers },
-      );
-      if (res.status === 204) {
-        idleSince ??= Date.now();
-        const peek = await fetch(`${app}/api/worker/peek`, { headers });
-        if (peek.status !== 200 || Date.now() - idleSince > WAIT_MS) break;
-        await new Promise((r) => setTimeout(r, 10_000));
+      if (step === "leave") break;
+      if (step === "wait") {
+        waitingSince ??= Date.now();
+        if (Date.now() - waitingSince > WAIT_MS) break;
+        await new Promise((r) => setTimeout(r, WAIT_EVERY_MS));
+        step = await ask();
         continue;
       }
-      idleSince = null;
-      if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
-      const a = (await res.json()) as Assignment;
+      waitingSince = null;
+      const a = step.go;
       if (a.setup && a.moves) job = { id: a.jobId, setup: a.setup, moves: a.moves };
       if (!job || job.id !== a.jobId) {
         job = null; // a newer job: ask again for its input
+        step = await ask();
         continue;
       }
       const moves = job.moves.filter((m) => a.active.includes(m.key));
       const current = job;
-      const post = async (body: object) => {
-        const r = await fetch(`${app}/api/worker/result`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
-      };
       // Each thread plays its chunks one after another (a thread answers one at a time).
       const perThread = pool.map((_, t) => a.chunks.filter((_, i) => i % pool.length === t));
       const results = (
@@ -125,9 +136,20 @@ async function main() {
           }),
         )
       ).flat();
-      // One post per round: the app updates the checks once for all of them.
-      if (a.group != null) await post({ jobId: a.jobId, group: a.group, results });
       posted += results.length;
+      if (a.group == null) {
+        step = await ask();
+        continue;
+      }
+      // One request posts this round and takes the next chunks (an app from before that answers
+      // without `next`: ask separately).
+      const r = await post({
+        jobId: a.jobId,
+        group: a.group,
+        results,
+        next: { count, have: current.id, moves: current.moves.length },
+      });
+      step = r.next ? { go: r.next } : r.wait ? "wait" : r.next === null ? "leave" : await ask();
     }
   } finally {
     await Promise.all(pool.map((w) => w.terminate()));

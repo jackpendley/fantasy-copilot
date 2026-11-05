@@ -169,12 +169,18 @@ async function storeJob({
   const { data } = setup;
 
   const fingerprint = fingerprintOf({ wire, moves: moves.map((m) => m.key) });
-  const [same] = await db()<{ id: number }[]>`
-    select id from sim_jobs where fingerprint = ${fingerprint}
+  const [same] = await db()<{ id: number; status: string }[]>`
+    select id, status from sim_jobs where fingerprint = ${fingerprint}
       and status in ('queued', 'running', 'done') order by id desc limit 1
   `;
   if (same) {
-    await startWorker();
+    // The same simulation: reuse it, under Jack's roster key as it reads now (news that didn't
+    // change the simulation, or a new key format), so the roster check doesn't queue it again.
+    await db()`
+      update sim_jobs set roster_key = ${rosterKey(v)}, waiver_fingerprint = ${waiverFingerprint(v)}
+      where id = ${same.id}
+    `;
+    if (same.status !== "done") await startWorker();
     return same.id;
   }
   const meta: OutlookTeam[] = data.teams.map((t) => {

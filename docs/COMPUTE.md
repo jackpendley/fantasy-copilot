@@ -157,10 +157,8 @@ That's under, but close to, the 8 min a day Hobby sustains. Next: build the job'
 
 Still above the ~4 min a day needed until ~Nov 19.
 
-- **Remaining levers:**
-  - availability logging every 10 min instead of 5 outside the game window (it's a pre-registered test's cadence: Jack's call);
-  - skip the league load at night;
-  - fewer, larger result posts from the worker.
+- **#96 (Jack approved):** availability logging every 10 min before the game window, and no league load on runs where nothing's due. Expected −0.5 to −1 min a day; measure on Nov 6.
+- **Remaining lever:** fewer, larger result posts from the worker.
 
 **Simulation worker (Nov 5, 19:29 UTC):**
 

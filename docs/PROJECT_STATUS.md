@@ -53,10 +53,9 @@
 ## Next tasks
 
 1. **CPU, until ~Nov 19:**
-   - gameday is now the biggest piece (~2.7 min a day);
-   - skip the league load at night;
-   - post the worker's results less often (~3.9 s per job);
-   - if Jack agrees, log availability every 10 min instead of 5 outside the game window (a pre-registered test's cadence).
+   - **#96 (Jack approved):** availability logging every 10 min before the game window (MODEL_CARD note), and no league load on runs with nothing due (`gamedayPlan`).
+   - **Check on Nov 6:** overnight runs show "skipped: nothing due" and Settings shows gameday CPU per day down.
+   - **Still open:** post the worker's results less often (~4–5 s of Vercel CPU per job).
    - Re-measure 24 h and update COMPUTE.md.
 2. **Check in production:**
    - the trade search's first run on the worker (it runs when the ideas' inputs change);

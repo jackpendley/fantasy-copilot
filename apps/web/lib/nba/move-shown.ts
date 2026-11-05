@@ -7,12 +7,18 @@ import { MIN_SEASONS, type DeepEffect } from "./deep-check";
 
 /**
  * - current: the check for the rosters as they are now, settled.
- * - updating: the last settled numbers for this roster; a newer check is running.
+ * - updating: the last settled numbers for these players; a newer check is running (another
+ *   team's move, news, a new day).
+ * - stale: the last numbers for these players, from before their latest news; no check is
+ *   running yet.
  * - refining: the running check's numbers so far (enough seasons to show).
  * - loading: no usable numbers yet; a check is running.
  * - none: not checked, and no check is running.
  */
-export type ShownState = "current" | "updating" | "refining" | "loading" | "none";
+export type ShownState = "current" | "updating" | "stale" | "refining" | "loading" | "none";
+
+/** Same players in the same slots (roster keys differ only in injury news, or not at all)? */
+export const samePlayers = (a: string, b: string) => a.split(".")[0] === b.split(".")[0];
 
 export interface Shown {
   state: ShownState;
@@ -44,8 +50,10 @@ export function chooseShown(
   const e = forNow ? (job.effects?.get(key) ?? null) : null;
   if (e && e.seasons > 0 && (!e.active || job!.final)) return { state: "current", effect: e };
   const running = job?.live ?? false;
-  if (last && last.rosterKey === rosterNow)
-    return { state: running ? "updating" : "current", effect: last.effect };
+  if (last && samePlayers(last.rosterKey, rosterNow)) {
+    const state = running ? "updating" : last.rosterKey === rosterNow ? "current" : "stale";
+    return { state, effect: last.effect };
+  }
   if (e && e.seasons >= MIN_SEASONS) return { state: "refining", effect: e };
   return { state: running ? "loading" : "none", effect: null };
 }
@@ -120,7 +128,7 @@ export function deepView(
       createdAt: job.createdAt.toISOString(),
       settled: job.settled,
       total: job.total,
-      current: job.rosterKey === rosterNow,
+      current: samePlayers(job.rosterKey, rosterNow),
     },
   };
 }

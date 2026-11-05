@@ -72,7 +72,8 @@ async function loadOutlook(myId: number) {
   const newest = leagueMoves.at(-1)?.at ?? null;
   const lastAt = latest?.run_at.getTime() ?? null;
   const stale = isStale(newest, lastAt);
-  const state = running ? "running" : await refreshIfStale(newest, lastAt);
+  // A visit counts as another team's move (Jack's own are checked as soon as they're seen).
+  const state = running ? "running" : await refreshIfStale(newest, lastAt, Date.now(), false);
   const due = state === "refreshing" || state === "queued";
   // The roster moves between the two runs. Never blocks the page.
   const moves =

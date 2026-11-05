@@ -48,8 +48,17 @@ async function main() {
   const pool = Array.from({ length: cores }, () => new Worker(new URL(import.meta.url)));
   const run = (w: Worker, t: Task) =>
     new Promise<ChunkResult>((resolve, reject) => {
-      w.once("message", resolve);
-      w.once("error", reject);
+      // Each call removes the other listener, so they don't pile up on the thread.
+      const onMessage = (r: ChunkResult) => {
+        w.off("error", onError);
+        resolve(r);
+      };
+      const onError = (e: Error) => {
+        w.off("message", onMessage);
+        reject(e);
+      };
+      w.once("message", onMessage);
+      w.once("error", onError);
       w.postMessage(t);
     });
   const deadline = Date.now() + 25 * 60_000;

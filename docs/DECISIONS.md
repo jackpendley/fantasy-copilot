@@ -776,3 +776,20 @@
   - The checks are recomputed at most every 4 s, and whenever every chunk out is back.
   - Jobs older than 2 days are deleted nightly.
 - **Runners:** 16 (from 8). Standard runners are free for a public repo, and GitHub Free allows 20 jobs at once.
+
+## ADR-059: the worker runs tasks besides simulations; the trade search moves there (2026-11-05)
+
+- **Why:** Vercel Hobby's 4 h of Active CPU per 30 days was at 3 h 6 m.
+  - Profiling (`scripts/profile-cpu.ts`, docs/COMPUTE.md) put the trade idea search at ~7.5 s of CPU per run. It ran after every league move and news change.
+  - Reloading the league costs ~0.1 s.
+- **`worker_tasks`** (migration 0022): one row per kind and input fingerprint. A repeated request reuses the live task, and a newer input supersedes a queued one of the same kind.
+  - Runners claim tasks with a 5-minute lease (`for update skip locked`), and a quiet task is handed out again, up to 3 tries.
+  - Results go where the pages read them (`view_cache`).
+- **Runner:** a `tasks` job in `simulate.yml` bundles `apps/web/worker/tasks.ts` with the app's own pure code (`lib/nba/trade-task.ts`).
+  - It needs only `WORKER_SECRET`: no ESPN cookies, no database.
+  - It stays up while simulations run, since a roster move usually brings both, and leaves after 2 idle minutes.
+- **Trade ideas:**
+  - Vercel builds the search input (~0.2 s) and queues it.
+  - Other teams' moves, news and page visits refresh them at most every 15 min. On Vercel (no worker) the limit stays 3 h.
+  - Jack's own moves and the nightly run refresh right away.
+- **Test:** the search from its JSON input gives exactly the same ideas as in-process (an injury included).

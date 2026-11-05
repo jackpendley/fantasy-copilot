@@ -1,5 +1,6 @@
 # Season simulations for the app (ADR-053): the Outlook and deep checks of waiver moves, run
-# here instead of on Vercel (whose free plan has 4 CPU-hours a month). The app starts this
+# here instead of on Vercel (whose free plan has 4 CPU-hours a month); and other tasks the app
+# hands off, like the trade idea search (docs/COMPUTE.md). The app starts this
 # workflow when rosters change (workflow_dispatch); the schedule is a fallback. Sixteen runners
 # take chunks of seasons from the app until every move's title change is known to ±0.5 points
 # (ADR-058: every candidate move, most important first).
@@ -63,3 +64,28 @@ jobs:
         env:
           WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
         run: node worker.mjs
+
+  tasks:
+    # Other computation the app hands off (docs/COMPUTE.md), e.g. the trade idea search.
+    needs: peek
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.peek.outputs.work == 'yes') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            packages/fantasy-core
+            apps/web/lib
+            apps/web/worker
+            .nvmrc
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Bundle the task runner
+        run: npx --yes esbuild@0.24.0 apps/web/worker/tasks.ts --bundle --platform=node --format=esm --outfile=tasks.mjs --alias:@fantasy-copilot/fantasy-core=./packages/fantasy-core/src/index.ts
+      - name: Run tasks
+        env:
+          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
+        run: node tasks.mjs

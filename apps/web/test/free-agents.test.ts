@@ -15,6 +15,7 @@ const row = (id: number, over: Partial<FreeAgentRow>): FreeAgentRow => ({
   owned: 10,
   change: 0,
   season: 1000,
+  title: null,
   ...over,
 });
 
@@ -40,5 +41,11 @@ describe("free agent filters and sorting", () => {
     expect(sortRows(rows, "name").map((r) => r.id)).toEqual([2, 1]);
     const tied = [row(1, { owned: 5, fppg: 10 }), row(2, { owned: 5, fppg: 25 })];
     expect(sortRows(tied, "owned").map((r) => r.id)).toEqual([2, 1]);
+  });
+
+  it("sorts by the deep check's title change, unchecked players last", () => {
+    const t = (d: number) => ({ d, se: 0.002, drop: null, updating: false });
+    const rows = [row(1, {}), row(2, { title: t(-0.01) }), row(3, { title: t(0.004) })];
+    expect(sortRows(rows, "title").map((r) => r.id)).toEqual([3, 2, 1]);
   });
 });

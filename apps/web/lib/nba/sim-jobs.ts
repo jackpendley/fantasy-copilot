@@ -29,7 +29,7 @@ import {
 import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
 import { rosterKey, waiverFingerprint } from "./move-checks";
-import type { LiveJob, SettledResult } from "./move-shown";
+import { chooseShown, type LiveJob, type SettledResult, type ShownState } from "./move-shown";
 import { buildOutlookInput } from "./outlook";
 import { outlookSetup, type OutlookTeam } from "./outlook-run";
 import {
@@ -696,6 +696,43 @@ export async function liveJob(): Promise<
     settled: mine ? mine.effects.filter((e) => !e.active).length : 0,
     total: keys[0]?.n ?? 0,
   };
+}
+
+/**
+ * Each add's best checked move (by title change) for the Free agents tab: from the settled
+ * results and the job under way, chosen as on Moves (lib/nba/move-shown.ts).
+ */
+export async function bestChecksByAdd(
+  addIds: number[],
+  rosterNow: string,
+): Promise<{
+  byAdd: Map<number, { key: string; state: ShownState; effect: DeepEffect }>;
+  live: boolean;
+}> {
+  const byAdd = new Map<number, { key: string; state: ShownState; effect: DeepEffect }>();
+  if (!dbConfigured() || !addIds.length) return { byAdd, live: false };
+  const ids = new Set(addIds.map(String));
+  const [job, rows] = await Promise.all([
+    liveJob(),
+    db()<{ key: string; roster_key: string; effect: DeepEffect }[]>`
+      select key, roster_key, effect from move_results
+      where split_part(key, ':', 1) = any(${[...ids]})
+    `,
+  ]);
+  const last = new Map(rows.map((r) => [r.key, { rosterKey: r.roster_key, effect: r.effect }]));
+  const keys = new Set([
+    ...last.keys(),
+    ...[...(job?.effects?.keys() ?? [])].filter((k) => ids.has(k.split(":")[0]!)),
+  ]);
+  for (const key of keys) {
+    const s = chooseShown(key, job, last.get(key) ?? null, rosterNow);
+    if (!s.effect || s.effect.seasons <= 0) continue;
+    const add = Number(key.split(":")[0]);
+    const cur = byAdd.get(add);
+    if (!cur || s.effect.title.d > cur.effect.title.d)
+      byAdd.set(add, { key, state: s.state, effect: s.effect });
+  }
+  return { byAdd, live: job?.live ?? false };
 }
 
 /** Moves' last settled results, by key. */

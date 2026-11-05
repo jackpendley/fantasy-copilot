@@ -7,8 +7,11 @@ import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { POSITIONS, type FreeAgentRow, type SortKey } from "@/lib/free-agents";
 import { loadFreeAgentPool } from "@/lib/nba/waivers-view";
+import { rosterKeyOf } from "@/lib/nba/move-checks";
+import { workerEnabled } from "@/lib/nba/outlook-refresh";
+import { bestChecksByAdd } from "@/lib/nba/sim-jobs";
 
-const SORTS = ["name", "fppg", "last7", "games", "owned", "change", "season"] as const;
+const SORTS = ["name", "fppg", "last7", "games", "owned", "change", "season", "title"] as const;
 
 export default async function FreeAgentsPage({
   searchParams,
@@ -19,13 +22,37 @@ export default async function FreeAgentsPage({
   const pos = POSITIONS.includes(posParam as (typeof POSITIONS)[number]) ? posParam! : "All";
   const sort: SortKey = SORTS.includes(sortParam as SortKey) ? (sortParam as SortKey) : "fppg";
 
-  let candidates;
+  let loaded;
   try {
-    candidates = await loadFreeAgentPool();
+    loaded = await loadFreeAgentPool();
   } catch (e) {
     if (e instanceof SetupError) return <SetupNotice message={e.message} />;
     return <ErrorNotice title="Couldn't load free agents" message={(e as Error).message} />;
   }
+  const { candidates, roster, injuries } = loaded;
+  // Each player's best deep-checked move (the worker checks the best few drops of the top 45).
+  const checks = workerEnabled()
+    ? await bestChecksByAdd(
+        candidates.map((c) => c.player.id),
+        rosterKeyOf(roster, injuries),
+      ).catch(() => null)
+    : null;
+  const nameOf = new Map(roster.map((p) => [p.id, p.name]));
+  const titleOf = (id: number): FreeAgentRow["title"] => {
+    const c = checks?.byAdd.get(id);
+    if (!c) return null;
+    const [, drop, il] = c.key.split(":");
+    return {
+      d: c.effect.title.d,
+      se: c.effect.title.se,
+      drop: drop
+        ? (nameOf.get(Number(drop)) ?? null)
+        : il
+          ? `${nameOf.get(Number(il))} to IL`
+          : null,
+      updating: c.state === "updating" || c.state === "refining",
+    };
+  };
   const pool: FreeAgentRow[] = candidates.map((c) => ({
     id: c.player.id,
     name: c.player.name,
@@ -40,6 +67,7 @@ export default async function FreeAgentsPage({
     owned: c.player.percentOwned ?? null,
     change: c.player.percentChange ?? null,
     season: c.ros,
+    title: titleOf(c.player.id),
   }));
 
   return (
@@ -53,8 +81,10 @@ export default async function FreeAgentsPage({
           among this league&apos;s rostered players (green: 80th percentile or better, red: 20th or
           below). Last 7 = his average over the last 7 days. Wk G = games he can still play this
           week. Owned = share of ESPN leagues rostering him; +/− = its change over the last week.
-          Season = projected points from games after this week. Tap a column to sort; tap again to
-          flip. Moves has the best add for each, with whom to drop.
+          Season = projected points from games after this week. Title = the change in your title
+          odds (points) from his best move the deep check has simulated, with its margin; hover or
+          tap for whom it drops (the worker checks the best few drops of the top 45 adds; — means
+          not checked). Tap a column to sort; tap again to flip. Moves has the details.
         </p>
       </section>
     </>

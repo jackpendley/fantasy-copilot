@@ -15,9 +15,13 @@ const HANDLERS: Record<string, (input: never) => unknown> = {
   "sim-build": (input: { build: unknown }) => buildSimMoves(decodeWire<SimBuildInput>(input.build)),
 };
 
-/** Wait between polls, and how long to stay with nothing to do (simulations count as work). */
+/**
+ * Wait between asks with nothing to do, how long to stay that way, and the wait while only
+ * simulations are under way (a task then is rare; each ask costs the app a request).
+ */
 const POLL_MS = 15_000;
 const IDLE_MS = 2 * 60_000;
+const STAY_MS = 30_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -54,10 +58,13 @@ async function main() {
       lastWork = Date.now();
       continue;
     }
+    // 202: nothing now, but simulations are under way (they often bring tasks): stay.
+    if (res.status === 202) {
+      lastWork = Date.now();
+      await sleep(STAY_MS);
+      continue;
+    }
     if (res.status !== 204) throw new Error(`task: HTTP ${res.status}`);
-    // Simulations under way often bring tasks with them (a roster move queues both).
-    const peek = await fetch(`${app}/api/worker/peek?for=tasks`, { headers });
-    if (peek.status === 200) lastWork = Date.now();
     if (Date.now() - lastWork > IDLE_MS) break;
     await sleep(POLL_MS);
   }

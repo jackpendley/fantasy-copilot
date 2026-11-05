@@ -49,7 +49,7 @@ import {
   type SimGroup,
 } from "./sim-moves";
 import { loadWaiverInputs } from "./waivers-view";
-import { SIM_LOCK, enqueueTask } from "./worker-tasks";
+import { SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
 import { decodeWire, encodeWire } from "@/lib/wire-json";
 
 export const CHUNK_SEASONS = 200;
@@ -388,6 +388,28 @@ export async function nextAssignment(
     active: taken.active,
     ...(input ? { setup: input.setup, moves: input.moves } : {}),
   };
+}
+
+/**
+ * A runner's next chunks, or what to do instead: "wait" while a job is being built (a task is
+ * under way; the runner asks again later), "leave" when there's nothing.
+ */
+export async function assignOrWait(
+  count: number,
+  have: number | null,
+  haveMoves: number | null,
+): Promise<Assignment | "wait" | "leave"> {
+  const cpu0 = process.cpuUsage();
+  const a = await nextAssignment(count, have, haveMoves);
+  if (a) {
+    await addJobCpu(a.jobId, cpu0);
+    return a;
+  }
+  if (!(await hasTasks())) return "leave";
+  // Waiting runners count as busy, so the job they wait for doesn't start another run. Short,
+  // so a runner that leaves doesn't hold it long (waiting runners ask every 20 s).
+  await heartbeat(SIM_LOCK, 30);
+  return "wait";
 }
 
 /** The group a chunk is for, when a runner from before groups doesn't say. */

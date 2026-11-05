@@ -1,12 +1,13 @@
-// Worker tasks besides simulations (lib/nba/worker-tasks.ts). GET claims the next one (204
-// when there's none); POST returns its result, or its error, and stores the result where
-// its pages read it.
+// Worker tasks besides simulations (lib/nba/worker-tasks.ts). GET claims the next one: 200
+// with it, 202 when there's none now but the runner should stay (simulations under way often
+// bring tasks), 204 when it can leave. POST returns its result, or its error, and stores the
+// result where its pages read it.
 
 import { NextResponse, type NextRequest } from "next/server";
 import type { WireMove } from "@fantasy-copilot/fantasy-core";
 import { storeBuiltJob } from "@/lib/nba/sim-jobs";
 import type { StoredIdea } from "@/lib/nba/trade-task";
-import { claimTask, finishTask } from "@/lib/nba/worker-tasks";
+import { claimTask, finishTask, taskRunnerNeeded } from "@/lib/nba/worker-tasks";
 import { writeView } from "@/lib/view-cache";
 import { workerAuthorized } from "@/lib/worker-auth";
 
@@ -17,7 +18,8 @@ export async function GET(request: NextRequest) {
   if (!workerAuthorized(request))
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const task = await claimTask();
-  return task ? NextResponse.json(task) : new NextResponse(null, { status: 204 });
+  if (task) return NextResponse.json(task);
+  return new NextResponse(null, { status: (await taskRunnerNeeded()) ? 202 : 204 });
 }
 
 export async function POST(request: NextRequest) {

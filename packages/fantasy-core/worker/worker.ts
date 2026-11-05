@@ -73,14 +73,15 @@ async function main() {
   try {
     while (Date.now() < deadline) {
       const res = await fetch(
-        `${app}/api/worker/next?count=${cores}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
+        // Two chunks per core per request: half the requests (and posts) the app answers.
+        `${app}/api/worker/next?count=${2 * cores}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
         { headers },
       );
       if (res.status === 204) {
         idleSince ??= Date.now();
         const peek = await fetch(`${app}/api/worker/peek`, { headers });
         if (peek.status !== 200 || Date.now() - idleSince > WAIT_MS) break;
-        await new Promise((r) => setTimeout(r, 5_000));
+        await new Promise((r) => setTimeout(r, 10_000));
         continue;
       }
       idleSince = null;
@@ -101,21 +102,29 @@ async function main() {
         });
         if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
       };
-      const results = await Promise.all(
-        a.chunks.map(async (chunk, i) => {
-          const result = await run(pool[i % pool.length]!, {
-            setup: current.setup,
-            teamId: a.teamId,
-            moves,
-            chunk,
-            seasons: a.chunkSeasons,
-            replays: a.replays,
-          });
-          // An app from before groups takes one chunk per post.
-          if (a.group == null) await post({ jobId: a.jobId, result });
-          return result;
-        }),
-      );
+      // Each thread plays its chunks one after another (a thread answers one at a time).
+      const perThread = pool.map((_, t) => a.chunks.filter((_, i) => i % pool.length === t));
+      const results = (
+        await Promise.all(
+          perThread.map(async (mine, t) => {
+            const out: ChunkResult[] = [];
+            for (const chunk of mine) {
+              const result = await run(pool[t]!, {
+                setup: current.setup,
+                teamId: a.teamId,
+                moves,
+                chunk,
+                seasons: a.chunkSeasons,
+                replays: a.replays,
+              });
+              // An app from before groups takes one chunk per post.
+              if (a.group == null) await post({ jobId: a.jobId, result });
+              out.push(result);
+            }
+            return out;
+          }),
+        )
+      ).flat();
       // One post per round: the app updates the checks once for all of them.
       if (a.group != null) await post({ jobId: a.jobId, group: a.group, results });
       posted += results.length;

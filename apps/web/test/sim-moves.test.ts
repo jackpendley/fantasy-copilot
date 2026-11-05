@@ -188,7 +188,7 @@ describe("which group the next chunks go to", () => {
   ): SimGroup => ({
     grp,
     prio,
-    active,
+    n_active: active.length,
     next_chunk: next,
     posted,
   });

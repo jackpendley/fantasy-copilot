@@ -127,15 +127,15 @@ export function buildWireMoves(a: MoveBuildArgs, options: StreamOption[]): WireM
 export interface SimGroup {
   grp: number;
   prio: number;
-  active: string[];
+  /** How many of its moves still get seasons. */
+  n_active: number;
   next_chunk: number;
   posted: number;
 }
 
 /** Can this group take more chunks? Group 0 also carries the base run to its minimum. */
 export const hasChunksLeft = (g: SimGroup, maxChunks: number, minBaseChunks: number) =>
-  g.next_chunk < maxChunks &&
-  (g.active.length > 0 || (g.grp === 0 && g.next_chunk < minBaseChunks));
+  g.next_chunk < maxChunks && (g.n_active > 0 || (g.grp === 0 && g.next_chunk < minBaseChunks));
 
 /** Chunks other groups may have out before their first results come back. */
 const AHEAD_OTHER = 6;

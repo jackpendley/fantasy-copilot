@@ -158,7 +158,21 @@ That's under, but close to, the 8 min a day Hobby sustains. Next: build the job'
 Still above the ~4 min a day needed until ~Nov 19.
 
 - **#96 (Jack approved):** availability logging every 10 min before the game window, and no league load on runs where nothing's due. Expected −0.5 to −1 min a day; measure on Nov 6.
-- **Remaining lever:** fewer, larger result posts from the worker.
+- **The worker's traffic** was larger than the per-job meter showed. Observability over 12 h:
+
+| Route                | Calls | CPU  |
+| -------------------- | ----- | ---- |
+| `/api/worker/next`   | 1,500 | 47 s |
+| `/api/worker/result` | 1,400 | 35 s |
+| `/api/worker/task`   | 470   | 8 s  |
+| `/api/worker/peek`   | 585   | 8 s  |
+
+That's ~15–20 s per job, ~4–5 min a day at ~15 jobs. **#98:**
+
+- 2 chunks per core per request (half the requests and posts);
+- assignments read only counts, plus the chosen group's moves;
+- checks recomputed at most every 10 s (was 4);
+- idle polls every 10 s (simulation runners) and 15 s (task runner).
 
 **Simulation worker (Nov 5, 19:29 UTC):**
 

@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const a = await nextAssignment(count, have, Number.isInteger(moves) ? moves : null);
   if (a) await addJobCpu(a.jobId, cpu0);
   // Nothing now: the runner waits for a job being built (lib/nba/worker-tasks.ts SIM_LOCK).
-  // Short, so a runner that leaves instead doesn't hold it long (waiting runners poll every 5 s).
-  else await heartbeat(SIM_LOCK, 20);
+  // Short, so a runner that leaves instead doesn't hold it long (waiting runners poll every 10 s).
+  else await heartbeat(SIM_LOCK, 25);
   return a ? NextResponse.json(a) : new NextResponse(null, { status: 204 });
 }

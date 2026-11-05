@@ -16,7 +16,7 @@ const HANDLERS: Record<string, (input: never) => unknown> = {
 };
 
 /** Wait between polls, and how long to stay with nothing to do (simulations count as work). */
-const POLL_MS = 10_000;
+const POLL_MS = 15_000;
 const IDLE_MS = 2 * 60_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

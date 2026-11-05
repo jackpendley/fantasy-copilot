@@ -99,9 +99,9 @@ export async function taskRunnerNeeded(): Promise<boolean> {
 
 /** The oldest task to run (or one whose runner went quiet), claimed; null when none. */
 export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: unknown } | null> {
-  // Short (the runner polls every 10 s): a lock outliving the runner would keep a new task
+  // Short (the runner polls every 15 s): a lock outliving the runner would keep a new task
   // from starting a run.
-  await heartbeat(POLL_LOCK, 25);
+  await heartbeat(POLL_LOCK, 30);
   const [t] = await db()<{ id: number; kind: TaskKind; input: unknown }[]>`
     update worker_tasks set status = 'running', started_at = now(), attempts = attempts + 1
     where id = (

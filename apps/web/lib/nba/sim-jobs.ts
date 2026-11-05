@@ -56,8 +56,11 @@ export const CHUNK_SEASONS = 200;
 export const REPLAYS = 10;
 const MAX_CHUNKS = MAX_SEASONS / CHUNK_SEASONS;
 const MIN_BASE_CHUNKS = MIN_BASE_SEASONS / CHUNK_SEASONS;
-/** Runners' posts recompute the checks at most this often (and whenever all are back). */
-const REFRESH_GAP_S = 4;
+/**
+ * Runners' posts recompute the checks at most this often (and whenever all are back): each
+ * recompute rewrites every move's numbers, and the page polls every 10 s anyway.
+ */
+const REFRESH_GAP_S = 10;
 /** A job whose runners stopped posting is closed with what it has after this long. */
 const STALE_MS = 4 * 60_000;
 export const DEEP_KEY = "move-checks-deep";
@@ -93,7 +96,7 @@ interface JobRow {
   meta: OutlookTeam[];
 }
 
-type GroupRow = SimGroup & { keys: string[] };
+type GroupRow = SimGroup & { keys: string[]; active: string[] };
 
 const groupHasWork = (g: SimGroup, maxChunks: number) =>
   hasChunksLeft(g, maxChunks, MIN_BASE_CHUNKS);
@@ -332,6 +335,7 @@ export async function nextAssignment(
   have: number | null,
   haveMoves: number | null = null,
 ): Promise<Assignment | null> {
+  // Small rows only: this runs for every assignment (Vercel CPU, docs/COMPUTE.md).
   const [job] = await db()<
     {
       id: number;
@@ -339,25 +343,25 @@ export async function nextAssignment(
       replays: number;
       chunk_seasons: number;
       max_chunks: number;
-      n_moves: number;
     }[]
   >`
-    select id, team_id, replays, chunk_seasons, max_chunks, jsonb_array_length(moves) as n_moves
+    select id, team_id, replays, chunk_seasons, max_chunks
     from sim_jobs where status in ('queued', 'running')
     order by id desc limit 1
   `;
   if (!job) return null;
-  const groups = await db()<GroupRow[]>`
-    select grp, prio, keys, active, next_chunk, posted from sim_groups
-    where job_id = ${job.id} order by prio, grp
+  const groups = await db()<(SimGroup & { n_keys: number })[]>`
+    select grp, prio, cardinality(active) as n_active, cardinality(keys) as n_keys, next_chunk,
+      posted
+    from sim_groups where job_id = ${job.id} order by prio, grp
   `;
   const g = pickGroup(groups, job.max_chunks, MIN_BASE_CHUNKS, MIN_SEASONS / CHUNK_SEASONS);
   if (!g) return null;
   // Atomic and never capped, so concurrent runners get disjoint chunks; past the cap is ignored.
-  const [taken] = await db()<{ next_chunk: number }[]>`
+  const [taken] = await db()<{ next_chunk: number; active: string[] }[]>`
     update sim_groups set next_chunk = next_chunk + ${count}
     where job_id = ${job.id} and grp = ${g.grp} and next_chunk < ${job.max_chunks}
-    returning next_chunk
+    returning next_chunk, active
   `;
   if (!taken) return null;
   await db()`
@@ -367,7 +371,8 @@ export async function nextAssignment(
   const chunks = Array.from({ length: count }, (_, i) => taken.next_chunk - count + i).filter(
     (c) => c < job.max_chunks,
   );
-  const fresh = have !== job.id || (haveMoves != null && haveMoves !== job.n_moves);
+  const nMoves = groups.reduce((a, x) => a + x.n_keys, 0);
+  const fresh = have !== job.id || (haveMoves != null && haveMoves !== nMoves);
   const [input] = fresh
     ? await db()<{ setup: WireInput; moves: WireMove[] }[]>`
         select setup, moves from sim_jobs where id = ${job.id}
@@ -380,7 +385,7 @@ export async function nextAssignment(
     replays: job.replays,
     chunkSeasons: job.chunk_seasons,
     chunks,
-    active: g.active,
+    active: taken.active,
     ...(input ? { setup: input.setup, moves: input.moves } : {}),
   };
 }
@@ -565,8 +570,8 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   `;
   if (!job) return { done: true };
   const groups = await db()<GroupRow[]>`
-    select grp, prio, keys, active, next_chunk, posted from sim_groups
-    where job_id = ${jobId} order by prio, grp
+    select grp, prio, keys, active, cardinality(active) as n_active, next_chunk, posted
+    from sim_groups where job_id = ${jobId} order by prio, grp
   `;
   const { outlook, base } = await baseRun(jobId);
   if (!base.seasons) return { done: job.status === "done" };
@@ -590,7 +595,10 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
 
   // Each group keeps only its moves still getting seasons.
   const active = new Set(effects.filter((e) => e.active).map((e) => e.key));
-  const next = groups.map((g) => ({ ...g, active: g.active.filter((k) => active.has(k)) }));
+  const next = groups.map((g) => {
+    const still = g.active.filter((k) => active.has(k));
+    return { ...g, active: still, n_active: still.length };
+  });
   // Moves that stopped getting seasons since the last refresh are settled.
   const settled = new Set(groups.flatMap((g) => g.active.filter((k) => !active.has(k))));
   for (const [i, g] of next.entries()) {

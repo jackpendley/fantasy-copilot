@@ -84,8 +84,10 @@ export function applyMove(base: WireInput, teamId: number, mv: WireMove): WireIn
     teams: base.teams.map((t) => {
       const c = changed.get(t.id);
       if (!c) return t;
-      const { irCut: _, ...rest } = t;
-      return { ...rest, roster: c.roster, ...(c.irCut != null ? { irCut: c.irCut } : {}) };
+      const next = { ...t, roster: c.roster };
+      if (c.irCut != null) next.irCut = c.irCut;
+      else delete next.irCut;
+      return next;
     }),
     freeAgents:
       mv.freeAgents ??

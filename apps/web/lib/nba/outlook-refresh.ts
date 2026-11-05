@@ -15,6 +15,8 @@ import { espnConfig } from "@/lib/env";
 import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
+import { rosterKeyOf } from "./move-checks";
+import { samePlayers } from "./move-shown";
 import { enqueueSimJob } from "./sim-jobs";
 import { refreshTradeTargets } from "./trade-view";
 
@@ -176,6 +178,33 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
   forgetResponses();
   const last = await latestOutlook();
   return { watch: await refreshIfStale(newest, last?.run_at.getTime() ?? null, now.getTime()) };
+}
+
+/** News or IR-slot changes queue a new simulation job at most this often. */
+const NEWS_GAP = "5 minutes";
+
+/**
+ * Jack's roster as the latest simulation job saw it vs now (from the league the 5-minute job
+ * already loaded): his players' injury news or IR slots changed means his moves need a re-check.
+ * His adds and drops are queued by the roster watch; this catches what the transaction log
+ * doesn't. A job for news queued in the last 5 minutes waits for the next run.
+ */
+export async function simRosterCheck(
+  roster: Parameters<typeof rosterKeyOf>[0],
+  injuries: Parameters<typeof rosterKeyOf>[1],
+): Promise<"current" | "waiting" | "queued"> {
+  if (!workerEnabled()) return "current";
+  const key = rosterKeyOf(roster, injuries);
+  const [j] = await db()<{ roster_key: string | null; recent: boolean; live: boolean }[]>`
+    select roster_key, created_at > now() - ${NEWS_GAP}::interval as recent,
+      status in ('queued', 'running') as live
+    from sim_jobs where status <> 'superseded' order by id desc limit 1
+  `;
+  if (!j?.roster_key || j.roster_key === key) return "current";
+  const news = samePlayers(j.roster_key, key);
+  if (news && j.live && j.recent) return "waiting";
+  await refreshLogged(news ? "Injury news for your players" : "Your roster changed (IR or slots)");
+  return "queued";
 }
 
 const record = (job: string, status: "ok" | "error", detail: string) =>

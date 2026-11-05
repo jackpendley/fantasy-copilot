@@ -359,6 +359,11 @@ export function MoveCard({
             your roster; the new ones replace them here when they&apos;re done.
           </p>
         )}
+        {state === "stale" && (
+          <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
+            From before your players&apos; latest injury news; the re-check starts within minutes.
+          </p>
+        )}
         {loading && (
           <p className="border-t px-2 py-1.5 text-[11px] text-muted-foreground">
             {job?.current

@@ -15,7 +15,7 @@ import { refreshPbpPlayers } from "./nba/advanced";
 import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
-import { rosterWatch, workerEnabled } from "./nba/outlook-refresh";
+import { rosterWatch, simRosterCheck, workerEnabled } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { logOfficialReport } from "./nba/official-report";
 import {
@@ -95,6 +95,7 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     // CPU joins the next stored row.
     const quiet =
       result.watch === "quiet" &&
+      result.simRoster == null &&
       !result.availability &&
       !result.timeline &&
       !result.darko &&
@@ -149,6 +150,18 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   const leagueChanged = lastLeague == null ? null : fp !== lastLeague;
   lastLeague = fp;
 
+  // Jack's players' injury news or IR slots changed since the latest simulation job: re-check
+  // his moves (only when the league changed, so unchanged runs don't touch the database).
+  const simRoster =
+    leagueChanged === false
+      ? null
+      : await m.step("sim-trigger", () =>
+          simRosterCheck(data.ahead.me.roster, data.injuries).catch(async (e: Error) => {
+            await log("sim-trigger", "error", e.message).catch(() => {});
+            return null;
+          }),
+        );
+
   const darko = await m.step("darko", () =>
     darkoCheck(now, data, sp).catch(async (e: Error) => {
       await log("darko", "error", errorText(e)).catch(() => {});
@@ -157,7 +170,8 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   );
 
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
-  if (!games.length) return { ...watch, leagueChanged, darko, skipped: "no games today" };
+  if (!games.length)
+    return { ...watch, leagueChanged, simRoster, darko, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
 
@@ -204,6 +218,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     return {
       ...watch,
       leagueChanged,
+      simRoster,
       darko,
       timeline,
       availability,
@@ -256,6 +271,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     date,
     ...watch,
     leagueChanged,
+    simRoster,
     darko,
     timeline,
     closingProps: market?.props ?? 0,

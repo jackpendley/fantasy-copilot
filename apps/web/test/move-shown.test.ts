@@ -62,3 +62,12 @@ describe("what a move's card shows", () => {
     );
   });
 });
+
+describe("news vs Jack's own moves", () => {
+  it("keeps the last numbers through injury news (same players), as stale until a check runs", () => {
+    const old = { rosterKey: "P.news1", effect: fx(11_000, false) };
+    expect(chooseShown("k", null, old, "P.news2").state).toBe("stale");
+    expect(chooseShown("k", job("P.news2", true), old, "P.news2").state).toBe("updating");
+    expect(chooseShown("k", job("Q.news2", true), old, "Q.news2").state).toBe("loading");
+  });
+});

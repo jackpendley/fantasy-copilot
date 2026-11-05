@@ -15,6 +15,8 @@ import {
   type MoveSimResult,
   type MoveSpec,
 } from "./move-sim";
+import type { RosterPlayer } from "@fantasy-copilot/espn";
+import type { InjuryReport } from "@fantasy-copilot/nba-data";
 import { moveKey } from "./sim-moves";
 import type { StreamOption } from "./waivers";
 import { loadWaiverView } from "./waivers-view";
@@ -44,15 +46,23 @@ export function shortlist(v: WaiverView): StreamOption[] {
     .slice(0, SHORTLIST);
 }
 
-/** Jack's roster as the simulation sees it: players, slots and their injury news. */
-export function rosterKey(v: WaiverView): string {
-  const news = new Map(v.data.injuries.map((i) => [i.playerId, [i.status, i.returnDate ?? null]]));
-  return fingerprintOf(
-    v.data.ahead.me.roster
-      .map((p) => [p.id, p.slot, p.injuryStatus ?? null, news.get(p.id) ?? null])
-      .sort(),
-  );
+/**
+ * Jack's roster as the simulation sees it: "<players and slots>.<their injury news>". The first
+ * part changes only with his own moves (lib/nba/move-shown.ts keeps the last numbers on screen
+ * while news alone is re-checked).
+ */
+export function rosterKeyOf(
+  roster: Pick<RosterPlayer, "id" | "slot" | "injuryStatus">[],
+  injuries: Pick<InjuryReport, "playerId" | "status" | "returnDate">[],
+): string {
+  const news = new Map(injuries.map((i) => [i.playerId, [i.status, i.returnDate ?? null]]));
+  const players = roster.map((p) => [p.id, p.slot]).sort();
+  const status = roster.map((p) => [p.id, p.injuryStatus ?? null, news.get(p.id) ?? null]).sort();
+  return `${fingerprintOf(players)}.${fingerprintOf(status)}`;
 }
+
+export const rosterKey = (v: WaiverView): string =>
+  rosterKeyOf(v.data.ahead.me.roster, v.data.injuries);
 
 function fingerprint(v: WaiverView, moves: StreamOption[]): string {
   const news = new Map(v.data.injuries.map((i) => [i.playerId, [i.status, i.returnDate ?? null]]));

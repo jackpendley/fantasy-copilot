@@ -65,6 +65,10 @@ async function main() {
   let job: { id: number; setup: WireInput; moves: WireMove[] } | null = null;
   let posted = 0;
   const t0 = Date.now();
+  // With nothing to simulate, wait while the app still has tasks under way (a job's moves are
+  // built by a task first), up to this long.
+  const WAIT_MS = 3 * 60_000;
+  let idleSince: number | null = null;
 
   try {
     while (Date.now() < deadline) {
@@ -72,7 +76,14 @@ async function main() {
         `${app}/api/worker/next?count=${cores}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
         { headers },
       );
-      if (res.status === 204) break;
+      if (res.status === 204) {
+        idleSince ??= Date.now();
+        const peek = await fetch(`${app}/api/worker/peek`, { headers });
+        if (peek.status !== 200 || Date.now() - idleSince > WAIT_MS) break;
+        await new Promise((r) => setTimeout(r, 5_000));
+        continue;
+      }
+      idleSince = null;
       if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
       const a = (await res.json()) as Assignment;
       if (a.setup && a.moves) job = { id: a.jobId, setup: a.setup, moves: a.moves };

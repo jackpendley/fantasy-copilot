@@ -264,7 +264,8 @@ export async function refreshLogged(trigger?: string | null) {
           : last
             ? await describeMoves(last.run_at, last.scoring_period).catch(() => null)
             : null;
-      await record("sim-job", "ok", `queued job ${await enqueueSimJob(label, [], m)}`);
+      const job = await enqueueSimJob(label, [], m);
+      await record("sim-job", "ok", job ? `queued job ${job}` : "queued its build on the worker");
     } catch (e) {
       await record("sim-job", "error", (e as Error).message);
       await m.step("outlook", () => refreshVercel(trigger));

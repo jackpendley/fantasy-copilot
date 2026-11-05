@@ -793,3 +793,11 @@
   - Other teams' moves, news and page visits refresh them at most every 15 min. On Vercel (no worker) the limit stays 3 h.
   - Jack's own moves and the nightly run refresh right away.
 - **Test:** the search from its JSON input gives exactly the same ideas as in-process (an injury included).
+- **Addendum (Nov 5): simulation jobs are built on the worker too.**
+  - The add-and-drop analysis was ~88% of a roster move's Vercel cost (~3.5 s of ~5.3 s).
+  - Vercel now gathers the analysis' inputs (`loadWaiverInputs`) and the season setup, and queues a `sim-build` task. Maps and Sets cross as tagged JSON (`lib/wire-json.ts`).
+  - The worker runs `buildSimMoves`: the analysis, the move list and the patches.
+  - The job is stored when the moves come back, unless a newer build was asked for.
+  - The simulation runners wait up to 3 min while a task is under way.
+  - A finished task keeps only the small part its result still needs.
+  - **Test:** the analysis from its JSON input equals the in-process one.

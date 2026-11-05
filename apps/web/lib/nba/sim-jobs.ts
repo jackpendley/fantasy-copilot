@@ -15,7 +15,6 @@ import {
 } from "@fantasy-copilot/fantasy-core";
 import { db, dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
-import { absences } from "./availability";
 import {
   MAX_SEASONS,
   MIN_BASE_SEASONS,
@@ -29,7 +28,7 @@ import {
 import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
 import type { StoredIdea } from "./trade-task";
-import { rosterKey, waiverFingerprint } from "./move-checks";
+import { rosterKeyOf } from "./move-checks";
 import {
   chooseShown,
   deepView,
@@ -42,16 +41,16 @@ import { buildOutlookInput } from "./outlook";
 import { outlookSetup, type OutlookTeam } from "./outlook-run";
 import {
   TRADE_MOVES,
-  buildTradeMoves,
-  buildWireMoves,
+  buildSimMoves,
   groupsOf,
   hasChunksLeft,
-  jobMoveOptions,
-  moveKey,
   pickGroup,
+  type SimBuildInput,
   type SimGroup,
 } from "./sim-moves";
-import { loadWaiverView } from "./waivers-view";
+import { loadWaiverInputs } from "./waivers-view";
+import { POLL_LOCK, enqueueTask } from "./worker-tasks";
+import { decodeWire, encodeWire } from "@/lib/wire-json";
 
 export const CHUNK_SEASONS = 200;
 export const REPLAYS = 10;
@@ -109,19 +108,39 @@ export async function enqueueSimJob(
   m = new CpuMeter(),
 ): Promise<number | null> {
   if (!dbConfigured()) return null;
-  const built = await buildJob(extraKeys, false, m);
-  return m.step("store", () => storeJob({ ...built, trigger, myId: built.setup.data.me.id }));
+  const { build, ctx } = await prepareJob(trigger, extraKeys, m);
+  if (process.env.WORKER_SECRET) {
+    // The worker runs the analysis and builds the moves (docs/COMPUTE.md); the job is stored
+    // when it posts them (storeBuiltJob).
+    const input = { build: encodeWire(build), ctx };
+    await m.step("queue-build", () => enqueueTask("sim-build", fingerprintOf(input), input));
+    return null;
+  }
+  const built = await m.step("build-moves", () => buildSimMoves(build));
+  return m.step("store", () => storeJob(ctx, build.base, built));
+}
+
+/** The job's own facts, kept with its build task until the moves come back. */
+interface JobContext {
+  trigger: string | null;
+  teamId: number;
+  scoringPeriod: number;
+  readAt: string;
+  rosterKey: string;
+  waiverFingerprint: string;
+  meta: OutlookTeam[];
 }
 
 /**
- * The season as it stands, as plain JSON, and the moves to check in order (`only`: just
- * extraKeys). `leading`: how many of them are the Moves page's opening moves.
+ * The season as it stands (the base run as plain JSON) and everything the moves are built from:
+ * the add-and-drop analysis' inputs, Jack's roster, the free agents and the stored trade ideas.
  */
-async function buildJob(extraKeys: string[], only = false, m = new CpuMeter()) {
+async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMeter) {
   // Read and parsed together (both read the league): one step.
-  const [setup, v] = await m.step("inputs", () => Promise.all([outlookSetup(), loadWaiverView()]));
+  const [setup, w] = await m.step("inputs", () =>
+    Promise.all([outlookSetup(), loadWaiverInputs()]),
+  );
   const { data } = setup;
-  const myId = data.me.id;
   const base = buildOutlookInput({
     teams: data.teams,
     previousTeams: setup.previousTeams,
@@ -136,58 +155,82 @@ async function buildJob(extraKeys: string[], only = false, m = new CpuMeter()) {
     injured: setup.injured,
     seasons: 0,
   });
-  const wire = toWire(base.input);
-
-  const all = [...v.analysis.dropOptions.values()].flat();
-  const { options, leading, others } = only
-    ? {
-        options: extraKeys.flatMap((k) => all.filter((o) => moveKey(o) === k)),
-        leading: extraKeys.length,
-        others: extraKeys.length,
-      }
-    : jobMoveOptions(v.analysis, extraKeys);
   // The best stored trade ideas too, checked after the Moves page's drops.
-  const ideas = only
-    ? []
-    : ((await readView<StoredIdea[]>(TRADE_VIEW).catch(() => null))?.value ?? []).slice(
-        0,
-        TRADE_MOVES,
-      );
-  // The adds' own absences (they're not on a roster, so not in the setup's).
-  const injured = new Map(setup.injured);
-  const adds = options.map((o) => o.add.player);
-  for (const [id, a] of absences(adds, data.injuries, setup.fromDay)) injured.set(id, a);
-  const moves = await m.step("build-moves", () => {
-    const args = {
-      base: wire,
-      teamId: myId,
-      roster: data.me.roster,
-      freeAgents: setup.freeAgents,
-      games: data.games,
-      slotCounts: data.settings.slotCounts,
-      fromDay: setup.fromDay,
-      regularWeeks: data.settings.regularSeasonWeeks,
-      injured,
-    };
-    const waiver = buildWireMoves(args, options);
-    const trades = buildTradeMoves({ ...args, teams: data.teams }, ideas);
-    return [...waiver.slice(0, others), ...trades, ...waiver.slice(others)];
-  });
-  return { setup, v, base, wire, moves, leading };
+  const ideas = ((await readView<StoredIdea[]>(TRADE_VIEW).catch(() => null))?.value ?? []).slice(
+    0,
+    TRADE_MOVES,
+  );
+  const build: SimBuildInput = {
+    waiver: w.inputs,
+    extraKeys,
+    base: toWire(base.input),
+    teamId: data.me.id,
+    roster: data.me.roster,
+    freeAgents: setup.freeAgents,
+    games: data.games,
+    slotCounts: data.settings.slotCounts,
+    fromDay: setup.fromDay,
+    regularWeeks: data.settings.regularSeasonWeeks,
+    injured: setup.injured,
+    injuries: data.injuries,
+    teams: data.teams.map((t) => ({ id: t.id, roster: t.roster })),
+    ideas,
+  };
+  const key = rosterKeyOf(w.data.ahead.me.roster, w.data.injuries);
+  const ctx: JobContext = {
+    trigger,
+    teamId: data.me.id,
+    scoringPeriod: setup.fromDay,
+    readAt: setup.readAt.toISOString(),
+    rosterKey: key,
+    waiverFingerprint: fingerprintOf({ sp: w.sp, key }),
+    meta: data.teams.map((t) => {
+      const a = base.activity.get(t.id)!;
+      return {
+        teamId: t.id,
+        name: t.name,
+        wins: t.wins,
+        losses: t.losses,
+        pointsFor: t.pointsFor,
+        expWins: 0,
+        playoffs: 0,
+        seed1: 0,
+        final: 0,
+        champ: 0,
+        act: a.act,
+        addsPerWeek: a.addsPerWeek,
+      };
+    }),
+  };
+  return { build, ctx };
 }
 
-async function storeJob({
-  trigger,
-  setup,
-  v,
-  base,
-  wire,
-  moves,
-  leading,
-  myId,
-}: Awaited<ReturnType<typeof buildJob>> & { trigger: string | null; myId: number }) {
-  const { data } = setup;
+/**
+ * The worker built a job's moves (a sim-build task): store the job, unless a newer build has
+ * been asked for since (its job will replace this one).
+ */
+export async function storeBuiltJob(
+  taskId: number,
+  built: { moves: WireMove[]; leading: number; others: number },
+): Promise<number | null> {
+  const [newer] = await db()`
+    select 1 from worker_tasks where kind = 'sim-build' and id > ${taskId}
+      and status in ('queued', 'running', 'done') limit 1
+  `;
+  if (newer) return null;
+  // Only the job's context and the base season (finishTask kept them; the rest is cleared).
+  const [t] = await db()<{ ctx: JobContext; base: unknown }[]>`
+    select input->'ctx' as ctx, input->'base' as base from worker_tasks where id = ${taskId}
+  `;
+  if (!t?.ctx || !t.base) return null;
+  return storeJob(t.ctx, decodeWire<WireInput>(t.base), built);
+}
 
+async function storeJob(
+  ctx: JobContext,
+  wire: WireInput,
+  { moves, leading }: { moves: WireMove[]; leading: number },
+) {
   const fingerprint = fingerprintOf({ wire, moves: moves.map((m) => m.key) });
   const [same] = await db()<{ id: number; status: string }[]>`
     select id, status from sim_jobs where fingerprint = ${fingerprint}
@@ -197,47 +240,30 @@ async function storeJob({
     // The same simulation: reuse it, under Jack's roster key as it reads now (news that didn't
     // change the simulation, or a new key format), so the roster check doesn't queue it again.
     await db()`
-      update sim_jobs set roster_key = ${rosterKey(v)}, waiver_fingerprint = ${waiverFingerprint(v)}
+      update sim_jobs set roster_key = ${ctx.rosterKey}, waiver_fingerprint = ${ctx.waiverFingerprint}
       where id = ${same.id}
     `;
     if (same.status !== "done") await startWorker();
     return same.id;
   }
-  const meta: OutlookTeam[] = data.teams.map((t) => {
-    const a = base.activity.get(t.id)!;
-    return {
-      teamId: t.id,
-      name: t.name,
-      wins: t.wins,
-      losses: t.losses,
-      pointsFor: t.pointsFor,
-      expWins: 0,
-      playoffs: 0,
-      seed1: 0,
-      final: 0,
-      champ: 0,
-      act: a.act,
-      addsPerWeek: a.addsPerWeek,
-    };
-  });
   await db()`update sim_jobs set status = 'superseded', updated_at = now()
     where status in ('queued', 'running')`;
   const [row] = await db()<{ id: number }[]>`
     insert into sim_jobs ${db()({
-      trigger,
-      team_id: myId,
-      scoring_period: setup.fromDay,
-      read_at: setup.readAt,
+      trigger: ctx.trigger,
+      team_id: ctx.teamId,
+      scoring_period: ctx.scoringPeriod,
+      read_at: new Date(ctx.readAt),
       fingerprint,
       setup: db().json(wire as never),
       moves: db().json(moves as never),
-      waiver_fingerprint: waiverFingerprint(v),
-      roster_key: rosterKey(v),
+      waiver_fingerprint: ctx.waiverFingerprint,
+      roster_key: ctx.rosterKey,
       replays: REPLAYS,
       chunk_seasons: CHUNK_SEASONS,
       max_chunks: MAX_CHUNKS,
       active: [],
-      meta: db().json(meta as never),
+      meta: db().json(ctx.meta as never),
     })}
     returning id
   `;
@@ -258,18 +284,18 @@ async function storeJob({
   return row!.id;
 }
 
-/** Start the worker unless runners are already working (they pick up the newest job). */
+/**
+ * Start the worker unless runners are already working (they pick up the newest job) or waiting
+ * for tasks (they take the job when it's stored).
+ */
 async function startWorker() {
   const [busy] = await db()`
-    select 1 from sim_jobs where last_worker_at > now() - interval '45 seconds' limit 1
+    select 1 from sim_jobs where last_worker_at > now() - interval '45 seconds'
+    union all
+    select 1 from job_locks where name = ${POLL_LOCK} and until > now()
+    limit 1
   `;
   if (!busy) await dispatchWorker().catch(() => false);
-}
-
-/** One move as the worker plays it, built from the season as it stands now. */
-async function buildMove(key: string): Promise<WireMove | null> {
-  const built = await buildJob([key], true);
-  return built.moves.find((m) => m.key === key) ?? null;
 }
 
 /** Is there work for a runner? (Cheap: one query.) */
@@ -784,13 +810,13 @@ export async function latestDeepChecks(): Promise<DeepChecks | null> {
 }
 
 /**
- * Jack asked for a deep check of one move (a drop he picked): add it to the job under way when
- * that job has his current roster, otherwise queue a new job that includes it.
+ * Jack asked for a deep check of one move (a drop he picked): the job under way has it, or a
+ * new job puts it first.
  */
 export async function requestMoveCheck(key: string): Promise<number | null> {
   if (!dbConfigured()) return null;
-  const [live] = await db()<{ id: number; roster_key: string | null; has: boolean }[]>`
-    select id, roster_key,
+  const [live] = await db()<{ id: number; has: boolean }[]>`
+    select id,
       exists (select 1 from sim_groups g where g.job_id = j.id and ${key} = any(g.keys)) as has
     from sim_jobs j where status in ('queued', 'running')
     order by id desc limit 1
@@ -799,24 +825,6 @@ export async function requestMoveCheck(key: string): Promise<number | null> {
   if (live?.has) {
     await startWorker();
     return live.id;
-  }
-  const v = await loadWaiverView();
-  if (live && live.roster_key === rosterKey(v)) {
-    const move = await buildMove(key);
-    if (move) {
-      // Its own group, ahead of the rest (runners holding the job fetch its moves again).
-      await db()`
-        update sim_jobs set moves = moves || ${db().json([move] as never)}::jsonb, updated_at = now()
-        where id = ${live.id}
-      `;
-      await db()`
-        insert into sim_groups (job_id, grp, prio, keys, active)
-        select ${live.id}, coalesce(max(grp), -1) + 1, 0, ${[key]}, ${[key]}
-        from sim_groups where job_id = ${live.id}
-      `;
-      await startWorker();
-      return live.id;
-    }
   }
   return enqueueSimJob("You asked for a deep check of a move", [key]);
 }

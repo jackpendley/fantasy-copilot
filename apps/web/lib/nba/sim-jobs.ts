@@ -58,9 +58,10 @@ const MAX_CHUNKS = MAX_SEASONS / CHUNK_SEASONS;
 const MIN_BASE_CHUNKS = MIN_BASE_SEASONS / CHUNK_SEASONS;
 /**
  * Runners' posts recompute the checks at most this often (and whenever all are back): each
- * recompute rewrites every move's numbers, and the page polls every 10 s anyway.
+ * recompute rewrites every move's numbers, the biggest part of a post's Vercel CPU (Nov 5:
+ * ~10 s of a job's ~15 s). Numbers on the page lag by at most this plus its 10 s poll.
  */
-const REFRESH_GAP_S = 10;
+const REFRESH_GAP_S = 20;
 /** A job whose runners stopped posting is closed with what it has after this long. */
 const STALE_MS = 4 * 60_000;
 export const DEEP_KEY = "move-checks-deep";

@@ -49,7 +49,7 @@ import {
   type SimGroup,
 } from "./sim-moves";
 import { loadWaiverInputs } from "./waivers-view";
-import { POLL_LOCK, enqueueTask } from "./worker-tasks";
+import { SIM_LOCK, enqueueTask } from "./worker-tasks";
 import { decodeWire, encodeWire } from "@/lib/wire-json";
 
 export const CHUNK_SEASONS = 200;
@@ -285,14 +285,14 @@ async function storeJob(
 }
 
 /**
- * Start the worker unless runners are already working (they pick up the newest job) or waiting
- * for tasks (they take the job when it's stored).
+ * Start the worker unless simulation runners are already working (they pick up the newest job)
+ * or waiting for a job being built (they take it when it's stored).
  */
 async function startWorker() {
   const [busy] = await db()`
     select 1 from sim_jobs where last_worker_at > now() - interval '45 seconds'
     union all
-    select 1 from job_locks where name = ${POLL_LOCK} and until > now()
+    select 1 from job_locks where name = ${SIM_LOCK} and until > now()
     limit 1
   `;
   if (!busy) await dispatchWorker().catch(() => false);

@@ -13,8 +13,22 @@ export type TaskKind = "trade-search" | "sim-build";
 /** A claimed task runs at most this long before it's handed out again. */
 const LEASE = "5 minutes";
 const MAX_ATTEMPTS = 3;
-/** Runners waiting for tasks heartbeat this lock (so a new task doesn't start another run). */
+/** The task runner heartbeats this lock while it's up (so a new task doesn't start a run). */
 export const POLL_LOCK = "worker-tasks";
+/**
+ * Simulation runners heartbeat this one while they wait for work (a job being built), so a
+ * job stored then doesn't start another run. The task runner's lock doesn't count for jobs:
+ * it can outlive the simulation runners.
+ */
+export const SIM_LOCK = "worker-sims";
+
+/** Heartbeat a runner lock for the next `seconds` (runners refresh it each time they poll). */
+export async function heartbeat(name: string, seconds = 90) {
+  await db()`
+    insert into job_locks (name, until) values (${name}, now() + ${`${seconds} seconds`}::interval)
+    on conflict (name) do update set until = excluded.until
+  `;
+}
 
 /** Queue a task (true when queued, false when the same input is already queued or running). */
 export async function enqueueTask(kind: TaskKind, fingerprint: string, input: unknown) {
@@ -68,10 +82,7 @@ export async function hasTasks(): Promise<boolean> {
 
 /** The oldest task to run (or one whose runner went quiet), claimed; null when none. */
 export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: unknown } | null> {
-  await db()`
-    insert into job_locks (name, until) values (${POLL_LOCK}, now() + interval '90 seconds')
-    on conflict (name) do update set until = excluded.until
-  `;
+  await heartbeat(POLL_LOCK);
   const [t] = await db()<{ id: number; kind: TaskKind; input: unknown }[]>`
     update worker_tasks set status = 'running', started_at = now(), attempts = attempts + 1
     where id = (

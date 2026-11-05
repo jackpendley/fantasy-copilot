@@ -55,8 +55,8 @@ async function main() {
       continue;
     }
     if (res.status !== 204) throw new Error(`task: HTTP ${res.status}`);
-    // Simulations still running often bring tasks with them (a roster move queues both).
-    const peek = await fetch(`${app}/api/worker/peek`, { headers });
+    // Simulations under way often bring tasks with them (a roster move queues both).
+    const peek = await fetch(`${app}/api/worker/peek?for=tasks`, { headers });
     if (peek.status === 200) lastWork = Date.now();
     if (Date.now() - lastWork > IDLE_MS) break;
     await sleep(POLL_MS);

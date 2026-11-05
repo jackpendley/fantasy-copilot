@@ -186,9 +186,9 @@ export default async function SettingsPage() {
             ))}
             {compute.jobs && compute.jobs.jobs > 0 && (
               <p className="border-t pt-1 text-xs text-muted-foreground">
-                Simulation jobs: {compute.jobs.jobs}, ~{Math.round(compute.jobs.moves ?? 0)} moves
-                each; the worker&apos;s requests cost Vercel{" "}
-                {((compute.jobs.ms ?? 0) / 1000).toFixed(1)} s per job
+                {`Simulation jobs: ${compute.jobs.jobs}, ~${Math.round(compute.jobs.moves ?? 0)} moves each; `}
+                the worker&apos;s requests cost Vercel {((compute.jobs.ms ?? 0) / 1000).toFixed(1)}{" "}
+                s per job
                 {compute.jobs.secs != null &&
                   `; done in ${(compute.jobs.secs / 60).toFixed(1)} min on average`}
                 .

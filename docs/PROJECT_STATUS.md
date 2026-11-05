@@ -1,94 +1,59 @@
-# Project status (2026-11-02, end of round 2)
+# Project status (2026-11-05)
 
 ## Where things stand
 
-**Live** at **https://fantasycopilot.vercel.app**, on Vercel Hobby with Neon Postgres. Four tabs:
+**Live** at **https://fantasycopilot.vercel.app**, on Vercel Hobby with Neon Postgres. Four tabs: Today, Matchup, Players (Moves, Free agents, Trends), League (with Trades and team pages).
 
-- **Today**
-- **Matchup** (`/nba/week`):
-  - any week or team;
-  - a Mon–Sun win chart with points every 15 minutes during games;
-  - a league strip with Jack's matchup first and finals in green/red;
-  - on-court/bench dots during live games.
-- **Players:**
-  - **Moves**, with deep simulation checks once the worker is on;
-  - **Free agents**, with FP/G percentile badges;
-  - **Trends**;
-  - search.
-- **League:**
-  - odds and a "What a bye is worth" line;
-  - sortable standings with Bye and #1 columns;
-  - Most impactful moves;
-  - Trades.
-  - Each team page has odds over time, roster moves with their impact, and injury games missed.
+**Every simulation runs by itself now (Nov 5, PRs #79–#87):**
 
-The player card has a fixed size and closes on navigation. It shows advanced stats with league percentiles (green ≥80th, red ≤20th) and colored game results. The player page has the same data plus every game, for this season or last.
+- **The worker checks every move** (ADR-058): every drop of every add on Moves, the best 3 drops of the other evaluated adds, and the best 15 trade ideas. That's ~290 moves per job, in groups of 12, most important first.
+  - Clearly worse moves stop after 1,000 seasons; close ones run to ±0.5 title points or 20,000 seasons.
+  - **Measured:** the opening moves are settled ~4 min after a trigger, and all 288 moves in ~13.5 min (16 runners).
+- **Moves:**
+  - each card shows its deep check with no button, and the drop picker shows every drop's title change;
+  - while a job re-checks, cards keep their last numbers with a spinner; after your own roster change they show a loader until the new numbers have 4,000 seasons;
+  - a banner shows progress ("64 of 288 moves done"), and `/api/moves/status` is polled instead of re-rendering the page.
+- **Free agents:** a sortable Title column (each player's best checked move).
+- **Trades:**
+  - each idea shows its simulated title change, and the evaluation shows title, playoffs and wins with margins;
+  - the trade search itself runs on the worker (ADR-059, `worker_tasks`);
+  - Simulate stays for custom trades.
+- **What starts a job:** a roster move anywhere in the league (the 5-minute transaction watch, or right away for moves made in the app), injury news or IR changes on your roster (the 5-minute job; at most one job per 5 min for news), and the nightly run.
 
-**Shipped Nov 2, round 1 (#51–#62):** jobs and push fixes, the Matchup rework, the Moves numbers, search, simulation replays, four tabs, IR rule, day-to-day test (see git log / ADR-046–051).
+**Vercel CPU** (the main constraint; see `docs/COMPUTE.md`):
 
-**Shipped Nov 2, round 2 (#63–#70):**
-
-- **#63, CPU diet (ADR-052):**
-  - Outlook reruns are coalesced to one per 30 minutes.
-  - Page visits never start simulations.
-  - Parsed league and free agents are memoized.
-  - One win chance everywhere: Matchup and Moves both use the props blend for today (the 63% vs 61% fix).
-- **#64, simulation worker (ADR-053):** GitHub Actions (8 runners) plays move checks and the Outlook in 200-season chunks. Each move runs until ±0.5 title points (2 SE), between 4,000 and 20,000 seasons, and the base run gets 8,000+. Shown per move: P(helps) and P(best). Results update progressively. **Live since Nov 3.**
-- **#65:** Players tabs share a layout. Switches are ~10–20 ms warm.
-- **#66:** `matchup_timeline` (every 15 min in game windows), the Mon–Sun chart, strip order and colors, on-court dots (from the ESPN summary).
-- **#67:** Vercel builds only `main`: no preview deployments, which were filling Functions Storage (7.1 of 10 GB).
-- **#68, card and page (ADR-054):** `pbp_players.stats`, 17 metrics with percentiles among regulars, rostered-player FP/G percentiles, `fpTone` colors everywhere, `FpChart` with average and projection lines, the last-season toggle.
-- **#69, byes (ADR-055):** the simulator counts byes and titles won with one (golden test extended). On Nov 3, a bye meant a 27% title chance vs 12% as a 3–6 seed.
-- **#70, move history (ADR-056):** `league_transactions`; per move, the odds change at the time (≈ when not clean), points since and value now; injuries as games missed × projection.
-
-**Vercel usage on Nov 2:**
-
-- Active CPU 2 h 29 m of 4 h.
-- Functions Storage 7.12 of 10 GB (this is what the warning email was about).
-- After #63, CPU grew ~2 min in 5 h, and #67 stops the storage growth.
-- Recommendation given: stay on Hobby. Pro ($20) only if usage stays near the limits.
-- **#76:** each drop option says whom the roster cuts when an IR player returns ("when Duren is back from IL, you'd drop X").
-- **#77, ADR-057:** an IR return now cuts the player the lineup would **miss least**, instead of whoever starts fewest points. This is used everywhere, including the simulator's `irCut`.
-  - It fixed Smith for Collins: the model had cut Isaiah Jackson later, giving rest of season −75. It now cuts Sharpe, giving +80.
-  - **Deep check, Nov 3 (11,200 seasons):**
-    - Smith for Collins: +0.2 ±0.3 title, +1.3 ±0.7 playoffs, +0.10 wins, 87% it helps.
-    - The top move is Lively for Collins: +0.5 ±0.3, >99%, 24% best.
-  - **Verified on production:** quick check (800) → deep check swapped in on the card in ~4 min with no reload; Compare works.
+- **Nov 5:** 3 h 6 m of Hobby's 4 h over a rolling 30 days. Over the limit, Vercel pauses the project.
+- **Biggest cost found:** the trade idea search (~7.5 s per run). It now runs on the worker, at most every 15 min for other teams' changes. Jack's own moves and the nightly run refresh it right away.
+- **Measured per step** (`cpu_log`, Settings → "Vercel CPU, last 24 hours"):
+  - gameday ~0.6 s per run;
+  - a roster move ~5.3 s to build the simulation job;
+  - the worker's requests ~2.8 s per job.
+- **Projection:** ≈7 min a day against the 8 min a day Hobby sustains.
 
 ## Waiting on Jack
 
-Nothing right now.
-
-**Done Nov 3:**
-
-- Deployment retention set to 1 day for every type, with Jack's OK. Vercel always keeps the live deployment and the last 3 production deployments, and deleted ones can be restored for the retention period. This frees the Functions Storage that was at 7.1 of 10 GB.
-
-- `WORKER_SECRET` set in GitHub and Vercel (on the second try: the first values didn't match, and the runners got 401).
-- `GITHUB_DISPATCH_TOKEN` set: fine-grained, this repo only, Actions read and write, expires **Nov 1, 2027** (checked on GitHub). **Renew it before then.**
-- `VAPID_SUBJECT` was already set.
-- **Production test:**
-  - Simulate this drop started a GitHub run in 22 s.
-  - A run of 8 runners finished in ~3 min.
-  - Moves showed "Deep check done: 15 moves, up to 12,000 seasons each" (top: +Lively −Collins, +0.8 ±0.3 title points, >99% helps, 43% best).
-  - #72 fixed asking again for a move already queued, which didn't start a runner.
-- **#75 (Nov 3):**
-  - **Problem:** "Simulate this drop" kept showing its 400-season quick check until the page was reloaded. Jack saw "positive" at 400 seasons, then "neutral" at 11,200 after reopening.
-  - **Fix:** the card now refreshes every 15 s and swaps in the deep check when it lands (giving up after 10 min). Until then it says the quick check is rough and to wait.
-  - **Compare** button on each move: the add and the drop side by side, covering projections, rest of season, this season, box score, fantasy points by stat and advanced stats with percentiles. The better value is shown in green.
+- **Vercel's Git auto-deploy** was slow or missing on Nov 5 (merged commits sat 5–30 min, with no commit status). Jack OK'd deploying `main` from the dashboard meanwhile. If it recurs, check github.com/settings/installations → Vercel for a pending permission request (that page needs his password).
+- **Decision:** the 1-minute transaction watch (Jack chose it) is **deferred** until CPU has room. It costs ~0.1 s per call (~2 min a day). The 5-minute watch stays.
+- **Decision (optional):** to cut the full job from ~13.5 to ~7 min, the moves beyond each card's opening drop could run to ±0.75 instead of ±0.5. Jack's call.
 
 ## Next tasks
 
-1. **Worker:** time a real roster move to first and final deep results (the target is about 2 and 5 min). Compare Vercel Active CPU before and after (Nov 2: 2 h 29 m of 4 h).
-2. **Production checks:**
-   - `pbp_players.stats` fills on the first card open after deploy, or nightly. Percentiles appear then.
-   - Team pages show "At the time" values from the season's Outlook runs.
-   - The first bye numbers appear after the next Outlook run.
-3. **Official statuses forward test** (pre-registered): once ≥1,500 non-Out rows (~3–4 weeks).
-4. **Props and DARKO blend tests** run nightly; check `/nba/model`.
-5. **Win probability:** candidate C after week 7's finals (Dec 6, Pre-registration 3); recalibration after week 13 (Pre-registration 2).
-6. **Free agents' Vegas props on Moves:** free agents are now in the blend (#63). Check the props coverage for them.
-7. **Roadmap** (`docs/ROADMAP.md`):
-   - own projection models;
-   - opponent manager profiles;
-   - a playoff-schedule planner;
-   - NFL and MLB.
+1. **CPU, before anything heavier:**
+   - **build the simulation job's inputs on the worker** (Vercel sends the league data it already reads; the worker runs the waiver analysis and move building): about −2 min a day;
+   - **gameday:** load the league only when a step needs it (night hours, no move): about −1 min a day;
+   - **coalesce other teams' moves** into one pending job (no restart storms on busy nights).
+   - Then re-measure 24 h and update COMPUTE.md.
+2. **Check in production:**
+   - the trade search's first run on the worker (it runs when the ideas' inputs change);
+   - the nightly run (11:00 UTC) queues a job and prunes old jobs and tasks;
+   - `move_results` keeps numbers through the next re-check (Moves shows "Updating", not loaders).
+3. **Earlier items still open:**
+   - the official-statuses forward test (once ≥1,500 non-Out rows);
+   - the props and DARKO blend tests (nightly; `/nba/model`);
+   - win-probability candidate C after week 7 (Dec 6) and recalibration after week 13;
+   - props coverage for free agents.
+4. **Roadmap** (`docs/ROADMAP.md`): own projection models, opponent manager profiles, a playoff-schedule planner, NFL and MLB. The task queue (`worker_tasks`) is the place for heavier models.
+
+## Renewals
+
+- `GITHUB_DISPATCH_TOKEN` expires **Nov 1, 2027**.

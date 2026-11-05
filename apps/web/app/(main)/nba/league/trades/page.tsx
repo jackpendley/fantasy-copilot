@@ -16,6 +16,10 @@ import { marketValue, type MarketContext, type Realism } from "@/lib/nba/market"
 import { perGameProjection } from "@/lib/nba/projection";
 import { evaluateTrade, tradeSize, type RosterMoves, type TradeEval } from "@/lib/nba/trade";
 import { tradeTargets } from "@/lib/nba/trade-view";
+import { rosterKeyOf } from "@/lib/nba/move-checks";
+import type { ShownSim, ShownState } from "@/lib/nba/move-shown";
+import { deepChecksFor } from "@/lib/nba/sim-jobs";
+import { tradeKey } from "@/lib/nba/sim-moves";
 import { matchupPeriodOf } from "@/lib/nba/calendar";
 import { cn } from "@/lib/utils";
 
@@ -149,15 +153,61 @@ function MovesBrief({ m }: { m: RosterMoves }) {
   return parts.length ? <span>· you: {parts.join(", ")}</span> : null;
 }
 
+const pts = (d: number) => `${d >= 0 ? "+" : ""}${(d * 100).toFixed(1)}`;
+
+/** The worker's season simulation of a trade idea (thousands of seasons, ADR-058/059). */
+function DeepTrade({ sim, state }: { sim: ShownSim; state: ShownState | undefined }) {
+  const row = (label: string, d: { d: number; se: number }, wins = false) => (
+    <div className="flex justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="tabular-nums">
+        <span
+          className={cn(
+            "font-semibold",
+            Math.abs(d.d) <= 2 * d.se
+              ? "text-muted-foreground"
+              : d.d > 0
+                ? "text-success"
+                : "text-danger",
+          )}
+        >
+          {wins ? `${d.d >= 0 ? "+" : ""}${d.d.toFixed(2)}` : pts(d.d)}
+        </span>
+        <span className="ml-1 text-xs text-muted-foreground">
+          ±{wins ? (2 * d.se).toFixed(2) : (2 * d.se * 100).toFixed(1)}
+        </span>
+      </span>
+    </div>
+  );
+  return (
+    <div className="space-y-1 rounded-lg border p-3 text-sm">
+      <p className="text-xs text-muted-foreground">
+        Your season, simulated with and without it ({sim.seasons.toLocaleString("en-US")} seasons
+        {sim.refining ? ", refining" : ""}
+        {state === "updating" ? "; updating after the latest roster news or moves" : ""})
+      </p>
+      {row("Title odds", sim.title)}
+      {row("Playoff odds", sim.playoffs)}
+      {row("Expected wins", sim.wins, true)}
+      <p className="text-xs text-muted-foreground">
+        Chance it raises your title odds: {Math.round(sim.pBetter * 100)}%
+      </p>
+    </div>
+  );
+}
+
 function Evaluation({
   e,
   partner,
   addsLeft,
+  deep,
 }: {
   e: TradeEval;
   partner: FantasyTeam;
   /** Jack's adds left this matchup week (null when unknown). */
   addsLeft: number | null;
+  /** The worker's simulation of this trade, when it's one of the stored ideas. */
+  deep: { sim: ShownSim; state: ShownState | undefined } | null;
 }) {
   const rows = [
     { who: "You", d: e.mine },
@@ -219,12 +269,16 @@ function Evaluation({
           )}
           <Moves who="They'd" m={e.moves.theirs} />
         </ul>
-        <SimulateTrade
-          partnerId={partner.id}
-          partnerName={partner.name}
-          give={e.give.map((p) => p.id)}
-          get={e.get.map((p) => p.id)}
-        />
+        {deep ? (
+          <DeepTrade sim={deep.sim} state={deep.state} />
+        ) : (
+          <SimulateTrade
+            partnerId={partner.id}
+            partnerName={partner.name}
+            give={e.give.map((p) => p.id)}
+            get={e.get.map((p) => p.id)}
+          />
+        )}
       </div>
     </section>
   );
@@ -244,6 +298,16 @@ async function Targets({
   const name = new Map(others.map((t) => [t.id, t.name]));
   const count = (s: string) => ideas.filter((i) => tradeSize(i) === s).length;
   const shown = ideas.filter((i) => !size || tradeSize(i) === size).slice(0, 15);
+  const keyOf = (i: (typeof ideas)[number]) =>
+    tradeKey(
+      i.partnerId,
+      i.give.map((p) => p.id),
+      i.get.map((p) => p.id),
+    );
+  const deep = await deepChecksFor(
+    shown.map(keyOf),
+    rosterKeyOf(view.data.me.roster, view.data.injuries),
+  ).catch(() => null);
   return (
     <>
       {!fresh &&
@@ -321,6 +385,11 @@ async function Targets({
                 <div className="text-[11px] text-muted-foreground">
                   {signed(i.mine.playoffs)} playoffs
                 </div>
+                {deep?.sims[keyOf(i)] && (
+                  <div className="text-[11px] text-muted-foreground">
+                    title {pts(deep.sims[keyOf(i)]!.title.d)}
+                  </div>
+                )}
               </div>
             </Link>
           ))}
@@ -370,6 +439,20 @@ export default async function TradesPage({
           { freeAgents: v.freeAgents, market: v.market },
         )
       : null;
+  // The worker simulates the stored ideas: this trade's result, when it's one of them.
+  const key =
+    e && partner
+      ? tradeKey(
+          partner.id,
+          give.map((p) => p.id),
+          get.map((p) => p.id),
+        )
+      : null;
+  const checked = key
+    ? await deepChecksFor([key], rosterKeyOf(me.roster, v.data.injuries)).catch(() => null)
+    : null;
+  const deepTrade =
+    key && checked?.sims[key] ? { sim: checked.sims[key]!, state: checked.states[key] } : null;
   const size = sp.size && SIZE_ORDER.includes(sp.size) ? sp.size : null;
   const cap = v.data.settings.addsPerWeek;
   const addsLeft =
@@ -442,7 +525,7 @@ export default async function TradesPage({
       {partner && (give.length > 0 || get.length > 0) && !e && (
         <Callout tone="info">Pick at least one player on each side.</Callout>
       )}
-      {e && partner && <Evaluation e={e} partner={partner} addsLeft={addsLeft} />}
+      {e && partner && <Evaluation e={e} partner={partner} addsLeft={addsLeft} deep={deepTrade} />}
 
       <section className="space-y-1.5">
         <SectionTitle aside="Up to 3-for-3, ranked by your gain">Trade targets</SectionTitle>

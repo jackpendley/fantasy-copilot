@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import type { FantasyTeam, Matchup, ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { applyMove, toWire } from "@fantasy-copilot/fantasy-core";
 import { buildOutlookInput } from "@/lib/nba/outlook";
+import { applyTrade, valueContext } from "@/lib/nba/trade";
 import {
+  buildTradeMoves,
   buildWireMoves,
   groupsOf,
   jobMoveOptions,
   moveKey,
   pickGroup,
+  tradeKey,
   type SimGroup,
 } from "@/lib/nba/sim-moves";
 import type { StreamOption } from "@/lib/nba/waivers";
@@ -207,5 +210,65 @@ describe("which group the next chunks go to", () => {
     expect(pickGroup([g(0, 1, 40, 40, []), g(1, 2, 100, 100)], 100, 40, 20)).toBeNull();
     // Group 0 carries the base run to its minimum even with no moves left.
     expect(pickGroup([g(0, 1, 30, 30, [])], 100, 40, 20)!.grp).toBe(0);
+  });
+});
+
+describe("trade ideas built as patches on the base season", () => {
+  it("equal the season rebuilt with both rosters (and pickups and cuts) as the trade leaves them", () => {
+    const base = buildOutlookInput({ ...args, teams, freeAgents, injured });
+    const wire = toWire(base.input);
+    const ctx = valueContext(games, SLOTS, 1, 20, 2, injured);
+    // 2-for-1: Jack's side picks up a free agent, theirs has to cut someone.
+    const theirsBefore = teams[1]!.roster;
+    const give = [mine[1]!, mine[3]!];
+    const get = [theirsBefore[0]!];
+    const taken = new Set<number>();
+    const m = applyTrade(mine, give, get, ctx, freeAgents, taken);
+    const t = applyTrade(theirsBefore, get, give, ctx, freeAgents, taken);
+    expect(m.moves.added.length + t.moves.dropped.length).toBeGreaterThan(0);
+    const ids = (ps: { id: number }[]) => ps.map((p) => p.id);
+    const spec = {
+      partnerId: 2,
+      give: ids(give),
+      get: ids(get),
+      moves: {
+        mine: { dropped: ids(m.moves.dropped), added: ids(m.moves.added), toIL: ids(m.moves.toIL) },
+        theirs: {
+          dropped: ids(t.moves.dropped),
+          added: ids(t.moves.added),
+          toIL: ids(t.moves.toIL),
+        },
+      },
+    };
+    const [move] = buildTradeMoves(
+      {
+        base: wire,
+        teamId: 1,
+        roster: mine,
+        freeAgents,
+        games,
+        slotCounts: SLOTS,
+        fromDay: 1,
+        regularWeeks: 2,
+        injured,
+        teams,
+      },
+      [spec],
+    );
+    const added = new Set([...spec.moves.mine.added, ...spec.moves.theirs.added]);
+    const full = buildOutlookInput({
+      ...args,
+      teams: teams.map((x) =>
+        x.id === 1 ? { ...x, roster: m.roster } : x.id === 2 ? { ...x, roster: t.roster } : x,
+      ),
+      freeAgents: [
+        ...freeAgents.filter((f) => !added.has(f.id)),
+        ...m.moves.dropped,
+        ...t.moves.dropped,
+      ],
+      injured,
+    });
+    expect(move!.key).toBe(tradeKey(2, spec.give, spec.get));
+    expect(applyMove(wire, 1, move!)).toEqual(toWire(full.input));
   });
 });

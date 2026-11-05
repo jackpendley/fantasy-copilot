@@ -23,12 +23,13 @@ export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
  * 1. each Moves card's opening drop, and the best by the points estimate;
  * 2. every other drop of the adds on Moves;
  * 3. for the other evaluated adds (the Free agents tab), their best few drops.
- * `first`: moves asked for by key, ahead of all of these. `leading`: how many are in 1.
+ * `first`: moves asked for by key, ahead of all of these. `leading`: how many are in 1;
+ * `others`: where 3 starts (trade ideas go before it).
  */
 export function jobMoveOptions(
   a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek" | "dropOptions">,
   first: string[] = [],
-): { options: StreamOption[]; leading: number } {
+): { options: StreamOption[]; leading: number; others: number } {
   const all = [...a.dropOptions.values()].flat();
   const byKey = new Map(all.map((o) => [moveKey(o), o]));
   const { best, streams } = shownMoves(a);
@@ -47,13 +48,17 @@ export function jobMoveOptions(
     ...shown,
     ...[...all].sort((x, y) => y.netWins - x.netWins).slice(0, TOP_MOVES),
   ]);
-  const rest = unique([
-    ...shown.flatMap((o) => a.dropOptions.get(o.add.player.id) ?? []),
-    ...[...a.dropOptions]
+  const rest = unique(shown.flatMap((o) => a.dropOptions.get(o.add.player.id) ?? []));
+  const others = unique(
+    [...a.dropOptions]
       .filter(([id]) => !shownIds.has(id))
       .flatMap(([, options]) => options.slice(0, OTHER_DROPS)),
-  ]);
-  return { options: [...opening, ...rest], leading: opening.length };
+  );
+  return {
+    options: [...opening, ...rest, ...others],
+    leading: opening.length,
+    others: opening.length + rest.length,
+  };
 }
 
 /** Split keys, in order, into groups of GROUP_SIZE. */
@@ -154,4 +159,102 @@ export function pickGroup<G extends SimGroup>(
   const limit = (g: G) =>
     Math.min(AHEAD_MAX, Math.max(g.prio <= 1 ? aheadFirst : AHEAD_OTHER, g.posted));
   return open.find((g) => g.next_chunk - g.posted < limit(g)) ?? open[0] ?? null;
+}
+
+/** A trade idea's key among the moves (sorted ids, so the same trade has one key). */
+export const tradeKey = (partnerId: number, give: number[], get: number[]) =>
+  `trade:${partnerId}:${[...give].sort((a, b) => a - b).join(".")}:${[...get].sort((a, b) => a - b).join(".")}`;
+
+/** Trade ideas the worker checks (the best by the search's score). */
+export const TRADE_MOVES = 15;
+
+/** A stored trade idea's players (lib/nba/trade-task.ts StoredIdea). */
+export interface TradeSpec {
+  partnerId: number;
+  give: number[];
+  get: number[];
+  moves: {
+    mine: { dropped: number[]; added: number[]; toIL: number[] };
+    theirs: { dropped: number[]; added: number[]; toIL: number[] };
+  };
+}
+
+/**
+ * Each trade idea as a WireMove: both rosters after it (with the same drops, pickups and IL
+ * moves the trade search made), and the free agents it takes or frees. Ideas whose players
+ * have moved since are skipped.
+ */
+export function buildTradeMoves(
+  a: MoveBuildArgs & { teams: { id: number; roster: RosterPlayer[] }[] },
+  ideas: TradeSpec[],
+): WireMove[] {
+  const ctx = valueContext(
+    a.games,
+    a.slotCounts,
+    a.fromDay,
+    LAST_SCORING_PERIOD,
+    a.regularWeeks,
+    a.injured,
+  );
+  const pool = simFreeAgents(a.freeAgents, a.injured);
+  const inBase = new Set(a.base.freeAgents.map((p) => p.id));
+  const freeById = new Map(a.freeAgents.map((p) => [p.id, p]));
+  const out: WireMove[] = [];
+  for (const idea of ideas) {
+    const partner = a.teams.find((t) => t.id === idea.partnerId);
+    if (!partner) continue;
+    const mineById = new Map(a.roster.map((p) => [p.id, p]));
+    const theirsById = new Map(partner.roster.map((p) => [p.id, p]));
+    // As applyTrade made it: the roster without who goes, the incoming players (on IR or the
+    // bench), without the players it cut, plus its free-agent pickups on the bench.
+    const side = (
+      roster: RosterPlayer[],
+      out: number[],
+      incoming: (RosterPlayer | undefined)[],
+      m: TradeSpec["moves"]["mine"],
+    ): RosterPlayer[] | null => {
+      const added = m.added.map((id) => freeById.get(id));
+      if (incoming.some((p) => !p) || added.some((p) => !p)) return null;
+      const gone = new Set(out);
+      const cut = new Set(m.dropped);
+      const toIL = new Set(m.toIL);
+      return [
+        ...roster.filter((p) => !gone.has(p.id)),
+        ...(incoming as RosterPlayer[]).map((p) => ({ ...p, slot: toIL.has(p.id) ? "IR" : "BE" })),
+      ]
+        .filter((p) => !cut.has(p.id))
+        .concat((added as RosterPlayer[]).map((p) => ({ ...p, slot: "BE" })));
+    };
+    const mine = side(
+      a.roster,
+      idea.give,
+      idea.get.map((id) => theirsById.get(id)),
+      idea.moves.mine,
+    );
+    const theirs = side(
+      partner.roster,
+      idea.get,
+      idea.give.map((id) => mineById.get(id)),
+      idea.moves.theirs,
+    );
+    if (!mine || !theirs) continue;
+    const taken = new Set([...idea.moves.mine.added, ...idea.moves.theirs.added]);
+    const freed = [...idea.moves.mine.dropped, ...idea.moves.theirs.dropped]
+      .map((id) => mineById.get(id) ?? theirsById.get(id))
+      .filter((p): p is RosterPlayer => p != null);
+    const next = [...pool.filter((p) => !taken.has(p.id)), ...simFreeAgents(freed, a.injured)]
+      .sort((x, y) => y.fppg - x.fppg)
+      .slice(0, SIM_FREE_AGENTS);
+    const nextIds = new Set(next.map((p) => p.id));
+    out.push({
+      key: tradeKey(idea.partnerId, idea.give, idea.get),
+      teams: [
+        { id: a.teamId, ...simRoster(mine, ctx, a.injured) },
+        { id: idea.partnerId, ...simRoster(theirs, ctx, a.injured) },
+      ],
+      faOut: [...inBase].filter((id) => !nextIds.has(id)),
+      faIn: next.filter((p) => !inBase.has(p.id)),
+    });
+  }
+  return out;
 }

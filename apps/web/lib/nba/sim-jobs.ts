@@ -14,7 +14,7 @@ import {
   type WireMove,
 } from "@fantasy-copilot/fantasy-core";
 import { db, dbConfigured } from "@/lib/db";
-import { fingerprintOf, writeView } from "@/lib/view-cache";
+import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import { absences } from "./availability";
 import {
   MAX_SEASONS,
@@ -28,11 +28,21 @@ import {
 } from "./deep-check";
 import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
+import type { StoredIdea } from "./trade-task";
 import { rosterKey, waiverFingerprint } from "./move-checks";
-import { chooseShown, type LiveJob, type SettledResult, type ShownState } from "./move-shown";
+import {
+  chooseShown,
+  deepView,
+  type DeepView,
+  type LiveJob,
+  type SettledResult,
+  type ShownState,
+} from "./move-shown";
 import { buildOutlookInput } from "./outlook";
 import { outlookSetup, type OutlookTeam } from "./outlook-run";
 import {
+  TRADE_MOVES,
+  buildTradeMoves,
   buildWireMoves,
   groupsOf,
   hasChunksLeft,
@@ -52,6 +62,8 @@ const REFRESH_GAP_S = 4;
 /** A job whose runners stopped posting is closed with what it has after this long. */
 const STALE_MS = 4 * 60_000;
 export const DEEP_KEY = "move-checks-deep";
+/** Stored trade ideas (lib/nba/trade-view.ts). */
+const TRADE_VIEW = "trade-targets";
 
 /** What the Moves page shows from a deep check. */
 export interface DeepChecks {
@@ -127,32 +139,40 @@ async function buildJob(extraKeys: string[], only = false, m = new CpuMeter()) {
   const wire = toWire(base.input);
 
   const all = [...v.analysis.dropOptions.values()].flat();
-  const { options, leading } = only
+  const { options, leading, others } = only
     ? {
         options: extraKeys.flatMap((k) => all.filter((o) => moveKey(o) === k)),
         leading: extraKeys.length,
+        others: extraKeys.length,
       }
     : jobMoveOptions(v.analysis, extraKeys);
+  // The best stored trade ideas too, checked after the Moves page's drops.
+  const ideas = only
+    ? []
+    : ((await readView<StoredIdea[]>(TRADE_VIEW).catch(() => null))?.value ?? []).slice(
+        0,
+        TRADE_MOVES,
+      );
   // The adds' own absences (they're not on a roster, so not in the setup's).
   const injured = new Map(setup.injured);
   const adds = options.map((o) => o.add.player);
   for (const [id, a] of absences(adds, data.injuries, setup.fromDay)) injured.set(id, a);
-  const moves = await m.step("build-moves", () =>
-    buildWireMoves(
-      {
-        base: wire,
-        teamId: myId,
-        roster: data.me.roster,
-        freeAgents: setup.freeAgents,
-        games: data.games,
-        slotCounts: data.settings.slotCounts,
-        fromDay: setup.fromDay,
-        regularWeeks: data.settings.regularSeasonWeeks,
-        injured,
-      },
-      options,
-    ),
-  );
+  const moves = await m.step("build-moves", () => {
+    const args = {
+      base: wire,
+      teamId: myId,
+      roster: data.me.roster,
+      freeAgents: setup.freeAgents,
+      games: data.games,
+      slotCounts: data.settings.slotCounts,
+      fromDay: setup.fromDay,
+      regularWeeks: data.settings.regularSeasonWeeks,
+      injured,
+    };
+    const waiver = buildWireMoves(args, options);
+    const trades = buildTradeMoves({ ...args, teams: data.teams }, ideas);
+    return [...waiver.slice(0, others), ...trades, ...waiver.slice(others)];
+  });
   return { setup, v, base, wire, moves, leading };
 }
 
@@ -528,7 +548,11 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
     groups.flatMap((g) => g.keys),
     await moveSums(jobId),
   );
-  const contenders = contendersOf(effects);
+  // "Best" is among waiver moves (trade ideas are checked too, but compared on their own).
+  const contenders = contendersOf(
+    effects,
+    new Set(effects.filter((e) => !e.key.startsWith("trade:")).map((e) => e.key)),
+  );
   withPBest(
     effects,
     contenders,
@@ -733,6 +757,12 @@ export async function bestChecksByAdd(
       byAdd.set(add, { key, state: s.state, effect: s.effect });
   }
   return { byAdd, live: job?.live ?? false };
+}
+
+/** Deep checks for these move keys as a page shows them (lib/nba/move-shown.ts). */
+export async function deepChecksFor(keys: string[], rosterNow: string): Promise<DeepView> {
+  const [job, last] = await Promise.all([liveJob(), settledResults(keys)]);
+  return deepView(keys, job, last, rosterNow);
 }
 
 /** Moves' last settled results, by key. */

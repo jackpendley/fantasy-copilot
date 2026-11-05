@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { CpuMeter } from "@/lib/cpu";
 
+// Burn `ms` of this process's CPU time (not wall time: a busy CI machine gives less CPU).
 const spin = (ms: number) => {
-  const end = performance.now() + ms;
+  const t0 = process.cpuUsage();
   let x = 0;
-  while (performance.now() < end) x += Math.sqrt(x + 1);
-  return x;
+  for (;;) {
+    for (let i = 0; i < 1e4; i++) x += Math.sqrt(x + 1);
+    const u = process.cpuUsage(t0);
+    if ((u.user + u.system) / 1000 >= ms) return x;
+  }
 };
 
 describe("CPU meter", () => {

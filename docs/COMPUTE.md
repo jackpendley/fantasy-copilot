@@ -174,6 +174,18 @@ That's ~15–20 s per job, ~4–5 min a day at ~15 jobs. **#98:**
 - checks recomputed at most every 10 s (was 4);
 - idle polls every 10 s (simulation runners) and 15 s (task runner).
 
+**Measured after #98 on one job** (22:50 UTC): `next` 326 calls (9 s), `result` 171 (4.6 s), `peek` 246 (3.5 s), ~18 s. Each request costs ~15–30 ms whatever it does, and idle asks ate the saving.
+
+**#100:**
+
+- a post also claims the next chunks;
+- `next` and the task GET answer "wait" (202) instead of separate peeks;
+- waits of 20–30 s.
+
+**Measured after #100 on one job** (23:12 UTC): `result` 236 calls (10 s), `next` 90 (3.6 s), `task` 69 (1.4 s), `peek` 45 (0.5 s), **~15.5 s per job**. Most of a post's CPU is recomputing every move's numbers, so **#101** recomputes at most every 20 s (was 10).
+
+**Not done:** more seasons per request. Requests per job = total seasons ÷ seasons per request, so fewer requests would mean longer rounds and later first numbers.
+
 **Simulation worker (Nov 5, 19:29 UTC):**
 
 - 288 moves (273 drops + 15 trade ideas);

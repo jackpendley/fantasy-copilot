@@ -37,6 +37,14 @@ export function isStale(moveAt: number | null, lastRunAt: number | null): boolea
  */
 export const workerEnabled = () => Boolean(process.env.WORKER_SECRET);
 
+/** When the latest simulation job was queued (null when there's none). */
+async function lastJobAt(): Promise<number | null> {
+  const [j] = await db()<{ created_at: Date }[]>`
+    select created_at from sim_jobs where status <> 'superseded' order by id desc limit 1
+  `;
+  return j?.created_at.getTime() ?? null;
+}
+
 /** A worker job queued or running since `since` (a move newer than it isn't in it yet). */
 async function liveJobSince(since: number): Promise<{ queuedFor: number } | null> {
   const [j] = await db()<{ status: string; created_at: Date }[]>`
@@ -46,6 +54,19 @@ async function liveJobSince(since: number): Promise<{ queuedFor: number } | null
   `;
   if (!j) return null;
   return { queuedFor: j.status === "queued" ? Date.now() - j.created_at.getTime() : 0 };
+}
+
+/**
+ * Until Nov 20, 2026, other teams' moves re-check Jack's moves at most every 30 minutes
+ * (docs/COMPUTE.md: Vercel's 30-day CPU window needs ~4 min a day until the heavy late-October
+ * days roll off). His own moves, and news, are checked right away. Moves in between ride along.
+ */
+const OTHERS_GAP_UNTIL = Date.parse("2026-11-20T00:00:00Z");
+const OTHERS_GAP_MS = 30 * 60_000;
+
+/** Should another team's move wait (the last job is recent, and the trim is on)? */
+export function othersWait(own: boolean, lastJobAt: number | null, now: number): boolean {
+  return !own && now < OTHERS_GAP_UNTIL && lastJobAt != null && now - lastJobAt < OTHERS_GAP_MS;
 }
 
 /** The worker hasn't picked a job up in this long: Vercel runs the Outlook itself. */
@@ -59,11 +80,13 @@ export async function refreshIfStale(
   newest: number | null,
   lastRunAt: number | null,
   now = Date.now(),
+  own = true,
 ): Promise<"current" | "queued" | "refreshing" | "waiting"> {
   if (!isStale(newest, lastRunAt)) return "current";
   if (workerEnabled()) {
     const live = await liveJobSince(newest!);
     if (live && live.queuedFor < WORKER_FALLBACK_MS) return "queued";
+    if (othersWait(own, await lastJobAt(), now)) return "waiting";
     after(() => (live ? refreshVercel() : refreshLogged()));
     return "refreshing";
   }
@@ -177,7 +200,12 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
   // Rosters changed: later reads go back to ESPN.
   forgetResponses();
   const last = await latestOutlook();
-  return { watch: await refreshIfStale(newest, last?.run_at.getTime() ?? null, now.getTime()) };
+  const lastRunAt = last?.run_at.getTime() ?? null;
+  // A move by Jack's own team (e.g. made in the ESPN app) is checked right away.
+  const own = moves.some(
+    (m) => m.teamId === espnConfig().teamId && (lastRunAt == null || m.at > lastRunAt),
+  );
+  return { watch: await refreshIfStale(newest, lastRunAt, now.getTime(), own) };
 }
 
 /** News or IR-slot changes queue a new simulation job at most this often. */

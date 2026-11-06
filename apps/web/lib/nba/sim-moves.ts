@@ -25,12 +25,13 @@ export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
  * 2. every other drop of the adds on Moves;
  * 3. for the other evaluated adds (the Free agents tab), their best few drops.
  * `first`: moves asked for by key, ahead of all of these. `leading`: how many are in 1;
- * `others`: where 3 starts (trade ideas go before it).
+ * `top`: how many of those are checked to the top precision (asked for, and the cards' opening
+ * moves; ADR-060); `others`: where 3 starts (trade ideas go before it).
  */
 export function jobMoveOptions(
   a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek" | "dropOptions">,
   first: string[] = [],
-): { options: StreamOption[]; leading: number; others: number } {
+): { options: StreamOption[]; leading: number; top: number; others: number } {
   const all = [...a.dropOptions.values()].flat();
   const byKey = new Map(all.map((o) => [moveKey(o), o]));
   const { best, streams } = shownMoves(a);
@@ -44,11 +45,11 @@ export function jobMoveOptions(
       seen.add(k);
       return true;
     });
-  const opening = unique([
-    ...first.flatMap((k) => byKey.get(k) ?? []),
-    ...shown,
-    ...[...all].sort((x, y) => y.netWins - x.netWins).slice(0, TOP_MOVES),
-  ]);
+  const top = unique([...first.flatMap((k) => byKey.get(k) ?? []), ...shown]);
+  const opening = [
+    ...top,
+    ...unique([...all].sort((x, y) => y.netWins - x.netWins).slice(0, TOP_MOVES)),
+  ];
   const rest = unique(shown.flatMap((o) => a.dropOptions.get(o.add.player.id) ?? []));
   const others = unique(
     [...a.dropOptions]
@@ -58,14 +59,19 @@ export function jobMoveOptions(
   return {
     options: [...opening, ...rest, ...others],
     leading: opening.length,
+    top: top.length,
     others: opening.length + rest.length,
   };
 }
 
-/** Split keys, in order, into groups of GROUP_SIZE. */
-export function groupsOf(keys: string[]): string[][] {
+/**
+ * Split keys, in order, into groups of GROUP_SIZE; the first `top` keys (the top tier) never
+ * share a group with the rest, since a group is checked to one precision.
+ */
+export function groupsOf(keys: string[], top = 0): string[][] {
   const out: string[][] = [];
-  for (let i = 0; i < keys.length; i += GROUP_SIZE) out.push(keys.slice(i, i + GROUP_SIZE));
+  for (const part of [keys.slice(0, top), keys.slice(top)])
+    for (let i = 0; i < part.length; i += GROUP_SIZE) out.push(part.slice(i, i + GROUP_SIZE));
   return out;
 }
 
@@ -131,11 +137,14 @@ export interface SimGroup {
   n_active: number;
   next_chunk: number;
   posted: number;
+  /** Its tier's season limits, in chunks (ADR-060). */
+  min_chunks: number;
+  max_chunks: number;
 }
 
 /** Can this group take more chunks? Group 0 also carries the base run to its minimum. */
-export const hasChunksLeft = (g: SimGroup, maxChunks: number, minBaseChunks: number) =>
-  g.next_chunk < maxChunks && (g.n_active > 0 || (g.grp === 0 && g.next_chunk < minBaseChunks));
+export const hasChunksLeft = (g: SimGroup, minBaseChunks: number) =>
+  g.next_chunk < g.max_chunks && (g.n_active > 0 || (g.grp === 0 && g.next_chunk < minBaseChunks));
 
 /** Chunks other groups may have out before their first results come back. */
 const AHEAD_OTHER = 6;
@@ -143,22 +152,17 @@ const AHEAD_MAX = 32;
 
 /**
  * The group a runner's next chunks go to: the most important one under its limit of chunks
- * out before results come back. That limit is enough for a first estimate (`aheadFirst` for
+ * out before results come back. That limit is enough for a first estimate (its tier's minimum for
  * the opening moves, which go straight to the minimum seasons), then grows with what it has
  * posted, so seasons follow the moves still close. When every group is at its limit, the most
  * important one takes more (idle runners help nobody).
  */
-export function pickGroup<G extends SimGroup>(
-  groups: G[],
-  maxChunks: number,
-  minBaseChunks: number,
-  aheadFirst: number,
-): G | null {
+export function pickGroup<G extends SimGroup>(groups: G[], minBaseChunks: number): G | null {
   const open = groups
-    .filter((g) => hasChunksLeft(g, maxChunks, minBaseChunks))
+    .filter((g) => hasChunksLeft(g, minBaseChunks))
     .sort((a, b) => a.prio - b.prio || a.grp - b.grp);
   const limit = (g: G) =>
-    Math.min(AHEAD_MAX, Math.max(g.prio <= 1 ? aheadFirst : AHEAD_OTHER, g.posted));
+    Math.min(AHEAD_MAX, Math.max(g.prio <= 1 ? g.min_chunks : AHEAD_OTHER, g.posted));
   return open.find((g) => g.next_chunk - g.posted < limit(g)) ?? open[0] ?? null;
 }
 
@@ -280,10 +284,11 @@ export interface SimBuildInput extends Omit<MoveBuildArgs, "injured"> {
 export function buildSimMoves(i: SimBuildInput): {
   moves: WireMove[];
   leading: number;
+  top: number;
   others: number;
 } {
   const analysis = waiverAnalysis(i.waiver);
-  const { options, leading, others } = jobMoveOptions(analysis, i.extraKeys);
+  const { options, leading, top, others } = jobMoveOptions(analysis, i.extraKeys);
   // The adds' own absences (they're not on a roster, so not in the setup's).
   const injured = new Map(i.injured);
   const adds = options.map((o) => o.add.player);
@@ -304,6 +309,7 @@ export function buildSimMoves(i: SimBuildInput): {
   return {
     moves: [...waiver.slice(0, others), ...trades, ...waiver.slice(others)],
     leading,
+    top,
     others,
   };
 }

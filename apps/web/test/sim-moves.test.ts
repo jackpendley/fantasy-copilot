@@ -176,6 +176,22 @@ describe("the moves a job checks", () => {
     expect(g.map((x) => x.length)).toEqual([12, 12, 6]);
     expect(g[1]![0]).toBe("k12");
   });
+
+  it("never mixes top-tier moves with the rest in a group (ADR-060)", () => {
+    const g = groupsOf(
+      Array.from({ length: 30 }, (_, i) => `k${i}`),
+      14,
+    );
+    expect(g.map((x) => x.length)).toEqual([12, 2, 12, 4]);
+    expect(g[2]![0]).toBe("k14");
+  });
+
+  it("checks the cards' opening moves (and asked-for ones) to the top tier", () => {
+    const { top, leading } = jobMoveOptions({ best, thisWeek: [], dropOptions }, ["509:3:"]);
+    // The asked-for move and the 8 cards' opening moves; the best-by-estimate are rest tier.
+    expect(top).toBe(9);
+    expect(leading).toBeGreaterThan(top);
+  });
 });
 
 describe("which group the next chunks go to", () => {
@@ -191,25 +207,33 @@ describe("which group the next chunks go to", () => {
     n_active: active.length,
     next_chunk: next,
     posted,
+    min_chunks: 20,
+    max_chunks: 100,
   });
 
   it("fills the opening groups to the minimum first, then the others a few at a time", () => {
-    expect(pickGroup([g(0, 1, 0, 0), g(1, 2, 0, 0)], 100, 40, 20)!.grp).toBe(0);
-    expect(pickGroup([g(0, 1, 20, 0), g(1, 2, 0, 0)], 100, 40, 20)!.grp).toBe(1);
-    expect(pickGroup([g(0, 1, 20, 0), g(1, 2, 6, 0), g(2, 2, 0, 0)], 100, 40, 20)!.grp).toBe(2);
+    expect(pickGroup([g(0, 1, 0, 0), g(1, 2, 0, 0)], 40)!.grp).toBe(0);
+    expect(pickGroup([g(0, 1, 20, 0), g(1, 2, 0, 0)], 40)!.grp).toBe(1);
+    expect(pickGroup([g(0, 1, 20, 0), g(1, 2, 6, 0), g(2, 2, 0, 0)], 40)!.grp).toBe(2);
   });
 
   it("lets a group run further ahead as its results come in", () => {
-    expect(pickGroup([g(0, 1, 50, 30), g(1, 2, 0, 0)], 100, 40, 20)!.grp).toBe(0);
-    expect(pickGroup([g(0, 1, 62, 30), g(1, 2, 0, 0)], 100, 40, 20)!.grp).toBe(1);
+    expect(pickGroup([g(0, 1, 50, 30), g(1, 2, 0, 0)], 40)!.grp).toBe(0);
+    expect(pickGroup([g(0, 1, 62, 30), g(1, 2, 0, 0)], 40)!.grp).toBe(1);
+  });
+
+  it("caps each group at its own tier's limit", () => {
+    const rest = { ...g(1, 2, 30, 30), max_chunks: 30 };
+    expect(pickGroup([g(0, 1, 100, 100, []), rest], 40)).toBeNull();
+    expect(pickGroup([g(0, 1, 100, 100, []), { ...rest, next_chunk: 29 }], 40)!.grp).toBe(1);
   });
 
   it("puts asked-for moves ahead, gives idle runners to the top group, and stops when done", () => {
-    expect(pickGroup([g(0, 1, 0, 0), g(1, 0, 0, 0)], 100, 40, 20)!.grp).toBe(1);
-    expect(pickGroup([g(0, 1, 20, 0), g(1, 2, 6, 0)], 100, 40, 20)!.grp).toBe(0);
-    expect(pickGroup([g(0, 1, 40, 40, []), g(1, 2, 100, 100)], 100, 40, 20)).toBeNull();
+    expect(pickGroup([g(0, 1, 0, 0), g(1, 0, 0, 0)], 40)!.grp).toBe(1);
+    expect(pickGroup([g(0, 1, 20, 0), g(1, 2, 6, 0)], 40)!.grp).toBe(0);
+    expect(pickGroup([g(0, 1, 40, 40, []), g(1, 2, 100, 100)], 40)).toBeNull();
     // Group 0 carries the base run to its minimum even with no moves left.
-    expect(pickGroup([g(0, 1, 30, 30, [])], 100, 40, 20)!.grp).toBe(0);
+    expect(pickGroup([g(0, 1, 30, 30, [])], 40)!.grp).toBe(0);
   });
 });
 

@@ -6,8 +6,8 @@ import {
   contendersOf,
   needsMore,
   EARLY_SEASONS,
-  MAX_SEASONS,
-  MIN_SEASONS,
+  REST_TIER,
+  TOP_TIER,
 } from "@/lib/nba/deep-check";
 
 // Synthetic chunks: per-season title differences with a known mean and spread.
@@ -64,24 +64,33 @@ describe("deep move checks", () => {
     expect(a!.pBetter).toBeGreaterThan(0.99);
   });
 
-  it("keeps going until ±0.5 points or the cap, and drops clearly worse moves", () => {
+  it("keeps going until its tier's precision or cap, and drops clearly worse moves", () => {
     const d = (x: number, se: number) => ({ d: x, se });
+    const top = TOP_TIER;
     expect(needsMore({ seasons: 1000, title: d(0, 0.001), wins: d(0, 0.01) }).more).toBe(true); // too few
-    expect(needsMore({ seasons: MIN_SEASONS, title: d(0.01, 0.003), wins: d(0, 0.01) }).more).toBe(
+    // Top tier: ±0.35 title points.
+    expect(
+      needsMore({ seasons: top.minSeasons, title: d(0.01, 0.002), wins: d(0, 0.01) }).more,
+    ).toBe(true); // ±0.4
+    expect(
+      needsMore({ seasons: top.minSeasons, title: d(0.01, 0.0017), wins: d(0, 0.01) }).more,
+    ).toBe(false); // ±0.34
+    expect(needsMore({ seasons: top.maxSeasons, title: d(0, 0.01), wins: d(0, 0.1) }).more).toBe(
+      false,
+    );
+    expect(
+      needsMore({ seasons: top.minSeasons, title: d(-0.03, 0.005), wins: d(-0.5, 0.1) }),
+    ).toEqual({ more: false, dropped: true });
+    // Rest tier: ±1 point, from 1,000 to 6,000 seasons.
+    const rest = REST_TIER;
+    expect(needsMore({ seasons: 1000, title: d(0.01, 0.004), wins: d(0, 0.01) }, rest).more).toBe(
+      false,
+    ); // ±0.8
+    expect(needsMore({ seasons: 1000, title: d(0.01, 0.006), wins: d(0, 0.01) }, rest).more).toBe(
       true,
-    ); // ±0.6
-    expect(needsMore({ seasons: MIN_SEASONS, title: d(0.01, 0.002), wins: d(0, 0.01) }).more).toBe(
-      false,
-    ); // ±0.4
-    expect(needsMore({ seasons: MAX_SEASONS, title: d(0, 0.01), wins: d(0, 0.1) }).more).toBe(
-      false,
-    );
-    expect(needsMore({ seasons: MIN_SEASONS, title: d(-0.03, 0.005), wins: d(-0.5, 0.1) })).toEqual(
-      {
-        more: false,
-        dropped: true,
-      },
-    );
+    ); // ±1.2
+    expect(needsMore({ seasons: 6000, title: d(0, 0.01), wins: d(0, 0.1) }, rest).more).toBe(false);
+    expect(needsMore({ seasons: 800, title: d(0, 0.001), wins: d(0, 0.01) }, rest).more).toBe(true);
   });
 
   it("names the best move most of the time when one is clearly better", () => {

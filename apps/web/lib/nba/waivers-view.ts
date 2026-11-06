@@ -20,6 +20,7 @@ import { bestPerGame } from "./best";
 import { rosteredPercentile } from "./projection";
 import { waiverAnalysis, waiverCandidates, type WaiverInputs } from "./waivers";
 import { memoAsync } from "@/lib/fetch-memo";
+import { loadPrefs } from "./prefs";
 
 /**
  * Moves' data, kept 30 seconds per server instance so switching tabs and coming back doesn't
@@ -90,7 +91,11 @@ export async function loadFreeAgentPool(now = new Date()) {
 async function readWaiverInputs(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
-  const [data, freeAgents] = await Promise.all([loadLeague(sp, date), loadFreeAgents(sp)]);
+  const [data, freeAgents, prefs] = await Promise.all([
+    loadLeague(sp, date),
+    loadFreeAgents(sp),
+    loadPrefs(),
+  ]);
   // The props blend for today's games, for rostered players and free agents alike, so this
   // page's win chance and what-ifs match the Matchup page.
   const perGame = await bestPerGame(
@@ -143,6 +148,7 @@ async function readWaiverInputs(now = new Date()) {
     oppRemaining: view.theirs?.remaining ?? null,
     lockedToday,
     startedToday,
+    noDrop: prefs.noDrop,
     rosterLimit,
     irSlots: data.settings.slotCounts.IR ?? 0,
     rosterLocked: locked,

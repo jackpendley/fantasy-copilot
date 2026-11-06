@@ -229,6 +229,9 @@ export function rawValue(players: RosterPlayer[], ctx: ValueContext): number {
 export interface TradeSide {
   teamId: number;
   roster: RosterPlayer[];
+  /** Jack's protected players (lib/nba/prefs.ts): never offered, never cut to make room. */
+  noTrade?: number[];
+  noDrop?: number[];
 }
 
 export interface RosterMoves {
@@ -283,6 +286,8 @@ export function applyTrade(
   freeAgents: RosterPlayer[] = [],
   taken: Set<number> = new Set(),
   marginal?: Map<number, number> | "exact",
+  /** Players this side never cuts. */
+  keep: Set<number> = new Set(),
 ): { roster: RosterPlayer[]; moves: RosterMoves } {
   const outIds = new Set(out.map((p) => p.id));
   const moves: RosterMoves = { dropped: [], added: [], toIL: [] };
@@ -299,7 +304,7 @@ export function applyTrade(
   const incomingIds = new Set(incoming.map((p) => p.id));
   const active = () => next.filter((p) => p.slot !== "IR");
   while (active().length > ctx.rosterLimit) {
-    const cuttable = active().filter((p) => !incomingIds.has(p.id));
+    const cuttable = active().filter((p) => !incomingIds.has(p.id) && !keep.has(p.id));
     // Only received players left to cut: the deal can't fit this roster as is.
     if (!cuttable.length) break;
     let keepValue: (p: RosterPlayer) => number;
@@ -377,8 +382,26 @@ export function evaluateTrade(
   const mineMarginal = marginal?.mine ?? "exact";
   const theirsMarginal = marginal?.theirs ?? "exact";
   const taken = new Set<number>();
-  const mineNext = applyTrade(me.roster, give, get, ctx, freeAgents, taken, mineMarginal);
-  const theirsNext = applyTrade(them.roster, get, give, ctx, freeAgents, taken, theirsMarginal);
+  const mineNext = applyTrade(
+    me.roster,
+    give,
+    get,
+    ctx,
+    freeAgents,
+    taken,
+    mineMarginal,
+    new Set(me.noDrop),
+  );
+  const theirsNext = applyTrade(
+    them.roster,
+    get,
+    give,
+    ctx,
+    freeAgents,
+    taken,
+    theirsMarginal,
+    new Set(them.noDrop),
+  );
   const mineAfter = teamValue(mineNext.roster, ctx);
   const theirsAfter = teamValue(theirsNext.roster, ctx);
   const theirs = {
@@ -474,15 +497,19 @@ export function findTradeTargets(
   const mineBase = teamValue(me.roster, ctx);
   // Each of Jack's players: what losing him costs the lineup (and who he'd cut first).
   const myMarginal = marginalValues(me.roster, ctx);
-  const mySets = subsets(tradeable(me.roster), maxSize).map((g) => ({
-    players: g,
-    $: sumDollars(g),
-    loss: g.reduce((a, p) => a + myMarginal.get(p.id)!, 0),
-  }));
+  const noTrade = new Set(me.noTrade);
+  const noDrop = new Set(me.noDrop);
+  const mySets = subsets(tradeable(me.roster.filter((p) => !noTrade.has(p.id))), maxSize).map(
+    (g) => ({
+      players: g,
+      $: sumDollars(g),
+      loss: g.reduce((a, p) => a + myMarginal.get(p.id)!, 0),
+    }),
+  );
   // Receiving more than he sends: Jack cuts the players he'd miss least (not ones he's
-  // trading away, not his IR slot).
+  // trading away, not his IR slot, not ones he never drops).
   const cutOrder = me.roster
-    .filter((p) => p.slot !== "IR")
+    .filter((p) => p.slot !== "IR" && !noDrop.has(p.id))
     .sort((a, b) => myMarginal.get(a.id)! - myMarginal.get(b.id)!);
   const cutCost = (k: number, give: RosterPlayer[]) => {
     let cost = 0;

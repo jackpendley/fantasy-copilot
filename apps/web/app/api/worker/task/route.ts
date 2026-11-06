@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   } else if (task.kind === "sim-build") {
     const job = await storeBuiltJob(
       body.id,
-      body.result as { moves: WireMove[]; leading: number; others: number },
+      body.result as { moves: WireMove[]; leading: number; top?: number; others: number },
     );
     return NextResponse.json({ ok: true, job });
   }

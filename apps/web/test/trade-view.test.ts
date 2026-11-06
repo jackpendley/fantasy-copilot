@@ -28,7 +28,12 @@ const p = (id: number, slot = "BE"): RosterPlayer => ({
 });
 
 type View = Parameters<typeof tradeFingerprint>[0];
-function view(mine: RosterPlayer[], theirs: RosterPlayer[], free: RosterPlayer[]): View {
+function view(
+  mine: RosterPlayer[],
+  theirs: RosterPlayer[],
+  free: RosterPlayer[],
+  prefs = { noTrade: new Set<number>(), noDrop: new Set<number>() },
+): View {
   const teams = [
     { id: 1, name: "Mine", roster: mine },
     { id: 2, name: "Theirs", roster: theirs },
@@ -38,6 +43,7 @@ function view(mine: RosterPlayer[], theirs: RosterPlayer[], free: RosterPlayer[]
     data: { teams, me: teams[0] },
     injured: new Map(),
     freeAgents: free,
+    prefs,
   } as unknown as View;
 }
 
@@ -96,6 +102,13 @@ describe("stored trade targets", () => {
       tradeFingerprint(view([mine[0]!, { ...mine[1]!, injuryStatus: "OUT" }], theirs, free)),
     ).not.toBe(base);
     expect(tradeFingerprint(view(mine, theirs, [free[0]!]))).not.toBe(base);
+    // Protecting a player re-runs the search.
+    const prefs = (noTrade: number[], noDrop: number[]) => ({
+      noTrade: new Set(noTrade),
+      noDrop: new Set(noDrop),
+    });
+    expect(tradeFingerprint(view(mine, theirs, free, prefs([1], [])))).not.toBe(base);
+    expect(tradeFingerprint(view(mine, theirs, free, prefs([], [1])))).not.toBe(base);
   });
 });
 

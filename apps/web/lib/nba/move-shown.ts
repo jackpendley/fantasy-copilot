@@ -3,7 +3,7 @@
 // (another team's move, news, a new day), a partial check after Jack's own roster changed, or a
 // loader. Pure.
 
-import { MIN_SEASONS, type DeepEffect } from "./deep-check";
+import { TOP_TIER, type DeepEffect } from "./deep-check";
 
 /**
  * - current: the check for the rosters as they are now, settled.
@@ -54,7 +54,7 @@ export function chooseShown(
     const state = running ? "updating" : last.rosterKey === rosterNow ? "current" : "stale";
     return { state, effect: last.effect };
   }
-  if (e && e.seasons >= MIN_SEASONS) return { state: "refining", effect: e };
+  if (e && e.seasons >= TOP_TIER.minSeasons) return { state: "refining", effect: e };
   return { state: running ? "loading" : "none", effect: null };
 }
 

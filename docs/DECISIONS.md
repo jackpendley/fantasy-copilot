@@ -830,3 +830,11 @@
   - never-drop players are never a drop, never cut in a trade;
   - not-for-trade players are never offered;
   - the trade fingerprint changes with the prefs.
+- **Addendum (Nov 6): the Interested list (ESPN's watch list).**
+  - `parseTeams` reads `watchList`. ESPN sends it only for the team whose cookies make the request, so other managers' lists are never seen.
+  - **Watched free agents** are always evaluated (outside the analysis' top 45 too). Their best drop is a top-tier move, their other drops are checked like the cards'. They show as Moves cards under "Interested".
+  - **Watched players on other teams:**
+    - A `trade-for` worker task (`runTradeFor`) runs with the trade search. It finds the best 3 packages that get each one, by the same rules (market check, lineup gain, no protected players). Results are stored under `trade-for` in `view_cache`.
+    - Each player's best package is a top-tier simulated move, and the next two join the trade ideas.
+    - New packages queue a job ("New trade packages for your watch list").
+  - **A new watch list** changes the trade fingerprint, so the search re-runs. Jobs store `watch_key` (migration 0025), and the 5-minute check queues a job when the list changes ("You changed your watch list").

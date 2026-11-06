@@ -71,17 +71,48 @@ export function tradeSearchInput(
   };
 }
 
+/** Packages per watched player (the best is simulated to the top tier, ADR-060). */
+export const PACKAGES_PER_TARGET = 3;
+
+/**
+ * "Trade for him" (the Interested list): for each watched player on another team, the best
+ * packages that get him, by the same rules as the search. Keyed by player id.
+ */
+export function runTradeFor(
+  input: TradeSearchInput & { targets: number[] },
+): Record<string, StoredIdea[]> {
+  const { ctx, market } = fromInput(input);
+  const out: Record<string, StoredIdea[]> = {};
+  for (const target of input.targets) {
+    const owner = input.others.find((o) => o.roster.some((p) => p.id === target));
+    if (!owner) continue;
+    out[target] = findTradeTargets(input.me, [owner], ctx, market, input.freeAgents, {
+      target,
+      perSize: PACKAGES_PER_TARGET,
+    })
+      .slice(0, PACKAGES_PER_TARGET)
+      .map(compact);
+  }
+  return out;
+}
+
+function fromInput(input: TradeSearchInput): { ctx: ValueContext; market: MarketContext } {
+  return {
+    ctx: {
+      ...input.ctx,
+      gameDays: new Map(input.ctx.gameDays.map(([pro, days]) => [pro, new Set(days)])),
+      outUntil: new Map(input.ctx.outUntil),
+    },
+    market: {
+      curve: input.market.curve,
+      draftPick: new Map(input.market.draftPick),
+      fallbackRank: new Map(input.market.fallbackRank),
+    },
+  };
+}
+
 /** Run the search from its JSON input; the ideas as stored (best first). */
 export function runTradeSearch(input: TradeSearchInput): StoredIdea[] {
-  const ctx: ValueContext = {
-    ...input.ctx,
-    gameDays: new Map(input.ctx.gameDays.map(([pro, days]) => [pro, new Set(days)])),
-    outUntil: new Map(input.ctx.outUntil),
-  };
-  const market: MarketContext = {
-    curve: input.market.curve,
-    draftPick: new Map(input.market.draftPick),
-    fallbackRank: new Map(input.market.fallbackRank),
-  };
+  const { ctx, market } = fromInput(input);
   return findTradeTargets(input.me, input.others, ctx, market, input.freeAgents).map(compact);
 }

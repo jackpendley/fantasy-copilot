@@ -30,7 +30,8 @@ import {
 import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
 import type { StoredIdea } from "./trade-task";
-import { rosterKeyOf } from "./move-checks";
+import { TRADE_FOR_KEY } from "./trade-view";
+import { rosterKeyOf, watchKeyOf } from "./move-checks";
 import {
   chooseShown,
   deepView,
@@ -140,6 +141,8 @@ interface JobContext {
   readAt: string;
   rosterKey: string;
   waiverFingerprint: string;
+  /** Jack's watch list (watchKeyOf); absent on builds queued before it existed. */
+  watchKey?: string;
   meta: OutlookTeam[];
 }
 
@@ -172,6 +175,14 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     0,
     TRADE_MOVES,
   );
+  // The Interested list's packages: each watched player's best one is top tier.
+  const packages = Object.values(
+    (await readView<Record<string, StoredIdea[]>>(TRADE_FOR_KEY).catch(() => null))?.value ?? {},
+  );
+  const interest = {
+    top: packages.flatMap((p) => p.slice(0, 1)),
+    rest: packages.flatMap((p) => p.slice(1)),
+  };
   const build: SimBuildInput = {
     waiver: w.inputs,
     extraKeys,
@@ -187,6 +198,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     injuries: data.injuries,
     teams: data.teams.map((t) => ({ id: t.id, roster: t.roster })),
     ideas,
+    interest,
   };
   const key = rosterKeyOf(w.data.ahead.me.roster, w.data.injuries);
   const ctx: JobContext = {
@@ -196,6 +208,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     readAt: setup.readAt.toISOString(),
     rosterKey: key,
     waiverFingerprint: fingerprintOf({ sp: w.sp, key }),
+    watchKey: watchKeyOf(data.me.watchList),
     meta: data.teams.map((t) => {
       const a = base.activity.get(t.id)!;
       return {
@@ -252,7 +265,8 @@ async function storeJob(
     // The same simulation: reuse it, under Jack's roster key as it reads now (news that didn't
     // change the simulation, or a new key format), so the roster check doesn't queue it again.
     await db()`
-      update sim_jobs set roster_key = ${ctx.rosterKey}, waiver_fingerprint = ${ctx.waiverFingerprint}
+      update sim_jobs set roster_key = ${ctx.rosterKey}, waiver_fingerprint = ${ctx.waiverFingerprint},
+        watch_key = ${ctx.watchKey ?? null}
       where id = ${same.id}
     `;
     if (same.status !== "done") await startWorker();
@@ -271,6 +285,7 @@ async function storeJob(
       moves: db().json(moves as never),
       waiver_fingerprint: ctx.waiverFingerprint,
       roster_key: ctx.rosterKey,
+      watch_key: ctx.watchKey ?? null,
       replays: REPLAYS,
       chunk_seasons: CHUNK_SEASONS,
       max_chunks: MAX_CHUNKS,

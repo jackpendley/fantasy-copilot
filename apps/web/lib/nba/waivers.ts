@@ -34,6 +34,8 @@ export interface WaiverInputs {
   startedToday: Set<number>;
   /** Players Jack never drops (lib/nba/prefs.ts): no move suggests dropping them. */
   noDrop?: Set<number>;
+  /** Jack's ESPN watch list: these free agents are always evaluated (the Interested list). */
+  watch?: Set<number>;
   /** Roster spots excluding IR (starters + bench). */
   rosterLimit: number;
   /** IR slots in this league. */
@@ -170,6 +172,8 @@ export function waiverAnalysis(a: WaiverInputs): {
   thisWeek: StreamOption[];
   /** Moves that add rest-of-season value, best first (with the drop that keeps the most value). */
   longTerm: StreamOption[];
+  /** Watched free agents, each with his best drop (even when no drop helps). */
+  watched: StreamOption[];
   /** Every way to make room for each evaluated add (by player id), best expected wins first. */
   dropOptions: Map<number, StreamOption[]>;
 } {
@@ -223,6 +227,7 @@ export function waiverAnalysis(a: WaiverInputs): {
     shortlist.set(c.player.id, c);
   for (const c of [...candidates].sort((x, y) => y.ros - x.ros).slice(0, MAX_LONG_TERM))
     shortlist.set(c.player.id, c);
+  for (const c of candidates) if (a.watch?.has(c.player.id)) shortlist.set(c.player.id, c);
 
   // Rest of season with each move, by lineup fit (positions, schedule, injuries, IL returns).
   const baseSeason = a.season ? teamValue(a.roster, a.season) : null;
@@ -340,7 +345,11 @@ export function waiverAnalysis(a: WaiverInputs): {
   );
   longTerm.sort((x, y) => y.seasonScore - x.seasonScore || y.deltaPts - x.deltaPts);
   best.sort((x, y) => y.netWins - x.netWins);
-  return { baseWin, candidates, best, winsPerPoint, thisWeek, longTerm, dropOptions };
+  const watched = [...dropOptions]
+    .filter(([id]) => a.watch?.has(id))
+    .flatMap(([, options]) => options.slice(0, 1))
+    .sort((x, y) => y.netWins - x.netWins);
+  return { baseWin, candidates, best, winsPerPoint, thisWeek, longTerm, watched, dropOptions };
 }
 
 /**

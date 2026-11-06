@@ -149,6 +149,7 @@ async function readWaiverInputs(now = new Date()) {
     lockedToday,
     startedToday,
     noDrop: prefs.noDrop,
+    watch: new Set(data.me.watchList),
     rosterLimit,
     irSlots: data.settings.slotCounts.IR ?? 0,
     rosterLocked: locked,

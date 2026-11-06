@@ -13,19 +13,32 @@ import "server-only";
 // 3 hours when it runs on Vercel); Jack's own moves and the nightly run refresh it right away.
 
 import { after } from "next/server";
-import type { RosterPlayer } from "@fantasy-copilot/espn";
+import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
 import { dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import { loadLeagueView } from "./league-view";
 import { findTradeTargets, type TradeIdea } from "./trade";
-import { compact, tradeSearchInput, type StoredIdea } from "./trade-task";
+import {
+  PACKAGES_PER_TARGET,
+  compact,
+  runTradeFor,
+  tradeSearchInput,
+  type StoredIdea,
+} from "./trade-task";
 import { enqueueTask, taskPending } from "./worker-tasks";
 
 export { compact, type StoredIdea };
 
 type LeagueView = Awaited<ReturnType<typeof loadLeagueView>>;
+/** What reading stored ideas needs: the rosters as they stand and the free agents. */
+type Rosters = {
+  data: { teams: FantasyTeam[]; me: FantasyTeam };
+  freeAgents: RosterPlayer[];
+};
 
 const KEY = "trade-targets";
+/** "Trade for him" packages for the watched players on other teams, by player id. */
+export const TRADE_FOR_KEY = "trade-for";
 /** Changes other than Jack's own moves refresh the ideas at most this often (on Vercel)... */
 export const TRADE_REFRESH_GAP_MS = 3 * 3600_000;
 /** ...or on the worker. */
@@ -52,7 +65,20 @@ export function tradeFingerprint(v: LeagueView): string {
     freeAgents: v.freeAgents.map((p) => p.id).sort(),
     noTrade: [...v.prefs.noTrade].sort(),
     noDrop: [...v.prefs.noDrop].sort(),
+    targets: interestTargets(v),
   });
+}
+
+/** The Trades page with this trade filled in. */
+export const tradeHref = (team: number, give: number[], get: number[]) =>
+  `/nba/league/trades?team=${team}${give.map((g) => `&give=${g}`).join("")}${get.map((g) => `&get=${g}`).join("")}`;
+
+/** Jack's watched players who are on other teams (their "Trade for him" packages). */
+export function interestTargets(v: Rosters): number[] {
+  const elsewhere = new Set(
+    v.data.teams.filter((t) => t.id !== v.data.me.id).flatMap((t) => t.roster.map((p) => p.id)),
+  );
+  return (v.data.me.watchList ?? []).filter((id) => elsewhere.has(id)).sort((a, b) => a - b);
 }
 
 /** Jack's side of the search, with his protected players. */
@@ -67,7 +93,7 @@ const mySide = (v: LeagueView) => ({
  * Stored ideas rebuilt from today's players. An idea is dropped when any of its players is no
  * longer where it expects him (traded, dropped, or a free agent who was picked up).
  */
-export function hydrate(stored: StoredIdea[], v: LeagueView): TradeIdea[] {
+export function hydrate(stored: StoredIdea[], v: Rosters): TradeIdea[] {
   const rosters = new Map(v.data.teams.map((t) => [t.id, new Map(t.roster.map((p) => [p.id, p]))]));
   const free = new Map(v.freeAgents.map((p) => [p.id, p]));
   const mine = rosters.get(v.data.me.id)!;
@@ -113,16 +139,8 @@ function search(v: LeagueView): TradeIdea[] {
   );
 }
 
-async function computeAndStore(v: LeagueView, fingerprint: string): Promise<TradeIdea[]> {
-  const t0 = performance.now();
-  const ideas = search(v);
-  await writeView(KEY, fingerprint, ideas.map(compact), performance.now() - t0);
-  return ideas;
-}
-
-/** Queue the search for the worker (its result lands in view_cache under KEY). */
-function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
-  const input = tradeSearchInput(
+function searchInput(v: LeagueView) {
+  return tradeSearchInput(
     mySide(v),
     v.data.teams
       .filter((t) => t.id !== v.data.me.id)
@@ -131,7 +149,61 @@ function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
     v.market,
     v.freeAgents,
   );
+}
+
+async function computeAndStore(v: LeagueView, fingerprint: string): Promise<TradeIdea[]> {
+  const t0 = performance.now();
+  const ideas = search(v);
+  await writeView(KEY, fingerprint, ideas.map(compact), performance.now() - t0);
+  const targets = interestTargets(v);
+  if (targets.length) {
+    const t1 = performance.now();
+    const packages = runTradeFor({ ...searchInput(v), targets });
+    await writeView(TRADE_FOR_KEY, fingerprint, packages, performance.now() - t1);
+  }
+  return ideas;
+}
+
+/**
+ * Queue the search for the worker (its result lands in view_cache under KEY), and the
+ * Interested list's packages (under TRADE_FOR_KEY) when Jack watches players on other teams.
+ */
+async function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
+  const input = searchInput(v);
+  const targets = interestTargets(v);
+  if (targets.length) await enqueueTask("trade-for", fingerprint, { ...input, targets });
   return enqueueTask("trade-search", fingerprint, input);
+}
+
+export interface TradeForPackages {
+  /** Per watched player on another team: the best packages that get him (best first). */
+  packages: Map<number, TradeIdea[]>;
+  /** Searched at least once for him (an empty list then means no package works). */
+  searched: Set<number>;
+  /** A search for them is running. */
+  updating: boolean;
+}
+
+/**
+ * The Interested list's packages, from the last search (refreshed with the trade ideas;
+ * packages whose players have moved are left out).
+ */
+export async function tradeForPackages(v: Rosters): Promise<TradeForPackages> {
+  const [row, updating] = dbConfigured()
+    ? await Promise.all([
+        readView<Record<string, StoredIdea[]>>(TRADE_FOR_KEY).catch(() => null),
+        taskPending("trade-for").catch(() => false),
+      ])
+    : [null, false];
+  const packages = new Map<number, TradeIdea[]>();
+  const searched = new Set<number>();
+  for (const id of interestTargets(v)) {
+    const stored = row?.value[id];
+    if (!stored) continue;
+    searched.add(id);
+    packages.set(id, hydrate(stored, v).slice(0, PACKAGES_PER_TARGET));
+  }
+  return { packages, searched, updating };
 }
 
 export interface TradeTargets {

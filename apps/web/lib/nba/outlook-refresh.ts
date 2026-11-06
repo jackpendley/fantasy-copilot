@@ -15,7 +15,7 @@ import { espnConfig } from "@/lib/env";
 import { LAST_SCORING_PERIOD, scoringPeriodForDate, gameDate } from "./calendar";
 import { leagueMovesBetween } from "./changes";
 import { latestOutlook, runOutlook } from "./outlook-run";
-import { rosterKeyOf } from "./move-checks";
+import { rosterKeyOf, watchKeyOf } from "./move-checks";
 import { samePlayers } from "./move-shown";
 import { enqueueSimJob } from "./sim-jobs";
 import { refreshTradeTargets } from "./trade-view";
@@ -229,14 +229,23 @@ const NEWS_GAP = "5 minutes";
 export async function simRosterCheck(
   roster: Parameters<typeof rosterKeyOf>[0],
   injuries: Parameters<typeof rosterKeyOf>[1],
+  watchList: number[] = [],
 ): Promise<"current" | "waiting" | "queued"> {
   if (!workerEnabled()) return "current";
   const key = rosterKeyOf(roster, injuries);
-  const [j] = await db()<{ roster_key: string | null; recent: boolean; live: boolean }[]>`
-    select roster_key, created_at > now() - ${NEWS_GAP}::interval as recent,
+  const [j] = await db()<
+    { roster_key: string | null; watch_key: string | null; recent: boolean; live: boolean }[]
+  >`
+    select roster_key, watch_key, created_at > now() - ${NEWS_GAP}::interval as recent,
       status in ('queued', 'running') as live
     from sim_jobs where status <> 'superseded' order by id desc limit 1
   `;
+  // A new watch list: its free agents and trade packages need checks (and the search).
+  const watchChanged = j?.watch_key != null && j.watch_key !== watchKeyOf(watchList);
+  if (watchChanged && !(j.live && j.recent)) {
+    await refreshLogged("You changed your watch list");
+    return "queued";
+  }
   if (!j?.roster_key || j.roster_key === key) return "current";
   const news = samePlayers(j.roster_key, key);
   if (news && j.live && j.recent) return "waiting";

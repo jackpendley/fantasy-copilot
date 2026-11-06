@@ -104,6 +104,20 @@ describe("waiverAnalysis", () => {
     expect(res.thisWeek.some((o) => o.add.player.name === "Idle Big")).toBe(false);
   });
 
+  it("always evaluates watched free agents, even ones that help nobody (the Interested list)", () => {
+    // 60 better guards crowd the shortlist; the watched 5-point center is still evaluated.
+    const crowd = Array.from({ length: 60 }, (_, i) =>
+      fa(100 + i, `Guard ${i}`, 22, 60 - i * 0.5, ["PG"]),
+    );
+    const watched = fa(7, "Watched Big", 30, 5, ["C"]);
+    const res = waiverAnalysis({ ...base, freeAgents: [...crowd, watched], watch: new Set([7]) });
+    expect(res.dropOptions.has(7)).toBe(true);
+    expect(res.watched.map((o) => o.add.player.id)).toEqual([7]);
+    expect(waiverAnalysis({ ...base, freeAgents: [...crowd, watched] }).dropOptions.has(7)).toBe(
+      false,
+    );
+  });
+
   it("never suggests dropping a never-drop player (ADR-060)", () => {
     const freeAgents = [fa(1, "Daily Guard", 99, 22, ["PG", "SG"])];
     const open = waiverAnalysis({ ...base, freeAgents });

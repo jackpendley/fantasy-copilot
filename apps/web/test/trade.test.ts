@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { acceptance, marketContext, marketValue } from "@/lib/nba/market";
-import { compact, runTradeSearch, tradeSearchInput } from "@/lib/nba/trade-task";
+import { compact, runTradeFor, runTradeSearch, tradeSearchInput } from "@/lib/nba/trade-task";
 import {
   applyTrade,
   evaluateTrade,
@@ -391,5 +391,31 @@ describe("the trade search as a worker task", () => {
     const input = JSON.parse(JSON.stringify(tradeSearchInput(me, others, hurt, mkt, free)));
     expect(direct.length).toBeGreaterThan(0);
     expect(runTradeSearch(input)).toEqual(direct);
+  });
+
+  it("finds packages that get a watched player, and only those (the Interested list)", () => {
+    const jack = [p(11, "C", 20, 23), p(12, "C", 20, 23), p(13, "PG", 10, 1), p(14, "PG", 9, 1)];
+    const rival = [p(15, "C", 40, 40), p(16, "PG", 5, 1), p(17, "PG", 4, 1), p(18, "C", 3, 1)];
+    const free = [p(19, "PG", 18, 1)];
+    const mkt = marketContext([...jack, ...rival, ...free], new Map());
+    const input = JSON.parse(
+      JSON.stringify(
+        tradeSearchInput(
+          { teamId: 1, roster: jack },
+          [{ teamId: 2, roster: rival }],
+          ctx,
+          mkt,
+          free,
+        ),
+      ),
+    );
+    const out = runTradeFor({ ...input, targets: [15, 999] });
+    expect(Object.keys(out)).toEqual(["15"]); // 999 isn't on a roster
+    expect(out[15]!.length).toBeGreaterThan(0);
+    expect(out[15]!.length).toBeLessThanOrEqual(3);
+    for (const i of out[15]!) expect(i.get).toContain(15);
+    // Never giving a protected player.
+    const kept = runTradeFor({ ...input, me: { ...input.me, noTrade: [11, 12] }, targets: [15] });
+    for (const i of kept[15] ?? []) expect(i.give.some((id) => id === 11 || id === 12)).toBe(false);
   });
 });

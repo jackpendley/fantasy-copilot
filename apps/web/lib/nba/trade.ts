@@ -455,6 +455,8 @@ export interface TargetOptions {
   pool?: number;
   /** Candidate deals per partner and trade size that get the full two-team evaluation. */
   exactPerSize?: number;
+  /** Only deals that get Jack this player (the Interested list's "Trade for him"). */
+  target?: number;
 }
 
 /** Players this cheap (market $) are throw-ins: deals that differ only by them are the same deal. */
@@ -480,7 +482,7 @@ export function findTradeTargets(
   ctx: ValueContext,
   market: MarketContext,
   freeAgents: RosterPlayer[] = [],
-  { perSize = 8, maxSize = 3, pool = 10, exactPerSize = 20 }: TargetOptions = {},
+  { perSize = 8, maxSize = 3, pool = 10, exactPerSize = 20, target }: TargetOptions = {},
 ): TradeIdea[] {
   const $ = new Map<number, number>();
   const dollars = (p: RosterPlayer) => {
@@ -539,7 +541,9 @@ export function findTradeTargets(
   for (const other of others) {
     const theirsBase = teamValue(other.roster, ctx);
     const theirMarginal = marginalValues(other.roster, ctx);
-    const theirPool = tradeable(other.roster);
+    // A target is always in their pool, however the market prices him.
+    const wanted = other.roster.filter((p) => p.id === target && !p.tradeLocked);
+    const theirPool = [...wanted, ...tradeable(other.roster).filter((p) => p.id !== target)];
     // Each of their players: what he'd add to Jack's lineup.
     const myGain = new Map(
       theirPool.map((p) => [
@@ -553,6 +557,7 @@ export function findTradeTargets(
       { give: RosterPlayer[]; get: RosterPlayer[]; approx: number }[]
     >();
     for (const getSet of subsets(theirPool, maxSize)) {
+      if (target != null && !getSet.some((p) => p.id === target)) continue;
       const getDollars = sumDollars(getSet);
       const gain = getSet.reduce((a, p) => a + myGain.get(p.id)!, 0);
       for (const g of mySets) {

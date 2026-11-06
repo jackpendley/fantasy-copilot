@@ -25,7 +25,7 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] Live loaders: ESPN league/rosters/locks, NBA schedule and tip times, ESPN injuries
 - [x] `/today` and any other day: games, injuries, projected points, recommended slots, exact moves
 - [x] `/week`: games grid, my projected total vs my opponent's, win chance
-- [ ] Deploy behind the password
+- [x] Deploy behind the password
 
 ## Phase 2: game-day edge (week 1)
 
@@ -38,7 +38,7 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] Official injury report PDFs: parsed in TypeScript (`packages/nba-data`), logged live from 9 AM on game days
 - [x] Questionable-player hedging: later-tipping bench backup on Today + alert
 - [x] PWA + web push alerts: lineup not optimal at T−30, a starter ruled OUT, hedge reminder, ESPN login expired; /settings
-- [ ] Production push keys in Vercel + cron-job.org calling /api/cron/gameday every 5 min (Jack)
+- [x] Production push keys in Vercel + cron-job.org calling /api/cron/gameday every 5 min (Jack)
 
 ## Phase 3: waivers and streaming (weeks 1–2)
 

@@ -7,7 +7,7 @@
 - **Tabs:** Today, Matchup, Players (Moves, Free agents, Trends, **Draft**), League (Trades, team pages).
 - **Simulations:** every move and trade idea is simulated automatically on the GitHub Actions worker (ADR-058/059). Nov 5's PRs #79–#103 are in the previous status below, under "Background".
 
-Nov 6 (PRs #106–#113) carried out Jack's 14-request plan (`~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
+Nov 6 (PRs #106–#113, plus the fix #115) carried out Jack's 14-request plan (`~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
 
 | PR   | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -18,6 +18,7 @@ Nov 6 (PRs #106–#113) carried out Jack's 14-request plan (`~/.claude/plans/i-m
 | #110 | **Interested list** (ESPN watch list). Watched free agents get move cards. Watched players on other teams get the best 3 "Trade for him" packages (`trade-for` worker task), each simulated. A watch-list change queues a job (`sim_jobs.watch_key`).                                                                                                                                                                                                                      |
 | #111 | **7-level percentile scale (ADR-061).** Shaded StatTiles on the card's Advanced tab, level-filled badges, colored values in Free agents and Trends. Checked for contrast and color blindness, light and dark.                                                                                                                                                                                                                                                              |
 | #112 | **Trends → Vs last season.** FP/G against the latest prior season with 40+ games, both scored with this season's rules (the league changed its scoring), with MPG, TS%, usage, per-36 and a role badge. Prior seasons come from ESPN's public season pool, stored once.                                                                                                                                                                                                    |
+| #115 | **Season pool fix.** ESPN's public season pool ignores the sort, so its `limit` cut arbitrary players: the rankings import matched 318 of 348, and the stored last-season baselines lost ~⅓ of players with 40+ games (Towns, Quickley). Now the whole pool (~1,100 players, ~26 MB, once); the baselines re-fetch once on the next nightly run.                                                                                                                           |
 | #113 | **Players → Draft.** Rankings upload in Settings (`draft_rankings`, private); per-player rank vs pick vs season; projection accuracy vs carrying over last season; the hindsight draft (~160 ms of CPU, cached daily).                                                                                                                                                                                                                                                     |
 
 **Verified in production:**
@@ -33,8 +34,9 @@ Nov 6 (PRs #106–#113) carried out Jack's 14-request plan (`~/.claude/plans/i-m
 
 ## Waiting on Jack
 
-- **Upload the draft rankings:** Settings → Draft rankings → `apps/draft-nba/dist/rankings.csv`. Then the Draft tab's rank and accuracy columns fill in, and the first accuracy numbers go in MODEL_CARD.
-- **Set protected players** on Moves (Never drop) and Trades (Not for trade), e.g. Tatum and Duren. Each change re-checks moves and trade ideas.
+- **Done Nov 6:**
+  - **Rankings re-uploaded after #115:** all 348 rows match, and every drafted player has a rank.
+  - **Protected players set:** Never drop is Tatum, Duren, Avdija, Daniels, Allen, Wilson and Hart; Not for trade is only Duren. Both are verified on Moves and Trades.
 - **Vercel's Git auto-deploy** worked for every merge on Nov 6 (deploys within ~1 min).
 - **1-minute transaction watch:** deferred until CPU has room. The 5-minute watch stays.
 
@@ -55,10 +57,8 @@ Nov 6 (PRs #106–#113) carried out Jack's 14-request plan (`~/.claude/plans/i-m
    - overnight gameday "nothing due" skips;
    - #101's per-job worker CPU;
    - the nightly prune;
-   - the nightly season-baselines step reports `false` (already stored).
-2. **After Jack's rankings upload:**
-   - check the match rate (≥95% expected);
-   - record the first accuracy numbers in MODEL_CARD.
+2. **Draft accuracy:** the card appears once ranked players have 10+ games (the most had 9 on Nov 6). Then record the first numbers in MODEL_CARD.
+   - **Also:** check that the nightly run re-fetched the season baselines (`season-baselines` returns `true` once, then `false`), and that Trends' Vs last season now includes Towns and Quickley.
 3. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥60 absences with ESPN return dates have ended. One evaluation, no peeking before then.
 4. **If CPU is above ~4 min a day:** see the options in COMPUTE.md.
 5. **After Nov 20:**

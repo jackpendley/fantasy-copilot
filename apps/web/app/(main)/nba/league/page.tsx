@@ -23,6 +23,7 @@ import { leagueMovesBetween } from "@/lib/nba/changes";
 import { loadLeagueView } from "@/lib/nba/league-view";
 import {
   isStale,
+  othersWithinMinutes,
   refreshIfStale,
   outlookRunning,
   recentLeagueMoves,
@@ -67,8 +68,8 @@ async function loadOutlook(myId: number) {
     provisionalOutlook().catch(() => null),
   ]);
   const [latest, previous] = runs;
-  // A roster move newer than the latest run: queue it for the worker (or re-run on Vercel at
-  // most every 30 minutes; later moves ride along with the next run).
+  // A roster move newer than the latest run: queue it for the worker (another team's move waits
+  // up to othersWithinMinutes(); later moves ride along with the next run).
   const newest = leagueMoves.at(-1)?.at ?? null;
   const lastAt = latest?.run_at.getTime() ?? null;
   const stale = isStale(newest, lastAt);
@@ -92,7 +93,7 @@ async function loadOutlook(myId: number) {
     moves,
     provisional,
     updating: due || running || provisional != null,
-    /** A newer move that the next run (within 30 minutes) will include. */
+    /** A newer move that the next run (within othersWithinMinutes()) will include. */
     waiting: stale && !due && !running && provisional == null,
   };
 }
@@ -173,8 +174,8 @@ export default async function LeaguePage({
 
       {o?.waiting && (
         <p className="rounded-xl border bg-card px-3 py-2.5 text-sm text-muted-foreground">
-          A newer roster move isn&apos;t in these odds yet: the next update (within 30 minutes)
-          includes it.
+          A newer roster move isn&apos;t in these odds yet: the next update (within{" "}
+          {othersWithinMinutes()} minutes) includes it.
         </p>
       )}
 

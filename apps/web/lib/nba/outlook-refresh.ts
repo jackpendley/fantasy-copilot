@@ -23,8 +23,12 @@ import { refreshTradeTargets } from "./trade-view";
 const LOCK = "outlook";
 /** Other teams' moves re-run the outlook at most this often. */
 export const RERUN_GAP_MS = 30 * 60_000;
-/** The roster watch only reads the database when a move is at least this recent. */
-export const WATCH_WINDOW_MS = RERUN_GAP_MS + 15 * 60_000;
+/**
+ * The roster watch only reads the database when a move is at least this recent: the longest a
+ * move waits (another team's, 90 minutes until Nov 20: OTHERS_GAP_MS) plus 15 minutes, so a
+ * waiting move is still seen when its turn comes.
+ */
+export const WATCH_WINDOW_MS = 90 * 60_000 + 15 * 60_000;
 
 /** A move newer than the latest run means the outlook is out of date. */
 export function isStale(moveAt: number | null, lastRunAt: number | null): boolean {
@@ -57,12 +61,17 @@ async function liveJobSince(since: number): Promise<{ queuedFor: number } | null
 }
 
 /**
- * Until Nov 20, 2026, other teams' moves re-check Jack's moves at most every 30 minutes
+ * Until Nov 20, 2026, other teams' moves re-check Jack's moves at most every 90 minutes
  * (docs/COMPUTE.md: Vercel's 30-day CPU window needs ~4 min a day until the heavy late-October
- * days roll off). His own moves, and news, are checked right away. Moves in between ride along.
+ * days roll off; Jack chose 90 on Nov 5). His own moves, and news, are checked right away.
+ * Moves in between ride along.
  */
 const OTHERS_GAP_UNTIL = Date.parse("2026-11-20T00:00:00Z");
-const OTHERS_GAP_MS = 30 * 60_000;
+const OTHERS_GAP_MS = 90 * 60_000;
+
+/** At most how long until another team's move is in the numbers (minutes, for the pages). */
+export const othersWithinMinutes = (now = Date.now()) =>
+  Math.round((now < OTHERS_GAP_UNTIL ? OTHERS_GAP_MS : RERUN_GAP_MS) / 60_000);
 
 /** Should another team's move wait (the last job is recent, and the trim is on)? */
 export function othersWait(own: boolean, lastJobAt: number | null, now: number): boolean {

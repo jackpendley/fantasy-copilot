@@ -18,6 +18,7 @@ import { fmtPts } from "@/lib/display";
 import type { Contribution } from "@/lib/nba/card-stats";
 import type { LiveGame, PlayerCardData, SeasonBlock } from "@/lib/nba/player-card";
 import { cn } from "@/lib/utils";
+import { PercentileBadge, StatTile } from "./percentile";
 import { FpChart } from "@/components/fp-chart";
 import type { PlayerMetric } from "@/lib/nba/pbp-metrics";
 import { fpTone, toneText } from "@/lib/display";
@@ -209,40 +210,6 @@ function CardSkeleton() {
 }
 
 /** A league percentile as a badge: green at the 80th or better, red at the 20th or worse. */
-export function PercentileBadge({
-  p,
-  colored = true,
-  title = "League percentile among regulars",
-}: {
-  p: number | null;
-  colored?: boolean;
-  title?: string;
-}) {
-  if (p == null) return null;
-  const tone = !colored ? null : p >= 80 ? "good" : p <= 20 ? "bad" : null;
-  return (
-    <span
-      className={cn(
-        "rounded px-1 text-[10px] font-semibold tabular-nums",
-        tone === "good"
-          ? "bg-success/15 text-success"
-          : tone === "bad"
-            ? "bg-danger/15 text-danger"
-            : "bg-muted text-muted-foreground",
-      )}
-      title={title}
-    >
-      {ordinal(p)}
-    </span>
-  );
-}
-
-const ordinal = (n: number) => {
-  const r = Math.round(n);
-  const s = r % 100 >= 11 && r % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][r % 10] ?? "th");
-  return `${r}${s}`;
-};
-
 function Tile({
   label,
   value,
@@ -260,7 +227,7 @@ function Tile({
     <div className={cn("rounded-lg border px-3 py-2", strong && "border-primary/40 bg-primary/5")}>
       <div className="flex items-center justify-between gap-1 text-[11px] font-medium text-muted-foreground">
         {label}
-        {percentile != null && <PercentileBadge p={percentile} />}
+        <PercentileBadge p={percentile ?? null} />
       </div>
       <div className={cn("text-lg font-semibold tabular-nums", strong && "text-primary")}>
         {value}
@@ -574,8 +541,8 @@ function NextTab({ card }: { card: PlayerCardData }) {
 }
 
 /**
- * Advanced stats in groups, each with his league percentile (green 80th+, red 20th or below;
- * style stats like 3-point rate aren't good or bad, so they stay grey).
+ * Advanced stats in groups, each a box shaded by his league percentile on the 7-level scale
+ * (style stats like 3-point rate aren't good or bad, so they stay neutral).
  */
 export function AdvancedMetrics({ metrics, per }: { metrics: PlayerMetric[]; per: number | null }) {
   const groups = [...new Set(metrics.map((m) => m.group))];
@@ -584,28 +551,17 @@ export function AdvancedMetrics({ metrics, per }: { metrics: PlayerMetric[]; per
       {groups.map((g) => (
         <div key={g} className="space-y-1">
           <div className="text-[11px] font-medium text-muted-foreground">{g}</div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {metrics
               .filter((m) => m.group === g)
               .map((m) => (
-                <div key={m.key} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-muted-foreground">{m.label}</span>
-                  <span className="flex items-center gap-1.5 tabular-nums">
-                    <span
-                      className={cn(
-                        "font-semibold",
-                        m.tone === "good" && "text-success",
-                        m.tone === "bad" && "text-danger",
-                      )}
-                    >
-                      {m.value}
-                    </span>
-                    <PercentileBadge
-                      p={m.percentile}
-                      colored={m.tone != null || m.percentile == null ? true : false}
-                    />
-                  </span>
-                </div>
+                <StatTile
+                  key={m.key}
+                  label={m.label}
+                  value={m.value}
+                  p={m.percentile}
+                  rated={m.rated}
+                />
               ))}
           </div>
         </div>

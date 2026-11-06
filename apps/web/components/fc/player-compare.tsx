@@ -13,7 +13,8 @@ import { winner, type Row, startsLabel } from "@/lib/compare";
 import { METRICS } from "@/lib/nba/pbp-metrics";
 import type { PlayerCardData } from "@/lib/nba/player-card";
 import { cn } from "@/lib/utils";
-import { PercentileBadge, usePlayerCard } from "./player-card";
+import { usePlayerCard } from "./player-card";
+import { PercentileBadge } from "./percentile";
 import { PlayerAvatar } from "./player-avatar";
 import { StatusPill } from "./status-pill";
 

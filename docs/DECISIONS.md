@@ -838,3 +838,19 @@
     - Each player's best package is a top-tier simulated move, and the next two join the trade ideas.
     - New packages queue a job ("New trade packages for your watch list").
   - **A new watch list** changes the trade fingerprint, so the search re-runs. Jobs store `watch_key` (migration 0025), and the 5-minute check queues a job when the list changes ("You changed your watch list").
+
+## ADR-061: one 7-level percentile scale (2026-11-06)
+
+- **Why:** percentiles showed three ways (green 80th+, red 20th or below, grey otherwise), so "62nd" and "79th" looked the same. Jack asked for one scale with light shades: at least 7 levels.
+- **Scale** (`lib/percentile.ts pctLevel`): ≥90 dark green, 75–89 green, 60–74 light green, 41–59 neutral, 26–40 light red, 11–25 red, ≤10 dark red. Percentiles are rounded first.
+  - "Lower is better" stats flip (the advanced metrics are already oriented, `pbp-metrics.ts`).
+  - Style stats (3-point rate...) stay neutral.
+- **Where:**
+  - **Stat grids are shaded boxes** (`StatTile`): the card's Advanced tab.
+  - **Badges use the level's fill** (`PercentileBadge`): the card's FP/G tile, Compare.
+  - **Dense tables color the value's text** (`PercentileText`) with a neutral ordinal beside it: Free agents, Trends.
+  - The level is always written ("94th"), never color alone.
+- **Colors** (`globals.css --pct-*`, light and dark): checked with a contrast and CVD script.
+  - Every ink passes ≥4.5:1, on its fill and on the card.
+  - Adjacent fills are ≥8 ΔE (OKLab ×100) apart for normal vision.
+  - The weakest steps are dark mode's reds under protanopia (3–6). They're legal because the ordinal is always shown.

@@ -69,10 +69,12 @@ export async function fetchProSchedule(
 /**
  * A season's player pool from ESPN's league-less defaults (public, no cookies): season totals
  * for any season, including ones before the league existed. No league scoring is applied.
+ * ESPN doesn't reliably apply the sort (the order comes back arbitrary), so a cap drops random
+ * players: the default takes the whole pool (~1,100 players a season).
  */
 export async function fetchSeasonPool(
   season: number,
-  limit = 700,
+  limit = 3000,
   fetchImpl: typeof fetch = fetch,
 ): Promise<unknown> {
   const url = `${READ_HOST}/apis/v3/games/fba/seasons/${season}/segments/0/leaguedefaults/3?view=kona_player_info`;

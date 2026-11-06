@@ -41,7 +41,7 @@ export async function importRankings(csv: string) {
   if (!rows.length) throw new Error("no rankings found in the file");
   const cfg = espnConfig();
   // Every player ESPN lists this season (rookies and unsigned players included).
-  const players = parsePlayerPool(await fetchSeasonPool(cfg.season, 1000), cfg.season);
+  const players = parsePlayerPool(await fetchSeasonPool(cfg.season), cfg.season);
   const { matched, unmatched } = matchRankings(rows, players);
   await db().begin(async (sql) => {
     await sql`delete from draft_rankings`;

@@ -74,6 +74,12 @@ export default async function DraftPage({
         </Callout>
       )}
 
+      {v.rankingsAt && !a && (
+        <Callout tone="info">
+          How our projection held up appears once ranked players have {MIN_GAMES_JUDGED}+ games.
+        </Callout>
+      )}
+
       {a && (
         <section className="space-y-1.5">
           <SectionTitle aside={`${a.n} ranked players with ${MIN_GAMES_JUDGED}+ games`}>

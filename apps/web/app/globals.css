@@ -143,5 +143,7 @@
   }
   html {
     @apply font-sans;
+    /* No browser pull-to-refresh or top bounce: the app's own (components/pull-to-refresh.tsx). */
+    overscroll-behavior-y: none;
   }
 }

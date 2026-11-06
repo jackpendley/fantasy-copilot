@@ -1,77 +1,99 @@
-# Project status (2026-11-05)
+# Project status (2026-11-05, end of day)
 
 ## Where things stand
 
 **Live** at **https://fantasycopilot.vercel.app**, on Vercel Hobby with Neon Postgres. Four tabs: Today, Matchup, Players (Moves, Free agents, Trends), League (with Trades and team pages).
 
-**Every simulation runs by itself now (Nov 5, PRs #79–#87):**
+Today (PRs #79–#103) did two things:
 
-- **The worker checks every move** (ADR-058): every drop of every add on Moves, the best 3 drops of the other evaluated adds, and the best 15 trade ideas. That's ~290 moves per job, in groups of 12, most important first.
+- made every simulation run by itself;
+- cut Vercel CPU, which was close to Hobby's limit.
+
+### Every simulation runs by itself
+
+- **Every move is checked** (ADR-058, #79): every drop of every add on Moves, the best 3 drops of the other evaluated adds, and the best 15 trade ideas (#87). That's ~290 moves per job, in groups of 12, most important first.
   - Clearly worse moves stop after 1,000 seasons; close ones run to ±0.5 title points or 20,000 seasons.
-  - **Measured:** the opening moves are settled ~4 min after a trigger, and all 288 moves in ~13.5 min (16 runners).
-- **Moves:**
-  - each card shows its deep check with no button, and the drop picker shows every drop's title change;
-  - while a job re-checks, cards keep their last numbers with a spinner; after your own roster change they show a loader until the new numbers have 4,000 seasons;
-  - a banner shows progress ("64 of 288 moves done"), and `/api/moves/status` is polled instead of re-rendering the page.
-- **Free agents:** a sortable Title column (each player's best checked move).
-- **Trades:**
-  - each idea shows its simulated title change, and the evaluation shows title, playoffs and wins with margins;
-  - the trade search itself runs on the worker (ADR-059, `worker_tasks`);
-  - Simulate stays for custom trades.
-- **What starts a job:** a roster move anywhere in the league (the 5-minute transaction watch, or right away for moves made in the app), injury news or IR changes on your roster (the 5-minute job; at most one job per 5 min for news), and the nightly run.
+  - 16 GitHub runners.
+- **Moves (#83, #84):**
+  - no "Simulate this drop" button any more, and the drop picker shows every drop's title change;
+  - while a job re-checks, cards keep their last numbers (`move_results`) with a spinner and "Updating after: …";
+  - after your own roster change they show a loader until the new numbers have 4,000 seasons;
+  - injury news keeps the old numbers;
+  - a banner shows progress ("78 of 288 moves done"), and the page polls `/api/moves/status` instead of re-rendering.
+- **Free agents (#86):** a sortable Title column (each player's best checked move ± margin).
+- **Trades (#87):** each idea shows its simulated title change, and the evaluation shows title, playoffs and wins with margins. Simulate stays only for custom trades.
+- **What starts a job:**
+  - your own moves, right away (in the app, or seen by the 5-minute watch);
+  - injury news or IR changes on your roster (5-minute job, at most one job per 5 min);
+  - other teams' moves (until Nov 20 at most every 90 min, see below);
+  - the nightly run.
+- **Measured in production:**
+  - the opening moves are settled ~3–4 min after a trigger, and all ~290 in ~14 min;
+  - the news trigger worked ("Injury news for your players").
 
-**Later on Nov 5 (#89–#94):**
+### Vercel CPU (see `docs/COMPUTE.md`)
 
-- **#89, temporary trim:** until Nov 20, other teams' moves re-check at most every 30 min, raised to **90 min** on Nov 5 (#103, Jack's call). Own moves and news stay immediate. The roster watch looks back 105 min so a waiting move is still seen.
-- **#90:** the job's moves are built on the worker (`sim-build` task; the waiver analysis is no longer on Vercel). A roster move now costs Vercel ~0.9 s instead of ~5.3 s.
-- **#91–#94, worker coordination:**
-  - separate heartbeats for the simulation runners and the task runner (short, so a runner that left doesn't block a new run);
+- **Hobby rule:** 4 h of Active CPU over a rolling 30 days; above it, Vercel pauses the project. **Nov 5: 3 h 10 m.**
+- **The danger window:** the days leaving the window until ~Nov 19 used almost nothing, so use must average ≤ ~4 min a day until then. After that, the heavy late-October days (12–23 min each) roll off.
+- **Measurement (#80):** `cpu_log` and Settings → "Vercel CPU, last 24 hours" break each job down by step; Vercel Observability gives per-route figures. `scripts/profile-cpu.ts` profiles locally (read-only).
+- **Moved to the GitHub worker** (`worker_tasks`, ADR-059):
+  - the trade-idea search (~7.5 s per run, #82);
+  - building each simulation job, including the waiver analysis (#90).
+
+  A roster move now costs Vercel **~0.9 s instead of ~5.3 s**.
+
+- **Gameday job (#96, Jack approved):**
+  - injury-report logging every 10 min before the game window (5 min in it; MODEL_CARD note recorded before any evaluation);
+  - runs with nothing due skip the league load (`gamedayPlan`).
+
+  It was ~0.55 s per run before this.
+
+- **Worker traffic** (#98, #100, #101): per job, from ~18 s to **~15.5 s** (measured). #98 halved the requests, #100 made one request post results and claim the next chunks, and #101 recomputes the move numbers at most every 20 s (not measured yet).
+- **Temporary trims:**
+  - other teams' moves re-check at most every **90 min** until Nov 20 (#89, raised from 30 in #103, Jack's call); the roster watch looks back 105 min so a waiting move is still seen;
+  - trade ideas refresh at most every 15 min for other teams' changes (#81/#82).
+- **Projection:** before #96/#101/#103 it was ~6–7 min a day at ~15 jobs a day (a job costs ~15 s). Those three should bring it toward ~4 min a day. **To be confirmed by the first full day (Nov 6).**
+
+### Bugs found and fixed today
+
+- **#85:** a reused job kept an old roster key, so it was re-queued every 5 min.
+- **#91–#94:** worker coordination:
+  - separate short heartbeats for simulation and task runners;
   - one dispatch a minute;
   - the task runner doesn't idle on queued jobs;
-  - a task asked for again while queued still brings a runner.
-- **Verified in production:**
-  - Recalculate gives one dispatch, the worker build (2.8 s), then ~290 moves done in ~14 min, with the cards showing "Updating" and their last numbers;
-  - the news trigger queued a job ("Injury news for your players");
-  - the trade search ran on the worker (9.6 s).
-
-**Vercel CPU** (the main constraint; see `docs/COMPUTE.md`):
-
-- **Nov 5:** 3 h 6 m of Hobby's 4 h over a rolling 30 days. Over the limit, Vercel pauses the project.
-- **Biggest cost found:** the trade idea search (~7.5 s per run). It now runs on the worker, at most every 15 min for other teams' changes. Jack's own moves and the nightly run refresh it right away.
-- **Measured per step** (`cpu_log`, Settings → "Vercel CPU, last 24 hours"):
-  - gameday ~0.6 s per run;
-  - a roster move ~5.3 s to build the simulation job;
-  - the worker's requests ~2.8 s per job.
-- **Projection:** ≈5.5 min a day after #90. The 30-day window (3 h 10 m on Nov 5) needs ≤ ~4 min a day until ~Nov 19, when the heavy late-October days start rolling off. **Check Vercel → Usage daily until then.**
+  - a re-asked queued task still brings a runner.
+- **#88:** a flaky CPU test.
 
 ## Daily CPU check (until ~Nov 20)
 
-- Claude checks Vercel → Usage every morning (8:47 MST) in this session and reports in 2–4 lines: the 30-day total, yesterday's use, the projection, and any action needed.
-- If the session ends, a new one should keep checking until the heavy late-October days have rolled out of the window (~Nov 20).
+- Claude checks Vercel → Usage every morning (scheduled 8:47 local, ~9:17 in practice) in this session, plus Settings' CPU card.
+- It reports in 2–4 lines: the 30-day total, yesterday's use, the projection, and any action needed. It changes nothing without Jack's OK.
+- The job is session-only and expires after 7 days. It re-creates itself around Nov 11 and stops on Nov 21. **A new session before Nov 20 should set it up again.**
 
 ## Waiting on Jack
 
-- **Vercel's Git auto-deploy** was slow or missing on Nov 5 (merged commits sat 5–30 min, with no commit status). Jack OK'd deploying `main` from the dashboard meanwhile. If it recurs, check github.com/settings/installations → Vercel for a pending permission request (that page needs his password).
-- **Decision:** the 1-minute transaction watch (Jack chose it) is **deferred** until CPU has room. It costs ~0.1 s per call (~2 min a day). The 5-minute watch stays.
-- **Decision (optional):** to cut the full job from ~13.5 to ~7 min, the moves beyond each card's opening drop could run to ±0.75 instead of ±0.5. Jack's call.
+- **Vercel's Git auto-deploy** was slow on Nov 5 (merged commits sat 5–30 min with no commit status). Jack OK'd deploying `main` from the dashboard when it happens. If it recurs, check github.com/settings/installations → Vercel for a pending permission request (that page needs his password).
+- **1-minute transaction watch:** deferred until CPU has room (~0.1 s per call, ~2 min a day). The 5-minute watch stays.
+- **Optional:** the full job could drop from ~14 to ~7 min if moves beyond each card's opening drop ran to ±0.75 instead of ±0.5.
 
 ## Next tasks
 
-1. **CPU, until ~Nov 19:**
-   - **#96 (Jack approved):** availability logging every 10 min before the game window (MODEL_CARD note), and no league load on runs with nothing due (`gamedayPlan`).
-   - **Check on Nov 6:** overnight runs show "skipped: nothing due" and Settings shows gameday CPU per day down.
-   - **#98:** the worker's traffic (Observability: ~15–20 s of Vercel CPU per job, ~98 s in 12 h) is cut by half the requests, lighter assignments and fewer recomputes. Measure on the next jobs.
-   - Re-measure 24 h and update COMPUTE.md.
-2. **Check in production:**
-   - the trade search's first run on the worker (it runs when the ideas' inputs change);
-   - the nightly run (11:00 UTC) queues a job and prunes old jobs and tasks;
-   - `move_results` keeps numbers through the next re-check (Moves shows "Updating", not loaders).
-3. **Earlier items still open:**
+1. **Nov 6 checks:**
+   - the first full-day CPU (the daily check);
+   - overnight gameday runs show "skipped: nothing due";
+   - #101's per-job worker CPU (Observability, one job);
+   - the nightly run (11:00 UTC) queues a job and prunes old jobs, tasks and `cpu_log`.
+2. **If CPU is still above ~4 min a day:** next options in COMPUTE.md (more seasons per request, at the cost of later first numbers; a Vercel Pro month).
+3. **After Nov 20:**
+   - the trims end on their own;
+   - revisit the 1-minute watch;
+   - move more work to the worker per the target architecture in COMPUTE.md.
+4. **Earlier items still open:**
    - the official-statuses forward test (once ≥1,500 non-Out rows);
    - the props and DARKO blend tests (nightly; `/nba/model`);
    - win-probability candidate C after week 7 (Dec 6) and recalibration after week 13;
    - props coverage for free agents.
-4. **Roadmap** (`docs/ROADMAP.md`): own projection models, opponent manager profiles, a playoff-schedule planner, NFL and MLB. The task queue (`worker_tasks`) is the place for heavier models.
+5. **Roadmap** (`docs/ROADMAP.md`): own projection models, opponent manager profiles, a playoff-schedule planner, NFL and MLB. The task queue (`worker_tasks`) is where heavier models run.
 
 ## Renewals
 

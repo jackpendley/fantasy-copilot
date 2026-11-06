@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { PercentileBadge, PlayerCardButton } from "@/components/fc/player-card";
+import { PlayerCardButton } from "@/components/fc/player-card";
+import { PercentileBadge, PercentileText } from "@/components/fc/percentile";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { Callout, SectionTitle } from "@/components/fc/bits";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
@@ -15,13 +16,25 @@ import { searchPlayers } from "@/lib/player-search";
 import { TeamTabs } from "@/components/fc/team-tabs";
 import { cn } from "@/lib/utils";
 
-/** "proj FP/G" with where it ranks among this league's rostered players. */
-function ProjLabel({ p }: { p: number | null }) {
+/**
+ * Projected FP/G in its percentile's color (among this league's rostered players), with the
+ * percentile written under it.
+ */
+function ProjValue({ fppg, p }: { fppg: number; p: number | null }) {
   return (
-    <div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
-      <PercentileBadge p={p} title="Percentile among this league's rostered players" />
-      proj FP/G
-    </div>
+    <>
+      <PercentileText p={p} className="font-semibold">
+        {fmtPts(fppg)}
+      </PercentileText>
+      <div className="flex items-center justify-end gap-1 text-[11px] text-muted-foreground">
+        <PercentileBadge
+          p={p}
+          colored={false}
+          title="Percentile among this league's rostered players"
+        />
+        proj FP/G
+      </div>
+    </>
   );
 }
 
@@ -186,10 +199,10 @@ export default async function PlayersPage({
                   {...e}
                   right={
                     <>
-                      <div className="font-semibold">
-                        {fmtPts(perGameProjection(e.player).fppg)}
-                      </div>
-                      <ProjLabel p={rank(perGameProjection(e.player).fppg)} />
+                      <ProjValue
+                        fppg={perGameProjection(e.player).fppg}
+                        p={rank(perGameProjection(e.player).fppg)}
+                      />
                     </>
                   }
                 />
@@ -249,10 +262,10 @@ export default async function PlayersPage({
                           available
                           right={
                             <>
-                              <div className="font-semibold">
-                                {fmtPts(perGameProjection(f.player).fppg)}
-                              </div>
-                              <ProjLabel p={rank(perGameProjection(f.player).fppg)} />
+                              <ProjValue
+                                fppg={perGameProjection(f.player).fppg}
+                                p={rank(perGameProjection(f.player).fppg)}
+                              />
                             </>
                           }
                         />
@@ -302,8 +315,10 @@ export default async function PlayersPage({
                   player={p}
                   right={
                     <>
-                      <div className="font-semibold">{fmtPts(perGameProjection(p).fppg)}</div>
-                      <ProjLabel p={rank(perGameProjection(p).fppg)} />
+                      <ProjValue
+                        fppg={perGameProjection(p).fppg}
+                        p={rank(perGameProjection(p).fppg)}
+                      />
                     </>
                   }
                 />

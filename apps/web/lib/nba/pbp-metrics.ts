@@ -247,6 +247,8 @@ export interface PlayerMetric {
   percentile: number | null;
   /** "good" at the 80th percentile or better, "bad" at the 20th or worse. */
   tone: "good" | "bad" | null;
+  /** Good or bad at all (false for style stats like 3-point rate). */
+  rated: boolean;
 }
 
 /**
@@ -269,6 +271,7 @@ export function playerMetrics(s: PbpStats, dist: Distributions): PlayerMetric[] 
       value: m.format(v),
       percentile: p == null ? null : Math.round(p),
       tone: p == null || m.better == null ? null : p >= 80 ? "good" : p <= 20 ? "bad" : null,
+      rated: m.better != null,
     });
   }
   return out;

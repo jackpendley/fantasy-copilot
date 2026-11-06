@@ -6,7 +6,8 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { PercentileBadge, PlayerCardButton } from "@/components/fc/player-card";
+import { PlayerCardButton } from "@/components/fc/player-card";
+import { PercentileBadge, PercentileText } from "@/components/fc/percentile";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
@@ -143,8 +144,8 @@ export function FreeAgentTable({
                 </td>
                 <td className="px-2 py-2 text-right font-semibold tabular-nums">
                   <div className="flex items-center justify-end gap-1.5">
-                    {fmtPts(r.fppg)}
-                    <PercentileBadge p={r.fppgPct} title={RANK_TITLE} />
+                    <PercentileText p={r.fppgPct}>{fmtPts(r.fppg)}</PercentileText>
+                    <PercentileBadge p={r.fppgPct} colored={false} title={RANK_TITLE} />
                   </div>
                 </td>
                 <td className="px-2 py-2 text-right text-muted-foreground tabular-nums">

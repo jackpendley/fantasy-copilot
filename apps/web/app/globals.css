@@ -13,6 +13,21 @@
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
   --font-heading: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --color-success: var(--success);
+  /* League-percentile levels (lib/percentile.ts): fills for tiles and badges, inks for text. */
+  --color-pct-n3: var(--pct-n3);
+  --color-pct-ink-n3: var(--pct-ink-n3);
+  --color-pct-n2: var(--pct-n2);
+  --color-pct-ink-n2: var(--pct-ink-n2);
+  --color-pct-n1: var(--pct-n1);
+  --color-pct-ink-n1: var(--pct-ink-n1);
+  --color-pct-z: var(--pct-z);
+  --color-pct-ink-z: var(--pct-ink-z);
+  --color-pct-p1: var(--pct-p1);
+  --color-pct-ink-p1: var(--pct-ink-p1);
+  --color-pct-p2: var(--pct-p2);
+  --color-pct-ink-p2: var(--pct-ink-p2);
+  --color-pct-p3: var(--pct-p3);
+  --color-pct-ink-p3: var(--pct-ink-p3);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
@@ -58,6 +73,22 @@
    Brand accent: court orange. Status colors are reserved for player/odds state.
    Chart series = the validated reference palette's first three slots (light/dark steps). */
 :root {
+  /* Percentile levels, checked for contrast (ink on fill, ink on card: all >= 4.5:1) and step
+     separation incl. color blindness (docs/DECISIONS.md ADR-061). */
+  --pct-n3: #f05252;
+  --pct-ink-n3: #991b1b;
+  --pct-n2: #fb9a9a;
+  --pct-ink-n2: #b91c1c;
+  --pct-n1: #fecaca;
+  --pct-ink-n1: #c2410c;
+  --pct-z: #f1f3f6;
+  --pct-ink-z: #5b6475;
+  --pct-p1: #bbf7d0;
+  --pct-ink-p1: #15803d;
+  --pct-p2: #74e39f;
+  --pct-ink-p2: #166534;
+  --pct-p3: #22c55e;
+  --pct-ink-p3: #14532d;
   --background: #f6f7f9;
   --foreground: #0b1220;
   --card: #ffffff;
@@ -97,6 +128,20 @@
 }
 
 .dark {
+  --pct-n3: #9b1c1c;
+  --pct-ink-n3: #f87171;
+  --pct-n2: #6e1f27;
+  --pct-ink-n2: #fca5a5;
+  --pct-n1: #4c1f2a;
+  --pct-ink-n1: #fecaca;
+  --pct-z: #1b2232;
+  --pct-ink-z: #94a0b4;
+  --pct-p1: #173f2d;
+  --pct-ink-p1: #bbf7d0;
+  --pct-p2: #145a33;
+  --pct-ink-p2: #86efac;
+  --pct-p3: #147238;
+  --pct-ink-p3: #4ade80;
   --background: #0a0e16;
   --foreground: #e6e9ef;
   --card: #121826;

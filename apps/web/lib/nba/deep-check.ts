@@ -10,11 +10,19 @@ import {
   type SimTeamResult,
 } from "@fantasy-copilot/fantasy-core";
 
-/** Stop a move once its title change is known to ±0.5 points (two standard errors)... */
-export const TARGET_TITLE_2SE = 0.005;
-/** ...but not before this many seasons, and never past this many. */
-export const MIN_SEASONS = 4_000;
-export const MAX_SEASONS = 20_000;
+/**
+ * How precisely a move is checked (ADR-060): it stops once its title change is known to
+ * ±target (two standard errors), but not before `minSeasons` and never past `maxSeasons`.
+ */
+export interface Tier {
+  target2se: number;
+  minSeasons: number;
+  maxSeasons: number;
+}
+/** The moves Jack acts on: each Moves card's opening move, streams, his watch list. */
+export const TOP_TIER: Tier = { target2se: 0.0035, minSeasons: 4_000, maxSeasons: 40_000 };
+/** Everything else (other drops, trade ideas, the Free agents tab): enough to rank them. */
+export const REST_TIER: Tier = { target2se: 0.01, minSeasons: 1_000, maxSeasons: 6_000 };
 /** A move worse than doing nothing by four standard errors stops after this many (ADR-058). */
 export const EARLY_SEASONS = 1_000;
 /** The Outlook (the base run) gets at least this many seasons. */
@@ -61,18 +69,21 @@ function normalCdf(x: number): number {
   return x >= 0 ? 0.5 * (1 + y) : 0.5 * (1 - y);
 }
 
-/** Should a move get more seasons? */
-export function needsMore(e: Pick<DeepEffect, "seasons" | "title" | "wins">): {
+/** Should a move get more seasons (checked to its tier's precision)? */
+export function needsMore(
+  e: Pick<DeepEffect, "seasons" | "title" | "wins">,
+  tier: Tier = TOP_TIER,
+): {
   more: boolean;
   dropped: boolean;
 } {
-  if (e.seasons >= MAX_SEASONS) return { more: false, dropped: false };
+  if (e.seasons >= tier.maxSeasons) return { more: false, dropped: false };
   const worse = (x: Delta, k: number) => x.d + k * x.se < 0;
   if (e.seasons >= EARLY_SEASONS && worse(e.title, 4) && worse(e.wins, 4))
     return { more: false, dropped: true };
-  if (e.seasons < MIN_SEASONS) return { more: true, dropped: false };
+  if (e.seasons < tier.minSeasons) return { more: true, dropped: false };
   if (worse(e.title, 2) && worse(e.wins, 2)) return { more: false, dropped: true };
-  return { more: 2 * e.title.se > TARGET_TITLE_2SE, dropped: false };
+  return { more: 2 * e.title.se > tier.target2se, dropped: false };
 }
 
 /** A tiny seeded generator for the resampling (reproducible results). */
@@ -93,8 +104,15 @@ export type MoveSums = Record<Metric, MetricSums>;
 const emptySums = () =>
   Object.fromEntries(METRICS.map((m) => [m, { n: 0, sum: 0, sumsq: 0 }])) as MoveSums;
 
-/** Each move's effect from its sums over all chunks so far (P(best) still unset). */
-export function effectsFromSums(keys: string[], sums: Map<string, MoveSums>): DeepEffect[] {
+/**
+ * Each move's effect from its sums over all chunks so far (P(best) still unset). `tierOf`: the
+ * precision each move is checked to.
+ */
+export function effectsFromSums(
+  keys: string[],
+  sums: Map<string, MoveSums>,
+  tierOf: (key: string) => Tier = () => TOP_TIER,
+): DeepEffect[] {
   return keys.map((key) => {
     const s = sums.get(key) ?? emptySums();
     const e = {
@@ -106,7 +124,7 @@ export function effectsFromSums(keys: string[], sums: Map<string, MoveSums>): De
       bye: deltaOf(s.bye),
       wins: deltaOf(s.wins),
     };
-    const next = needsMore(e);
+    const next = needsMore(e, tierOf(key));
     return {
       ...e,
       pBetter: e.title.se > 0 ? normalCdf(e.title.d / e.title.se) : e.title.d > 0 ? 1 : 0,

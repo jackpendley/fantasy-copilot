@@ -104,6 +104,16 @@ describe("waiverAnalysis", () => {
     expect(res.thisWeek.some((o) => o.add.player.name === "Idle Big")).toBe(false);
   });
 
+  it("never suggests dropping a never-drop player (ADR-060)", () => {
+    const freeAgents = [fa(1, "Daily Guard", 99, 22, ["PG", "SG"])];
+    const open = waiverAnalysis({ ...base, freeAgents });
+    const usual = open.thisWeek[0]!.drop!.id;
+    const res = waiverAnalysis({ ...base, freeAgents, noDrop: new Set([usual]) });
+    const drops = [...res.dropOptions.values()].flat().map((o) => o.drop?.id);
+    expect(drops).not.toContain(usual);
+    expect(drops.length).toBeGreaterThan(0);
+  });
+
   it("keeps weekly losers out of this week's list but offers season value separately", () => {
     // A strong player with no games this week: hurts the week, adds season value.
     const res = waiverAnalysis({ ...base, freeAgents: [fa(2, "Idle Star", 98, 45, ["C"])] });

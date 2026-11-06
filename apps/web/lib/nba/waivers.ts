@@ -32,6 +32,8 @@ export interface WaiverInputs {
   lockedToday: Set<number>;
   /** Pro teams whose game today has started (an add can't play in it). */
   startedToday: Set<number>;
+  /** Players Jack never drops (lib/nba/prefs.ts): no move suggests dropping them. */
+  noDrop?: Set<number>;
   /** Roster spots excluding IR (starters + bench). */
   rosterLimit: number;
   /** IR slots in this league. */
@@ -193,7 +195,10 @@ export function waiverAnalysis(a: WaiverInputs): {
   // Drop candidates: everyone who can be dropped now (after the roster lock, anyone: the drop
   // takes effect tomorrow). Lineup fit decides, not raw points.
   const droppable = a.roster
-    .filter((p) => (a.rosterLocked || !a.lockedToday.has(p.id)) && p.slot !== "IR")
+    .filter(
+      (p) =>
+        (a.rosterLocked || !a.lockedToday.has(p.id)) && p.slot !== "IR" && !a.noDrop?.has(p.id),
+    )
     .map((p) => ({ p, ros: ros(p), il: null }));
   const active = a.roster.filter((p) => p.slot !== "IR" && !p.pendingIR);
   const openSpot = active.length < a.rosterLimit;

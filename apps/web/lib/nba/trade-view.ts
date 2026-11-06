@@ -50,8 +50,18 @@ export function tradeFingerprint(v: LeagueView): string {
     teams: v.data.teams.map((t) => [t.id, roster(t.roster)]).sort(),
     injured: [...v.injured].map(([id, a]) => [id, a.outUntil]).sort(),
     freeAgents: v.freeAgents.map((p) => p.id).sort(),
+    noTrade: [...v.prefs.noTrade].sort(),
+    noDrop: [...v.prefs.noDrop].sort(),
   });
 }
+
+/** Jack's side of the search, with his protected players. */
+const mySide = (v: LeagueView) => ({
+  teamId: v.data.me.id,
+  roster: v.data.me.roster,
+  noTrade: [...v.prefs.noTrade],
+  noDrop: [...v.prefs.noDrop],
+});
 
 /**
  * Stored ideas rebuilt from today's players. An idea is dropped when any of its players is no
@@ -93,7 +103,7 @@ export function hydrate(stored: StoredIdea[], v: LeagueView): TradeIdea[] {
 
 function search(v: LeagueView): TradeIdea[] {
   return findTradeTargets(
-    { teamId: v.data.me.id, roster: v.data.me.roster },
+    mySide(v),
     v.data.teams
       .filter((t) => t.id !== v.data.me.id)
       .map((t) => ({ teamId: t.id, roster: t.roster })),
@@ -113,7 +123,7 @@ async function computeAndStore(v: LeagueView, fingerprint: string): Promise<Trad
 /** Queue the search for the worker (its result lands in view_cache under KEY). */
 function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
   const input = tradeSearchInput(
-    { teamId: v.data.me.id, roster: v.data.me.roster },
+    mySide(v),
     v.data.teams
       .filter((t) => t.id !== v.data.me.id)
       .map((t) => ({ teamId: t.id, roster: t.roster })),

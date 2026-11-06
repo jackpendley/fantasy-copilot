@@ -11,6 +11,7 @@ import {
 import { simulateSeasonAsync, type SimTeamResult } from "@fantasy-copilot/fantasy-core";
 import { db } from "../db";
 import { espnConfig } from "../env";
+import { loadPrefs } from "./prefs";
 import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
 import { weekPointsThroughToday } from "./matchup";
@@ -246,7 +247,8 @@ export async function simulateTrade(
   getIds: number[],
   seasons = 400,
 ) {
-  const { data, previousTeams, freeAgents, fromDay, bankedNow, injured } = await outlookSetup();
+  const [{ data, previousTeams, freeAgents, fromDay, bankedNow, injured }, prefs] =
+    await Promise.all([outlookSetup(), loadPrefs()]);
   const partner = data.teams.find((t) => t.id === partnerId);
   if (!partner) throw new Error("unknown team");
   const give = data.me.roster.filter((p) => giveIds.includes(p.id));
@@ -272,6 +274,7 @@ export async function simulateTrade(
     freeAgents,
     taken,
     marginalValues(data.me.roster, ctx),
+    prefs.noDrop,
   );
   const theirs = applyTrade(
     partner.roster,

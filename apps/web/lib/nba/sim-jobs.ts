@@ -3,8 +3,9 @@ import "server-only";
 // it stands (the base run, i.e. the Outlook) plus every candidate waiver move (ADR-058), as
 // plain JSON. The moves are split into groups of 12, most important first; runners take a
 // group's chunks of 200 seasons, post back paired results, and the Outlook and the Moves checks
-// update from the sums. Moves stop getting seasons once their title change is known to ±0.5
-// points (or 20,000 seasons); clearly worse moves stop early.
+// update from the sums. Moves stop getting seasons once their title change is known to their
+// tier's precision (ADR-060: ±0.35 points for the moves Jack acts on, ±1 for the rest); clearly
+// worse moves stop early.
 
 import {
   toWire,
@@ -16,14 +17,15 @@ import {
 import { db, dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import {
-  MAX_SEASONS,
   MIN_BASE_SEASONS,
-  MIN_SEASONS,
+  REST_TIER,
+  TOP_TIER,
   contendersOf,
   effectsFromSums,
   withPBest,
   type DeepEffect,
   type MoveSums,
+  type Tier,
 } from "./deep-check";
 import { CpuMeter } from "@/lib/cpu";
 import { dispatchWorker } from "./github-dispatch";
@@ -54,7 +56,8 @@ import { decodeWire, encodeWire } from "@/lib/wire-json";
 
 export const CHUNK_SEASONS = 200;
 export const REPLAYS = 10;
-const MAX_CHUNKS = MAX_SEASONS / CHUNK_SEASONS;
+/** The most any group can take (its own tier's limit is stored with it). */
+const MAX_CHUNKS = TOP_TIER.maxSeasons / CHUNK_SEASONS;
 const MIN_BASE_CHUNKS = MIN_BASE_SEASONS / CHUNK_SEASONS;
 /**
  * Runners' posts recompute the checks at most this often (and whenever all are back): each
@@ -97,10 +100,15 @@ interface JobRow {
   meta: OutlookTeam[];
 }
 
-type GroupRow = SimGroup & { keys: string[]; active: string[] };
+type GroupRow = SimGroup & {
+  keys: string[];
+  active: string[];
+  target_2se: number;
+  min_seasons: number;
+  max_seasons: number;
+};
 
-const groupHasWork = (g: SimGroup, maxChunks: number) =>
-  hasChunksLeft(g, maxChunks, MIN_BASE_CHUNKS);
+const groupHasWork = (g: SimGroup) => hasChunksLeft(g, MIN_BASE_CHUNKS);
 
 /**
  * Queue the season as it stands now for the worker, and start it. `extraKeys`: moves Jack asked
@@ -215,7 +223,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
  */
 export async function storeBuiltJob(
   taskId: number,
-  built: { moves: WireMove[]; leading: number; others: number },
+  built: { moves: WireMove[]; leading: number; top?: number; others: number },
 ): Promise<number | null> {
   const [newer] = await db()`
     select 1 from worker_tasks where kind = 'sim-build' and id > ${taskId}
@@ -233,7 +241,7 @@ export async function storeBuiltJob(
 async function storeJob(
   ctx: JobContext,
   wire: WireInput,
-  { moves, leading }: { moves: WireMove[]; leading: number },
+  { moves, leading, top = 0 }: { moves: WireMove[]; leading: number; top?: number },
 ) {
   const fingerprint = fingerprintOf({ wire, moves: moves.map((m) => m.key) });
   const [same] = await db()<{ id: number; status: string }[]>`
@@ -271,19 +279,30 @@ async function storeJob(
     })}
     returning id
   `;
-  // The opening moves (and any Jack asked for) get the first groups and their seasons first.
-  const groups = groupsOf(moves.map((m) => m.key));
-  await db()`
-    insert into sim_groups ${db()(
-      groups.map((keys, grp) => ({
-        job_id: row!.id,
-        grp,
-        prio: grp * 12 < leading ? 1 : 2,
-        keys,
-        active: keys,
-      })),
-    )}
-  `;
+  // The opening moves (and any Jack asked for) get the first groups and their seasons first;
+  // the moves he acts on are checked to the top tier's precision (ADR-060).
+  const groups = groupsOf(
+    moves.map((m) => m.key),
+    top,
+  );
+  let start = 0;
+  const rows = groups.map((keys, grp) => {
+    const tier: Tier = start < top ? TOP_TIER : REST_TIER;
+    const row_ = {
+      job_id: row!.id,
+      grp,
+      prio: start < leading ? 1 : 2,
+      keys,
+      active: keys,
+      target_2se: tier.target2se,
+      min_seasons: tier.minSeasons,
+      // Group 0 also carries the base run (the Outlook) to its minimum.
+      max_seasons: grp === 0 ? Math.max(tier.maxSeasons, MIN_BASE_SEASONS) : tier.maxSeasons,
+    };
+    start += keys.length;
+    return row_;
+  });
+  await db()`insert into sim_groups ${db()(rows)}`;
   await startWorker();
   return row!.id;
 }
@@ -306,7 +325,7 @@ async function startWorker() {
 export async function hasWork(): Promise<boolean> {
   const rows = await db()`
     select 1 from sim_jobs j join sim_groups g on g.job_id = j.id
-    where j.status in ('queued', 'running') and g.next_chunk < j.max_chunks
+    where j.status in ('queued', 'running') and g.next_chunk < g.max_seasons / j.chunk_seasons
       and (cardinality(g.active) > 0 or (g.grp = 0 and g.next_chunk < ${MIN_BASE_CHUNKS}))
     limit 1
   `;
@@ -353,15 +372,16 @@ export async function nextAssignment(
   if (!job) return null;
   const groups = await db()<(SimGroup & { n_keys: number })[]>`
     select grp, prio, cardinality(active) as n_active, cardinality(keys) as n_keys, next_chunk,
-      posted
+      posted, min_seasons / ${job.chunk_seasons} as min_chunks,
+      max_seasons / ${job.chunk_seasons} as max_chunks
     from sim_groups where job_id = ${job.id} order by prio, grp
   `;
-  const g = pickGroup(groups, job.max_chunks, MIN_BASE_CHUNKS, MIN_SEASONS / CHUNK_SEASONS);
+  const g = pickGroup(groups, MIN_BASE_CHUNKS);
   if (!g) return null;
   // Atomic and never capped, so concurrent runners get disjoint chunks; past the cap is ignored.
   const [taken] = await db()<{ next_chunk: number; active: string[] }[]>`
     update sim_groups set next_chunk = next_chunk + ${count}
-    where job_id = ${job.id} and grp = ${g.grp} and next_chunk < ${job.max_chunks}
+    where job_id = ${job.id} and grp = ${g.grp} and next_chunk < ${g.max_chunks}
     returning next_chunk, active
   `;
   if (!taken) return null;
@@ -370,7 +390,7 @@ export async function nextAssignment(
     where id = ${job.id}
   `;
   const chunks = Array.from({ length: count }, (_, i) => taken.next_chunk - count + i).filter(
-    (c) => c < job.max_chunks,
+    (c) => c < g.max_chunks,
   );
   const nMoves = groups.reduce((a, x) => a + x.n_keys, 0);
   const fresh = have !== job.id || (haveMoves != null && haveMoves !== nMoves);
@@ -467,7 +487,7 @@ export async function postChunks(
     where job_id = ${jobId} and grp = ${group}
   `;
   const [state] = await db()<{ back: boolean }[]>`
-    select bool_and(g.posted >= least(g.next_chunk, j.max_chunks)) as back
+    select bool_and(g.posted >= least(g.next_chunk, g.max_seasons / j.chunk_seasons)) as back
     from sim_groups g join sim_jobs j on j.id = g.job_id where g.job_id = ${jobId}
   `;
   if (!state?.back) {
@@ -593,14 +613,26 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   `;
   if (!job) return { done: true };
   const groups = await db()<GroupRow[]>`
-    select grp, prio, keys, active, cardinality(active) as n_active, next_chunk, posted
+    select grp, prio, keys, active, cardinality(active) as n_active, next_chunk, posted,
+      target_2se, min_seasons, max_seasons, min_seasons / ${job.chunk_seasons} as min_chunks,
+      max_seasons / ${job.chunk_seasons} as max_chunks
     from sim_groups where job_id = ${jobId} order by prio, grp
   `;
+  // Each move is checked to its group's precision (ADR-060).
+  const tiers = new Map<string, Tier>(
+    groups.flatMap((g) =>
+      g.keys.map((k) => [
+        k,
+        { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
+      ]),
+    ),
+  );
   const { outlook, base } = await baseRun(jobId);
   if (!base.seasons) return { done: job.status === "done" };
   const effects = effectsFromSums(
     groups.flatMap((g) => g.keys),
     await moveSums(jobId),
+    (k) => tiers.get(k) ?? TOP_TIER,
   );
   // "Best" is among waiver moves (trade ideas are checked too, but compared on their own).
   const contenders = contendersOf(
@@ -628,8 +660,8 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
     if (g.active.length === groups[i]!.active.length) continue;
     await db()`update sim_groups set active = ${g.active} where job_id = ${jobId} and grp = ${g.grp}`;
   }
-  const noMoreToIssue = next.every((g) => !groupHasWork(g, job.max_chunks));
-  const allBack = next.every((g) => g.posted >= Math.min(g.next_chunk, job.max_chunks));
+  const noMoreToIssue = next.every((g) => !groupHasWork(g));
+  const allBack = next.every((g) => g.posted >= Math.min(g.next_chunk, g.max_chunks));
   const done = job.status !== "superseded" && noMoreToIssue && (allBack || closing);
 
   // The Outlook: every team's odds from the base run so far.

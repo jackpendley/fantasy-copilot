@@ -7,17 +7,19 @@ import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } 
 import { loadDraftPicks, loadFreeAgents, loadLeague } from "./data";
 import { absences } from "./availability";
 import { marketContext } from "./market";
+import { loadPrefs } from "./prefs";
 import { latestOutlook } from "./outlook-run";
 import { teamValue, valueContext, type TeamValue } from "./trade";
 
 export async function loadLeagueView(now = new Date()) {
   const date = gameDate(now);
   const sp = Math.min(Math.max(scoringPeriodForDate(date), 1), LAST_SCORING_PERIOD);
-  const [league, outlook, freeAgents, draftPicks] = await Promise.all([
+  const [league, outlook, freeAgents, draftPicks, prefs] = await Promise.all([
     loadLeague(sp, date),
     dbConfigured() ? latestOutlook().catch(() => null) : Promise.resolve(null),
     loadFreeAgents(sp).catch(() => []),
     loadDraftPicks().catch(() => new Map<number, number>()),
+    loadPrefs(),
   ]);
   // Rosters as they stand from tomorrow: moves made after today's lock count for everything
   // forward-looking here (strength, trades, team pages).
@@ -58,6 +60,7 @@ export async function loadLeagueView(now = new Date()) {
     market,
     freeAgents: free,
     injured,
+    prefs,
     outlookAt: outlook?.run_at ?? null,
   };
 }

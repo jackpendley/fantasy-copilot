@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
 import { Callout, PageHeader, SectionTitle } from "@/components/fc/bits";
+import { ProtectedPlayers } from "@/components/fc/protected-players";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { LiveRefresh } from "@/components/live-refresh";
@@ -431,7 +432,8 @@ export default async function TradesPage({
   const e =
     partner && give.length && get.length
       ? evaluateTrade(
-          { teamId: me.id, roster: me.roster },
+          // His pick, so "not for trade" doesn't apply; "never drop" still keeps him from cuts.
+          { teamId: me.id, roster: me.roster, noDrop: [...v.prefs.noDrop] },
           { teamId: partner.id, roster: partner.roster },
           give,
           get,
@@ -529,6 +531,11 @@ export default async function TradesPage({
 
       <section className="space-y-1.5">
         <SectionTitle aside="Up to 3-for-3, ranked by your gain">Trade targets</SectionTitle>
+        <ProtectedPlayers
+          field="noTrade"
+          players={me.roster.map(({ id, name, positions }) => ({ id, name, positions }))}
+          initial={[...v.prefs.noTrade]}
+        />
         <Suspense
           fallback={
             <div className="rounded-xl border bg-card px-3 py-6 text-center text-sm text-muted-foreground">

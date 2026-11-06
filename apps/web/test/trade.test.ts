@@ -339,6 +339,44 @@ describe("findTradeTargets", () => {
   });
 });
 
+describe("protected players (ADR-060)", () => {
+  it("never offers a not-for-trade player", () => {
+    const all = findTradeTargets(
+      { teamId: 1, roster: mine },
+      [{ teamId: 2, roster: theirs }],
+      ctx,
+      market,
+    );
+    const offered = new Set(all.flatMap((i) => i.give.map((x) => x.id)));
+    expect(offered.size).toBeGreaterThan(0);
+    const keep = [...offered][0]!;
+    const ideas = findTradeTargets(
+      { teamId: 1, roster: mine, noTrade: [keep] },
+      [{ teamId: 2, roster: theirs }],
+      ctx,
+      market,
+    );
+    expect(ideas.some((i) => i.give.some((x) => x.id === keep))).toBe(false);
+  });
+
+  it("never cuts a never-drop player to make room", () => {
+    const fa = [p(20, "PG", 18, 1)];
+    // Without protection the 10-point PG (4) is cut; protected, someone else goes.
+    const r = applyTrade(
+      mine,
+      [mine[0]!],
+      [theirs[0]!, theirs[1]!],
+      ctx,
+      fa,
+      new Set(),
+      undefined,
+      new Set([4]),
+    );
+    expect(r.moves.dropped.map((x) => x.id)).not.toContain(4);
+    expect(r.moves.dropped).toHaveLength(1);
+  });
+});
+
 describe("the trade search as a worker task", () => {
   it("finds exactly the same ideas from its JSON input", () => {
     // The 2-for-1 case above, with an injury so the context's absences go through JSON too.

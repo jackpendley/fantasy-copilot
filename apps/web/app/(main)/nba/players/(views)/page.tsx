@@ -2,6 +2,7 @@ import { PlayerCardButton } from "@/components/fc/player-card";
 import { IlPlanNote } from "@/components/fc/il-plan-note";
 import { ilReturnPlan } from "@/lib/nba/il-plan";
 import { Callout, SectionTitle } from "@/components/fc/bits";
+import { ProtectedPlayers } from "@/components/fc/protected-players";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
@@ -274,6 +275,15 @@ export default async function MovesPage({
           Best moves
         </SectionTitle>
         <HowToRead winsPerPoint={analysis.winsPerPoint} />
+        <ProtectedPlayers
+          field="noDrop"
+          players={v.data.ahead.me.roster.map(({ id, name, positions }) => ({
+            id,
+            name,
+            positions,
+          }))}
+          initial={[...(v.inputs.noDrop ?? [])]}
+        />
         <DeepLive initial={deep} roster={roster} keys={keys}>
           <DeepBanner />
           {best.length ? (

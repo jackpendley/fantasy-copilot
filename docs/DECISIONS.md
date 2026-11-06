@@ -801,3 +801,32 @@
   - The simulation runners wait up to 3 min while a task is under way.
   - A finished task keeps only the small part its result still needs.
   - **Test:** the analysis from its JSON input equals the in-process one.
+
+## ADR-060: protected players and precision tiers (2026-11-06)
+
+- **Why:** Jack wants some players never suggested as drops or offered in trades. He also wants the moves he acts on known more precisely (±0.35 title points) than ones he only browses (±1.0).
+- **Protected players** (`player_prefs`, migration 0024; `lib/nba/prefs.ts`; `POST /api/prefs`):
+  - **"Never drop"** (Moves) takes the player out of every drop the add-and-drop analysis considers. That covers Moves, the simulations, the Free agents tab, and the cuts a trade makes for Jack (`applyTrade`'s `keep`), suggested or custom.
+  - **"Not for trade"** (Trades) takes the player out of the search's give side. A trade Jack builds himself can still include him.
+  - The trade search's fingerprint includes both lists, so a change re-runs it.
+  - A change also queues a simulation job ("You changed your protected players"). Moves that no longer exist leave the page at once, since the page's analysis reads the prefs.
+  - Nothing goes to ESPN.
+- **Precision tiers** (`lib/nba/deep-check.ts`; stored per group: `target_2se`, `min_seasons`, `max_seasons`):
+
+  | Tier     | Moves                                                                                              | Target (2 SE)      | Seasons      |
+  | -------- | -------------------------------------------------------------------------------------------------- | ------------------ | ------------ |
+  | **Top**  | moves Jack asked for; each Moves card's opening move; streams' opening moves; later his watch list | ±0.35 title points | 4,000–40,000 |
+  | **Rest** | other drops, the best-by-estimate extras, trade ideas, the Free agents tab                         | ±1.0               | 1,000–6,000  |
+  - Clearly worse moves still stop at 1,000 seasons.
+  - A group holds one tier (`groupsOf` splits at the boundary), and each group stops at its own maximum.
+  - Group 0 also carries the base run to 8,000 seasons.
+  - Jobs stored before this keep the old rule (±0.5, 4,000–20,000) through the column defaults.
+
+- **Expected cost:** the top moves get ~2× the seasons. The ~280 other moves need far fewer (most settle at 1,000–2,000 instead of ≥4,000). The full job should finish sooner for about the same Vercel CPU, since requests scale with the seasons simulated. This is measured on the first jobs (docs/COMPUTE.md).
+- **Tests:**
+  - the stop rule per tier;
+  - groups never mix tiers, and each is capped at its own limit;
+  - the cards' openings are top tier;
+  - never-drop players are never a drop, never cut in a trade;
+  - not-for-trade players are never offered;
+  - the trade fingerprint changes with the prefs.

@@ -173,10 +173,12 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     leagueChanged === false
       ? null
       : await m.step("sim-trigger", () =>
-          simRosterCheck(data.ahead.me.roster, data.injuries).catch(async (e: Error) => {
-            await log("sim-trigger", "error", e.message).catch(() => {});
-            return null;
-          }),
+          simRosterCheck(data.ahead.me.roster, data.injuries, data.me.watchList).catch(
+            async (e: Error) => {
+              await log("sim-trigger", "error", e.message).catch(() => {});
+              return null;
+            },
+          ),
         );
 
   const darko = await m.step("darko", () =>

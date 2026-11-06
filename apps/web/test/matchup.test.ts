@@ -31,6 +31,7 @@ const team = (id: number, roster: RosterPlayer[]): FantasyTeam => ({
   pointsFor: 0,
   activity: null,
   roster,
+  watchList: [],
 });
 const games: ProGame[] = [1, 2, 3, 4, 5, 6].map((d) => ({
   gameId: d,

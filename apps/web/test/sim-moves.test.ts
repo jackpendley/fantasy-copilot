@@ -54,6 +54,7 @@ const team = (id: number, roster: RosterPlayer[]): FantasyTeam => ({
   pointsFor: 0,
   activity: null,
   roster,
+  watchList: [],
 });
 const roster = (id: number, base: number) =>
   ["PG", "C", "PG", "C", "PG"].map((pos, i) => p(id * 10 + i, pos, base - i * 2));
@@ -184,6 +185,14 @@ describe("the moves a job checks", () => {
     );
     expect(g.map((x) => x.length)).toEqual([12, 2, 12, 4]);
     expect(g[2]![0]).toBe("k14");
+  });
+
+  it("checks watched free agents' opening moves to the top tier, with all their drops", () => {
+    const watched = [opts(509, [1, 2, 3, 4], 0.05)[0]!];
+    const { options, top } = jobMoveOptions({ best, thisWeek: [], dropOptions, watched });
+    const keys = options.map(moveKey);
+    expect(keys.slice(0, top)).toContain("509:1:");
+    for (const d of [2, 3, 4]) expect(keys).toContain(`509:${d}:`);
   });
 
   it("checks the cards' opening moves (and asked-for ones) to the top tier", () => {

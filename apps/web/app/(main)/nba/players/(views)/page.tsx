@@ -15,10 +15,16 @@ import type { MoveEffect } from "@/lib/nba/move-sim";
 import { DeepBanner, DeepLive } from "@/components/fc/deep-live";
 import { MoveCard, type MoveOption, type MoveSim } from "@/components/fc/move-card";
 import { redirect } from "next/navigation";
+import Link from "next/link";
+import { Suspense } from "react";
+import { DeepTrade } from "@/components/fc/deep-trade";
+import { tradeKey } from "@/lib/nba/sim-moves";
+import { interestTargets, tradeForPackages, tradeHref } from "@/lib/nba/trade-view";
+import type { TradeIdea } from "@/lib/nba/trade";
 import { latestOutlook } from "@/lib/nba/outlook-run";
 import { deepView } from "@/lib/nba/move-shown";
 import { workerEnabled } from "@/lib/nba/outlook-refresh";
-import { liveJob, settledResults } from "@/lib/nba/sim-jobs";
+import { deepChecksFor, liveJob, settledResults } from "@/lib/nba/sim-jobs";
 import { dbConfigured } from "@/lib/db";
 import { winChanceLabel } from "@/lib/nba/week";
 import { shownMoves, type StreamOption, type WaiverCandidate } from "@/lib/nba/waivers";
@@ -152,6 +158,112 @@ function optionOf(o: StreamOption): MoveOption {
 }
 
 /** Players → Moves (was Waivers): the best adds, each checked with the season simulation. */
+/** Watched players already on Jack's team. */
+function OnMyRoster({ ids, roster }: { ids: number[]; roster: { id: number; name: string }[] }) {
+  const mine = roster.filter((p) => ids.includes(p.id));
+  if (!mine.length) return null;
+  return (
+    <p className="px-1 text-xs text-muted-foreground">
+      On your roster: {mine.map((p) => p.name).join(", ")}
+    </p>
+  );
+}
+
+/**
+ * "Trade for him": each watched player on another team with the best packages that get him
+ * (the same rules as Trades' ideas), and each one's season simulation once it has one.
+ */
+async function TradeFor({
+  rosters,
+  rosterNow,
+}: {
+  rosters: Parameters<typeof tradeForPackages>[0];
+  rosterNow: string;
+}) {
+  const targets = interestTargets(rosters);
+  if (!targets.length) return null;
+  const { packages, searched, updating } = await tradeForPackages(rosters);
+  const keyOf = (i: TradeIdea) =>
+    tradeKey(
+      i.partnerId,
+      i.give.map((p) => p.id),
+      i.get.map((p) => p.id),
+    );
+  const deep = await deepChecksFor([...packages.values()].flat().map(keyOf), rosterNow).catch(
+    () => null,
+  );
+  const owner = new Map(
+    rosters.data.teams.flatMap((t) => t.roster.map((p) => [p.id, { team: t, player: p }])),
+  );
+  return (
+    <div className="divide-y overflow-hidden rounded-xl border bg-card">
+      {targets.map((id) => {
+        const { team, player } = owner.get(id)!;
+        const list = packages.get(id) ?? [];
+        return (
+          <div key={id} className="space-y-2 px-3 py-3">
+            <div className="flex items-center gap-2">
+              <PlayerCardButton id={player.id} className="flex min-w-0 items-center gap-2">
+                <PlayerAvatar id={player.id} name={player.name} size={36} />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium">{player.name}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {player.positions.join("/")} · on {team.name}
+                  </span>
+                </span>
+              </PlayerCardButton>
+              <Pill tone="info" className="ml-auto shrink-0">
+                Trade for him
+              </Pill>
+            </div>
+            {list.length ? (
+              list.map((i, n) => {
+                const k = keyOf(i);
+                const sim = deep?.sims[k];
+                return (
+                  <div key={k} className="space-y-1.5">
+                    <Link
+                      href={tradeHref(
+                        i.partnerId,
+                        i.give.map((p) => p.id),
+                        i.get.map((p) => p.id),
+                      )}
+                      className="block text-sm hover:underline"
+                    >
+                      {n === 0 ? "Best package: " : "Or: "}
+                      give {i.give.map((p) => p.name).join(" + ")} for{" "}
+                      {i.get.map((p) => p.name).join(" + ")}
+                      {i.acceptance && (
+                        <span className="text-xs text-muted-foreground">
+                          {" "}
+                          · {i.acceptance.realism}
+                        </span>
+                      )}
+                    </Link>
+                    {sim ? (
+                      <DeepTrade sim={sim} state={deep?.states[k]} />
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Season simulation: queued with the next check.
+                      </p>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {updating || !searched.has(id)
+                  ? "Searching packages…"
+                  : "No package that raises your lineup passes their manager's market check right now."}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default async function MovesPage({
   searchParams,
 }: {
@@ -177,7 +289,7 @@ export default async function MovesPage({
     .sort((a, b) => a - b)[0];
   const worker = workerEnabled();
   const shownNow = shownMoves(analysis);
-  const shownAdds = [...shownNow.best, ...shownNow.streams];
+  const shownAdds = [...shownNow.best, ...shownNow.streams, ...analysis.watched];
   // Every drop of every add on the page: the worker checks them all (ADR-058).
   const keys = shownAdds.flatMap((o) =>
     (analysis.dropOptions.get(o.add.player.id) ?? [o]).map(moveKey),
@@ -295,6 +407,35 @@ export default async function MovesPage({
               No add improves your expected wins right now: every free agent either wouldn&apos;t
               crack your lineup or costs more later than it gains this week.
             </Callout>
+          )}
+
+          {/* Jack's ESPN watch list: free agents get the usual card, players on other teams
+              the best packages that get him (the worker's targeted search). */}
+          {v.data.me.watchList.length > 0 && (
+            <section className="space-y-1.5 pt-2">
+              <SectionTitle aside="Your ESPN watch list">Interested</SectionTitle>
+              {analysis.watched.length > 0 && (
+                <div className="divide-y overflow-hidden rounded-xl border bg-card">
+                  {analysis.watched.map(card)}
+                </div>
+              )}
+              <Suspense
+                fallback={
+                  <div className="rounded-xl border bg-card px-3 py-4 text-sm text-muted-foreground">
+                    Loading trade packages…
+                  </div>
+                }
+              >
+                <TradeFor
+                  rosters={{
+                    data: { teams: v.data.ahead.teams, me: v.data.ahead.me },
+                    freeAgents: v.freeAgents.map((f) => f.player),
+                  }}
+                  rosterNow={roster}
+                />
+              </Suspense>
+              <OnMyRoster ids={v.data.me.watchList} roster={v.data.ahead.me.roster} />
+            </section>
           )}
 
           {streams.length > 0 && (

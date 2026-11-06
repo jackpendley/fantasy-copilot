@@ -21,7 +21,8 @@ export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
 
 /**
  * Every move worth a deep check, in the order they get seasons:
- * 1. each Moves card's opening drop, and the best by the points estimate;
+ * 1. each Moves card's opening drop (the Interested list's too), and the best by the points
+ *    estimate;
  * 2. every other drop of the adds on Moves;
  * 3. for the other evaluated adds (the Free agents tab), their best few drops.
  * `first`: moves asked for by key, ahead of all of these. `leading`: how many are in 1;
@@ -29,13 +30,15 @@ export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
  * moves; ADR-060); `others`: where 3 starts (trade ideas go before it).
  */
 export function jobMoveOptions(
-  a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek" | "dropOptions">,
+  a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek" | "dropOptions"> & {
+    watched?: StreamOption[];
+  },
   first: string[] = [],
 ): { options: StreamOption[]; leading: number; top: number; others: number } {
   const all = [...a.dropOptions.values()].flat();
   const byKey = new Map(all.map((o) => [moveKey(o), o]));
   const { best, streams } = shownMoves(a);
-  const shown = [...best, ...streams];
+  const shown = [...best, ...streams, ...(a.watched ?? [])];
   const shownIds = new Set(shown.map((o) => o.add.player.id));
   const seen = new Set<string>();
   const unique = (list: StreamOption[]) =>
@@ -275,6 +278,11 @@ export interface SimBuildInput extends Omit<MoveBuildArgs, "injured"> {
   injuries: Parameters<typeof absences>[1];
   teams: { id: number; roster: RosterPlayer[] }[];
   ideas: TradeSpec[];
+  /**
+   * The Interested list's "Trade for him" packages: each watched player's best (top tier,
+   * ADR-060) and the next ones (with the other trade ideas).
+   */
+  interest?: { top: TradeSpec[]; rest: TradeSpec[] };
 }
 
 /**
@@ -305,11 +313,23 @@ export function buildSimMoves(i: SimBuildInput): {
     injured,
   };
   const waiver = buildWireMoves(args, options);
-  const trades = buildTradeMoves({ ...args, teams: i.teams }, i.ideas);
+  const withTeams = { ...args, teams: i.teams };
+  // The watched players' best packages join the top tier, after the waiver moves in it.
+  const interestTop = buildTradeMoves(withTeams, i.interest?.top ?? []);
+  const seen = new Set(interestTop.map((m) => m.key));
+  const trades = buildTradeMoves(withTeams, [...i.ideas, ...(i.interest?.rest ?? [])]).filter(
+    (m) => !seen.has(m.key) && seen.add(m.key),
+  );
   return {
-    moves: [...waiver.slice(0, others), ...trades, ...waiver.slice(others)],
-    leading,
-    top,
-    others,
+    moves: [
+      ...waiver.slice(0, top),
+      ...interestTop,
+      ...waiver.slice(top, others),
+      ...trades,
+      ...waiver.slice(others),
+    ],
+    leading: leading + interestTop.length,
+    top: top + interestTop.length,
+    others: others + interestTop.length,
   };
 }

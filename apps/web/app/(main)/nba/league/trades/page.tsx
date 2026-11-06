@@ -16,9 +16,10 @@ import { loadLeagueView } from "@/lib/nba/league-view";
 import { marketValue, type MarketContext, type Realism } from "@/lib/nba/market";
 import { perGameProjection } from "@/lib/nba/projection";
 import { evaluateTrade, tradeSize, type RosterMoves, type TradeEval } from "@/lib/nba/trade";
-import { tradeTargets } from "@/lib/nba/trade-view";
+import { tradeHref, tradeTargets } from "@/lib/nba/trade-view";
 import { rosterKeyOf } from "@/lib/nba/move-checks";
 import type { ShownSim, ShownState } from "@/lib/nba/move-shown";
+import { DeepTrade, pts } from "@/components/fc/deep-trade";
 import { deepChecksFor } from "@/lib/nba/sim-jobs";
 import { tradeKey } from "@/lib/nba/sim-moves";
 import { matchupPeriodOf } from "@/lib/nba/calendar";
@@ -33,8 +34,6 @@ const ids = (v: string | string[] | undefined) =>
 const signed = (n: number) => `${n >= 0 ? "+" : ""}${Math.round(n)}`;
 const tone = (n: number) =>
   n > 1 ? "text-success" : n < -1 ? "text-danger" : "text-muted-foreground";
-const tradeHref = (team: number, give: number[], get: number[]) =>
-  `/nba/league/trades?team=${team}${give.map((g) => `&give=${g}`).join("")}${get.map((g) => `&get=${g}`).join("")}`;
 const REALISM_TONE: Record<Realism, "success" | "info" | "warning"> = {
   likely: "success",
   fair: "info",
@@ -152,49 +151,6 @@ function MovesBrief({ m }: { m: RosterMoves }) {
     ...m.toIL.map((p) => `${p.name} to IL`),
   ];
   return parts.length ? <span>· you: {parts.join(", ")}</span> : null;
-}
-
-const pts = (d: number) => `${d >= 0 ? "+" : ""}${(d * 100).toFixed(1)}`;
-
-/** The worker's season simulation of a trade idea (thousands of seasons, ADR-058/059). */
-function DeepTrade({ sim, state }: { sim: ShownSim; state: ShownState | undefined }) {
-  const row = (label: string, d: { d: number; se: number }, wins = false) => (
-    <div className="flex justify-between gap-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="tabular-nums">
-        <span
-          className={cn(
-            "font-semibold",
-            Math.abs(d.d) <= 2 * d.se
-              ? "text-muted-foreground"
-              : d.d > 0
-                ? "text-success"
-                : "text-danger",
-          )}
-        >
-          {wins ? `${d.d >= 0 ? "+" : ""}${d.d.toFixed(2)}` : pts(d.d)}
-        </span>
-        <span className="ml-1 text-xs text-muted-foreground">
-          ±{wins ? (2 * d.se).toFixed(2) : (2 * d.se * 100).toFixed(1)}
-        </span>
-      </span>
-    </div>
-  );
-  return (
-    <div className="space-y-1 rounded-lg border p-3 text-sm">
-      <p className="text-xs text-muted-foreground">
-        Your season, simulated with and without it ({sim.seasons.toLocaleString("en-US")} seasons
-        {sim.refining ? ", refining" : ""}
-        {state === "updating" ? "; updating after the latest roster news or moves" : ""})
-      </p>
-      {row("Title odds", sim.title)}
-      {row("Playoff odds", sim.playoffs)}
-      {row("Expected wins", sim.wins, true)}
-      <p className="text-xs text-muted-foreground">
-        Chance it raises your title odds: {Math.round(sim.pBetter * 100)}%
-      </p>
-    </div>
-  );
 }
 
 function Evaluation({

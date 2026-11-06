@@ -84,6 +84,14 @@ describe("parseTeams", () => {
   it("names bench players' slot", () => {
     expect(mine.roster.filter((p) => p.slot === "BE")).toHaveLength(3);
   });
+  it("reads the watch list (synthetic ids), empty when ESPN sends none", () => {
+    const [a, b] = parseTeams({
+      teams: [{ id: 1, watchList: [101, 102, "x"] }, { id: 2 }],
+    });
+    expect(a!.watchList).toEqual([101, 102]);
+    expect(b!.watchList).toEqual([]);
+  });
+
   it("takes health from the player record, not the roster entry's slot status", () => {
     // Synthetic: ESPN's entry says NORMAL / FUTURE_TO_IR; the player record has the injury.
     const [t] = parseTeams({

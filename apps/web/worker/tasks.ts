@@ -6,11 +6,13 @@
 //   APP_URL=https://fantasycopilot.vercel.app WORKER_SECRET=... node tasks.mjs
 
 import { buildSimMoves, type SimBuildInput } from "../lib/nba/sim-moves";
-import { runTradeSearch, type TradeSearchInput } from "../lib/nba/trade-task";
+import { runTradeFor, runTradeSearch, type TradeSearchInput } from "../lib/nba/trade-task";
 import { decodeWire } from "../lib/wire-json";
 
 const HANDLERS: Record<string, (input: never) => unknown> = {
   "trade-search": (input: TradeSearchInput) => runTradeSearch(input),
+  // The Interested list's "Trade for him" packages.
+  "trade-for": (input: TradeSearchInput & { targets: number[] }) => runTradeFor(input),
   // A simulation job's moves: the add-and-drop analysis, then each move built (ADR-059).
   "sim-build": (input: { build: unknown }) => buildSimMoves(decodeWire<SimBuildInput>(input.build)),
 };

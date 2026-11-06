@@ -61,6 +61,10 @@ export function rosterKeyOf(
   return `${fingerprintOf(players)}.${fingerprintOf(status)}`;
 }
 
+/** Jack's ESPN watch list as a job saw it (the Interested list's moves change with it). */
+export const watchKeyOf = (watchList: number[]): string =>
+  fingerprintOf([...watchList].sort((a, b) => a - b));
+
 export const rosterKey = (v: WaiverView): string =>
   rosterKeyOf(v.data.ahead.me.roster, v.data.injuries);
 

@@ -214,6 +214,11 @@ export interface FantasyTeam {
     addsByPeriod: Record<number, number>;
   } | null;
   roster: RosterPlayer[];
+  /**
+   * Players the manager marked "interested" (ESPN's watch list). ESPN sends it for the team
+   * whose cookies make the request; empty for the others.
+   */
+  watchList: number[];
 }
 
 export function parseTeams(data: Json): FantasyTeam[] {
@@ -247,6 +252,9 @@ export function parseTeams(data: Json): FantasyTeam[] {
         e.playerPoolEntry,
       ),
     ),
+    watchList: Array.isArray(t.watchList)
+      ? t.watchList.filter((id: unknown): id is number => Number.isInteger(id))
+      : [],
   }));
 }
 

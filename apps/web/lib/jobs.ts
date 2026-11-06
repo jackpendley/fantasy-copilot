@@ -18,6 +18,7 @@ import {
 } from "./nba/gameday-plan";
 import { refreshBlend } from "./nba/accuracy";
 import { refreshPbpPlayers } from "./nba/advanced";
+import { refreshSeasonBaselines } from "./nba/season-baselines";
 import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
@@ -337,6 +338,8 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     // PBP Stats season numbers for the player cards (this season and last).
     const season = Number(process.env.ESPN_SEASON || 2027);
     const pbp = await metered("pbp-players", () => refreshPbpPlayers([season, season - 1]));
+    // Prior seasons for Trends' "Vs last season" (fetched once, then a no-op).
+    const baselines = await metered("season-baselines", () => refreshSeasonBaselines(season));
     // Old simulation jobs (each holds its moves and chunks): the last two days are kept.
     const simJobsPruned = await metered("sim-prune", () => pruneSimJobs());
     const tasksPruned = await metered("task-prune", () => pruneTasks());
@@ -359,6 +362,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       tradesRefreshed: trades,
       movesChecked: moves,
       pbpPlayers: pbp,
+      seasonBaselines: baselines,
       simJobsPruned,
       tasksPruned,
       transactions,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { winner } from "@/lib/compare";
+import { winner, startsLabel } from "@/lib/compare";
 
 // Synthetic rows (not real players).
 const row = (av: number | null, bv: number | null, better: "high" | "low" | null) => ({
@@ -21,5 +21,18 @@ describe("compare winner", () => {
     expect(winner(row(5, 5, "high"))).toBeNull();
     expect(winner(row(null, 5, "high"))).toBeNull();
     expect(winner(row(90, 10, null))).toBeNull();
+  });
+});
+
+describe("starts for you", () => {
+  it("counts out of all his games left, and says when the IR-return plan cuts him", () => {
+    const card = (cut: { back: string; date: string } | null) => ({
+      rest: { gamesLeft: 58, starts: { starts: 1, cut } },
+    });
+    expect(startsLabel(card({ back: "Jalen Duren", date: "Nov 9" }))).toBe(
+      "1 of 58 · cut Nov 9 for Duren",
+    );
+    expect(startsLabel(card(null))).toBe("1 of 58");
+    expect(startsLabel({ rest: { gamesLeft: 10, starts: null } })).toBeNull();
   });
 });

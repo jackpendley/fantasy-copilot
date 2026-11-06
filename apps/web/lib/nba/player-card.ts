@@ -147,8 +147,17 @@ export interface PlayerCardData {
   rest: {
     gamesLeft: number;
     projectedPoints: number;
-    /** Starts he'd make on his fantasy team (or on Jack's, for a free agent). */
-    starts: { starts: number; games: number; team: string } | null;
+    /**
+     * Starts he'd make on his fantasy team (or on Jack's, for a free agent), out of his games
+     * left (gamesLeft). `games`: the ones while he's on that roster; `cut`: when the team's
+     * IR-return plan drops him, who comes back and when ("Nov 9").
+     */
+    starts: {
+      starts: number;
+      games: number;
+      team: string;
+      cut: { back: string; date: string } | null;
+    } | null;
     marketValue: number;
     adp: number | null;
     owned: number | null;
@@ -395,7 +404,9 @@ export async function loadPlayerCard(
     data.settings.regularSeasonWeeks,
     absences(roster, data.injuries, sp),
   );
-  const usage = teamValue(roster, ctx).usage.get(id) ?? null;
+  const value = teamValue(roster, ctx);
+  const usage = value.usage.get(id) ?? null;
+  const cutBy = value.activations.find((a) => a.drop?.id === id) ?? null;
   const market = marketContext([...pool.map((e) => e.player)], draftPicks);
 
   return {
@@ -485,6 +496,15 @@ export async function loadPlayerCard(
                 ? "your team"
                 : owner.name
               : "your team, if added",
+            cut: cutBy
+              ? {
+                  back: cutBy.player.name,
+                  date: new Date(`${dateForScoringPeriod(cutBy.day)}T12:00:00Z`).toLocaleDateString(
+                    "en-US",
+                    { month: "short", day: "numeric", timeZone: "UTC" },
+                  ),
+                }
+              : null,
           }
         : null,
       marketValue: marketValue(pl, market),

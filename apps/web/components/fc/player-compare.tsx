@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fmtPts } from "@/lib/display";
-import { winner, type Row } from "@/lib/compare";
+import { winner, type Row, startsLabel } from "@/lib/compare";
 import { METRICS } from "@/lib/nba/pbp-metrics";
 import type { PlayerCardData } from "@/lib/nba/player-card";
 import { cn } from "@/lib/utils";
@@ -61,8 +61,8 @@ function sections(a: PlayerCardData, b: PlayerCardData) {
     },
     {
       label: "Starts for you",
-      a: a.rest.starts ? `${a.rest.starts.starts} of ${a.rest.starts.games}` : null,
-      b: b.rest.starts ? `${b.rest.starts.starts} of ${b.rest.starts.games}` : null,
+      a: startsLabel(a),
+      b: startsLabel(b),
       av: a.rest.starts?.starts,
       bv: b.rest.starts?.starts,
       better: "high",

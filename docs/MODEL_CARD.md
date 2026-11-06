@@ -695,3 +695,31 @@ The pre-registration above was committed (6ce7d6b) before the harness existed (`
 - "Everyone 100%" is the worst of the three.
 - The lineup-based share was closer on average, but with 12 teams its interval includes 0, so it doesn't ship.
 - A forward retest on this season's lineups needs its own pre-registration.
+
+## Pre-registration: ESPN's estimated return dates (2026-11-06, before any look at the data)
+
+**Question:** ESPN's injury feed gives a return date for nearly every ruled-out player. Season-long values (trades, waivers, the Outlook, the simulator) count a player from that date (`lib/nba/availability.ts absenceOf`). Often the date is when he'll be **re-evaluated** ("re-evaluated in two weeks"), not when he returns. Do players come back later than ESPN's date, and by how much?
+
+**Today's rule (baseline):** out until ESPN's estimated return date, or 7 days when there's none.
+
+**Candidate:** ESPN's date plus the median lag observed in training, by type:
+
+- notes saying "re-evaluated";
+- every other note with a date.
+
+**Data:**
+
+- `status_events` rows with a `return_date` (logged since Oct 27, 2026);
+- `game_results` for the first game played after the absence began.
+- An absence counts once it has ended (he played again) or the season is over.
+- Rows are matched by ESPN player id.
+
+**Split:** absences that began on even ISO weeks train, odd weeks test.
+
+**Metric:** mean absolute error in team games missed, candidate vs baseline, on the test half, with a 95% bootstrap interval of the difference.
+
+**Ships only if** the interval is entirely below 0. Then the lag goes into `absenceOf`, with an ADR.
+
+**When:** first evaluation once ≥60 absences have ended; one evaluation, no peeking before then.
+
+**Not part of this test:** how long day-to-day players sit (the day-to-day test, 2026-11-02).

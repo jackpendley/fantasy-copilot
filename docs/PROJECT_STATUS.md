@@ -22,7 +22,7 @@
 
 **Later on Nov 5 (#89–#94):**
 
-- **#89, temporary trim:** until Nov 20, other teams' moves re-check at most every 30 min. Own moves and news stay immediate.
+- **#89, temporary trim:** until Nov 20, other teams' moves re-check at most every 30 min, raised to **90 min** on Nov 5 (#103, Jack's call). Own moves and news stay immediate. The roster watch looks back 105 min so a waiting move is still seen.
 - **#90:** the job's moves are built on the worker (`sim-build` task; the waiver analysis is no longer on Vercel). A roster move now costs Vercel ~0.9 s instead of ~5.3 s.
 - **#91–#94, worker coordination:**
   - separate heartbeats for the simulation runners and the task runner (short, so a runner that left doesn't block a new run);

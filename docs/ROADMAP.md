@@ -46,6 +46,9 @@ NFL comes once the NBA app is fully built, then MLB.
 - [x] Net added starts and points per candidate (week re-run with each add/drop pair)
 - [x] Drop candidates, ownership trend; one-click add/drop or waiver claim with a named-drop confirm (first live use pending)
 - [x] Ranked by ΔP(win this week); separate long-term list (ADR-014)
+- [x] Protected players ("Never drop", "Not for trade") and precision tiers for the simulated moves (ADR-060)
+- [x] ESPN watch list as an "Interested" section: free-agent move cards and "Trade for him" packages, simulated
+- [x] Draft review: our rankings vs ESPN's draft and the season, projection accuracy, hindsight draft
 
 ## Phase 4: data warehouse (weeks 1–3)
 

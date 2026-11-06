@@ -1,99 +1,85 @@
-# Project status (2026-11-05, end of day)
+# Project status (2026-11-06, early morning)
 
 ## Where things stand
 
-**Live** at **https://fantasycopilot.vercel.app**, on Vercel Hobby with Neon Postgres. Four tabs: Today, Matchup, Players (Moves, Free agents, Trends), League (with Trades and team pages).
+**Live** at **https://fantasycopilot.vercel.app** (Vercel Hobby, Neon Postgres).
 
-Today (PRs #79–#103) did two things:
+- **Tabs:** Today, Matchup, Players (Moves, Free agents, Trends, **Draft**), League (Trades, team pages).
+- **Simulations:** every move and trade idea is simulated automatically on the GitHub Actions worker (ADR-058/059). Nov 5's PRs #79–#103 are in the previous status below, under "Background".
 
-- made every simulation run by itself;
-- cut Vercel CPU, which was close to Hobby's limit.
+Nov 6 (PRs #106–#113) carried out Jack's 14-request plan (`~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
 
-### Every simulation runs by itself
+| PR   | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #106 | **Correctness.** Past days on Matchup show no projection for players who were out (IR, or a logged Out status without playing): Duren's "projected 29.9" is gone. An audit test locks in that injured players count nothing until their estimated return everywhere. MODEL_CARD pre-registers a test of ESPN's return dates. "Starts for you" is now out of all games left, plus "cut Nov 9 for Duren". The win chart always ends at Now (the headline) and sits under it. |
+| #107 | **UI.** Injury notes are 2 readable lines (phones too); the header and bottom nav are solid; league matchup boxes have one layout with only scores colored; the on-court player gets a green tint and edge instead of a dot, and players not playing today are greyed.                                                                                                                                                                                                     |
+| #108 | **Pull to refresh** on touch screens (the browser's own pull is off).                                                                                                                                                                                                                                                                                                                                                                                                      |
+| #109 | **Protected players and precision tiers (ADR-060).** "Never drop" (Moves) and "Not for trade" (Trades) panels; `player_prefs`. Top tier (asked-for moves, each card's opening move, streams, the watch list): ±0.35 title points, 4,000–40,000 seasons. Rest: ±1.0, 1,000–6,000.                                                                                                                                                                                           |
+| #110 | **Interested list** (ESPN watch list). Watched free agents get move cards. Watched players on other teams get the best 3 "Trade for him" packages (`trade-for` worker task), each simulated. A watch-list change queues a job (`sim_jobs.watch_key`).                                                                                                                                                                                                                      |
+| #111 | **7-level percentile scale (ADR-061).** Shaded StatTiles on the card's Advanced tab, level-filled badges, colored values in Free agents and Trends. Checked for contrast and color blindness, light and dark.                                                                                                                                                                                                                                                              |
+| #112 | **Trends → Vs last season.** FP/G against the latest prior season with 40+ games, both scored with this season's rules (the league changed its scoring), with MPG, TS%, usage, per-36 and a role badge. Prior seasons come from ESPN's public season pool, stored once.                                                                                                                                                                                                    |
+| #113 | **Players → Draft.** Rankings upload in Settings (`draft_rankings`, private); per-player rank vs pick vs season; projection accuracy vs carrying over last season; the hindsight draft (~160 ms of CPU, cached daily).                                                                                                                                                                                                                                                     |
 
-- **Every move is checked** (ADR-058, #79): every drop of every add on Moves, the best 3 drops of the other evaluated adds, and the best 15 trade ideas (#87). That's ~290 moves per job, in groups of 12, most important first.
-  - Clearly worse moves stop after 1,000 seasons; close ones run to ±0.5 title points or 20,000 seasons.
-  - 16 GitHub runners.
-- **Moves (#83, #84):**
-  - no "Simulate this drop" button any more, and the drop picker shows every drop's title change;
-  - while a job re-checks, cards keep their last numbers (`move_results`) with a spinner and "Updating after: …";
-  - after your own roster change they show a loader until the new numbers have 4,000 seasons;
-  - injury news keeps the old numbers;
-  - a banner shows progress ("78 of 288 moves done"), and the page polls `/api/moves/status` instead of re-rendering.
-- **Free agents (#86):** a sortable Title column (each player's best checked move ± margin).
-- **Trades (#87):** each idea shows its simulated title change, and the evaluation shows title, playoffs and wins with margins. Simulate stays only for custom trades.
-- **What starts a job:**
-  - your own moves, right away (in the app, or seen by the 5-minute watch);
-  - injury news or IR changes on your roster (5-minute job, at most one job per 5 min);
-  - other teams' moves (until Nov 20 at most every 90 min, see below);
-  - the nightly run.
-- **Measured in production:**
-  - the opening moves are settled ~3–4 min after a trigger, and all ~290 in ~14 min;
-  - the news trigger worked ("Injury news for your players").
+**Verified in production:**
 
-### Vercel CPU (see `docs/COMPUTE.md`)
-
-- **Hobby rule:** 4 h of Active CPU over a rolling 30 days; above it, Vercel pauses the project. **Nov 5: 3 h 10 m.**
-- **The danger window:** the days leaving the window until ~Nov 19 used almost nothing, so use must average ≤ ~4 min a day until then. After that, the heavy late-October days (12–23 min each) roll off.
-- **Measurement (#80):** `cpu_log` and Settings → "Vercel CPU, last 24 hours" break each job down by step; Vercel Observability gives per-route figures. `scripts/profile-cpu.ts` profiles locally (read-only).
-- **Moved to the GitHub worker** (`worker_tasks`, ADR-059):
-  - the trade-idea search (~7.5 s per run, #82);
-  - building each simulation job, including the waiver analysis (#90).
-
-  A roster move now costs Vercel **~0.9 s instead of ~5.3 s**.
-
-- **Gameday job (#96, Jack approved):**
-  - injury-report logging every 10 min before the game window (5 min in it; MODEL_CARD note recorded before any evaluation);
-  - runs with nothing due skip the league load (`gamedayPlan`).
-
-  It was ~0.55 s per run before this.
-
-- **Worker traffic** (#98, #100, #101): per job, from ~18 s to **~15.5 s** (measured). #98 halved the requests, #100 made one request post results and claim the next chunks, and #101 recomputes the move numbers at most every 20 s (not measured yet).
-- **Temporary trims:**
-  - other teams' moves re-check at most every **90 min** until Nov 20 (#89, raised from 30 in #103, Jack's call); the roster watch looks back 105 min so a waiting move is still seen;
-  - trade ideas refresh at most every 15 min for other teams' changes (#81/#82).
-- **Projection:** before #96/#101/#103 it was ~6–7 min a day at ~15 jobs a day (a job costs ~15 s). Those three should bring it toward ~4 min a day. **To be confirmed by the first full day (Nov 6).**
-
-### Bugs found and fixed today
-
-- **#85:** a reused job kept an old roster key, so it was re-queued every 5 min.
-- **#91–#94:** worker coordination:
-  - separate short heartbeats for simulation and task runners;
-  - one dispatch a minute;
-  - the task runner doesn't idle on queued jobs;
-  - a re-asked queued task still brings a runner.
-- **#88:** a flaky CPU test.
-
-## Daily CPU check (until ~Nov 20)
-
-- Claude checks Vercel → Usage every morning (scheduled 8:47 local, ~9:17 in practice) in this session, plus Settings' CPU card.
-- It reports in 2–4 lines: the 30-day total, yesterday's use, the projection, and any action needed. It changes nothing without Jack's OK.
-- The job is session-only and expires after 7 days. It re-creates itself around Nov 11 and stops on Nov 21. **A new session before Nov 20 should set it up again.**
+- **Matchup:** Wednesday's board shows Duren at 0 / Out with no projection, and the chart ends at the headline 32%.
+- **Moves and Compare:**
+  - Compare shows "53 of 61";
+  - the Never drop panel is there;
+  - the Interested section shows Fears' card and 7 players' packages; Jrue Holiday's best package already had 16,000 seasons at ±0.4.
+- **Stat colors:** Free agents and the Advanced tab look right in dark and light.
+- **Trends:** Vs last season works, including the 2024-25 fallback (Scoot Henderson).
+- **Draft:** the hindsight draft renders.
 
 ## Waiting on Jack
 
-- **Vercel's Git auto-deploy** was slow on Nov 5 (merged commits sat 5–30 min with no commit status). Jack checked the Vercel GitHub app's permissions (github.com/settings/installations → Vercel) the same evening. If merges still don't deploy within a few minutes, deploy `main` from the dashboard (Jack's OK) and look again.
-- **1-minute transaction watch:** deferred until CPU has room (~0.1 s per call, ~2 min a day). The 5-minute watch stays.
-- **Optional:** the full job could drop from ~14 to ~7 min if moves beyond each card's opening drop ran to ±0.75 instead of ±0.5.
+- **Upload the draft rankings:** Settings → Draft rankings → `apps/draft-nba/dist/rankings.csv`. Then the Draft tab's rank and accuracy columns fill in, and the first accuracy numbers go in MODEL_CARD.
+- **Set protected players** on Moves (Never drop) and Trades (Not for trade), e.g. Tatum and Duren. Each change re-checks moves and trade ideas.
+- **Vercel's Git auto-deploy** worked for every merge on Nov 6 (deploys within ~1 min).
+- **1-minute transaction watch:** deferred until CPU has room. The 5-minute watch stays.
+
+## Daily CPU check (until ~Nov 20)
+
+- **Schedule:** Claude checks Vercel → Usage every morning (session cron, 8:47 local) plus Settings' CPU card.
+- **Report:** 2–4 lines; nothing changes without Jack's OK.
+- **Expiry:** the job lasts 7 days per session. It re-creates around Nov 11 and stops Nov 21. **A new session before Nov 20 should set it up again.**
+- **Nov 6 additions to watch:**
+  - **Precision tiers:** more seasons for ~10 top moves, far fewer for ~280 others. Measure job time and per-job Vercel CPU on the first jobs and compare with ~15.5 s per job.
+  - **`trade-for` results:** each new set of packages queues a job.
+  - **One-time costs:** the season baselines fetch (two ~16 MB pools, once).
 
 ## Next tasks
 
 1. **Nov 6 checks:**
-   - the first full-day CPU (the daily check);
-   - overnight gameday runs show "skipped: nothing due";
-   - #101's per-job worker CPU (Observability, one job);
-   - the nightly run (11:00 UTC) queues a job and prunes old jobs, tasks and `cpu_log`.
-2. **If CPU is still above ~4 min a day:** next options in COMPUTE.md (more seasons per request, at the cost of later first numbers; a Vercel Pro month).
-3. **After Nov 20:**
+   - the first full-day CPU, and jobs under the precision tiers (time, CPU, the ± shown on top moves);
+   - overnight gameday "nothing due" skips;
+   - #101's per-job worker CPU;
+   - the nightly prune;
+   - the nightly season-baselines step reports `false` (already stored).
+2. **After Jack's rankings upload:**
+   - check the match rate (≥95% expected);
+   - record the first accuracy numbers in MODEL_CARD.
+3. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥60 absences with ESPN return dates have ended. One evaluation, no peeking before then.
+4. **If CPU is above ~4 min a day:** see the options in COMPUTE.md.
+5. **After Nov 20:**
    - the trims end on their own;
    - revisit the 1-minute watch;
-   - move more work to the worker per the target architecture in COMPUTE.md.
-4. **Earlier items still open:**
-   - the official-statuses forward test (once ≥1,500 non-Out rows);
-   - the props and DARKO blend tests (nightly; `/nba/model`);
-   - win-probability candidate C after week 7 (Dec 6) and recalibration after week 13;
+   - more work moves to the worker.
+6. **Still open from earlier:**
+   - the partner's simulated odds on trades;
+   - the official-statuses forward test (≥1,500 rows);
+   - the props and DARKO blend tests;
+   - win-probability candidate C (Dec 6) and recalibration (week 13);
    - props coverage for free agents.
-5. **Roadmap** (`docs/ROADMAP.md`): own projection models, opponent manager profiles, a playoff-schedule planner, NFL and MLB. The task queue (`worker_tasks`) is where heavier models run.
+7. **Roadmap** (`docs/ROADMAP.md`): own projection models (the Draft tab's accuracy is their baseline), manager profiles, a playoff-schedule planner, NFL and MLB.
+
+## Background (Nov 5, PRs #79–#103)
+
+- **Automatic simulations:** every move checked on the worker; cards keep their last numbers while re-checking.
+- **Builds on the worker:** the trade search and job builds run there (ADR-059), so a roster move costs Vercel ~0.9 s.
+- **Gameday:** gameday runs skip when nothing is due.
+- **Temporary trims:** other teams' moves re-check at most every 90 min until Nov 20; trade ideas refresh at most every 15 min for others' changes.
+- **CPU:** Hobby allows 4 h of Active CPU per 30 days; Nov 5 was at 3 h 10 m. See `docs/COMPUTE.md`.
 
 ## Renewals
 

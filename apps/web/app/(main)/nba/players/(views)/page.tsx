@@ -144,6 +144,7 @@ function optionOf(o: StreamOption): MoveOption {
     addStarts: o.addUsage?.starts ?? null,
     addGames: o.addUsage?.games ?? null,
     dropStarts: o.dropStarts,
+    dropCutFor: o.dropCutFor,
     ilCuts: o.ilCuts,
     rosCost: Math.max(0, -o.rosDelta),
   };

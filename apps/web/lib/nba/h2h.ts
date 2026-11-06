@@ -145,11 +145,23 @@ export function gameOn(
 }
 
 /** A past day: ESPN's final fantasy points, against the pregame projection for that day. */
+/**
+ * Was he out that past day? In the IR slot, or ruled out in our logged statuses for that game
+ * day (ESPN's feed, the official report, NBA.com inactives) without playing: the feed only logs
+ * statuses while a player is listed, so a later upgrade leaves the out row as the last one.
+ */
+export function pastOut(e: Pick<LiveEntry, "slot" | "points" | "line">, loggedOut: boolean) {
+  const played = e.points !== 0 || (e.line?.MIN ?? 0) > 0;
+  return e.slot === "IR" || (loggedOut && !played);
+}
+
 export function cellFromFinal(
   e: LiveEntry,
   player: H2HCell["player"] | undefined,
   game: H2HGame | null,
   pregame: number,
+  /** Ruled out that day (pastOut): no projection, no ▲/▼ against one. */
+  out = false,
 ): Placed {
   return {
     slot: e.slot,
@@ -160,11 +172,11 @@ export function cellFromFinal(
         proTeam: "",
         positions: [],
       },
-      status: "ACTIVE",
+      status: out ? "OUT" : "ACTIVE",
       game,
       points: game ? e.points : null,
-      proj: game ? pregame : null,
-      trend: game ? trendOf(pregame, e.points) : null,
+      proj: game && !out ? pregame : null,
+      trend: game && !out ? trendOf(pregame, e.points) : null,
       line: game ? e.line : null,
     },
   };

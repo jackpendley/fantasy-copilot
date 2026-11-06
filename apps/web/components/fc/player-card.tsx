@@ -899,8 +899,12 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
           {card.rest.starts && (
             <Tile
               label="Starts"
-              value={`${card.rest.starts.starts}/${card.rest.starts.games}`}
-              sub={`on ${card.rest.starts.team}`}
+              value={`${card.rest.starts.starts}/${card.rest.gamesLeft}`}
+              sub={
+                card.rest.starts.cut
+                  ? `cut ${card.rest.starts.cut.date} when ${card.rest.starts.cut.back.split(" ").at(-1)} returns`
+                  : `on ${card.rest.starts.team}`
+              }
             />
           )}
           <Tile

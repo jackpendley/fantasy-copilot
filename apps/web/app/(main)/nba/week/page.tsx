@@ -23,6 +23,7 @@ import { loadLeague, loadLiveRosters, loadOnCourt, loadPlayersById } from "@/lib
 import { dbConfigured } from "@/lib/db";
 import {
   cellFromFinal,
+  pastOut,
   cellFromLive,
   cellsAhead,
   dayTotal,
@@ -31,6 +32,7 @@ import {
   startingSlots,
   type Placed,
 } from "@/lib/nba/h2h";
+import { outOnDays } from "@/lib/nba/past-status";
 import { isStarting, liveRows } from "@/lib/nba/live";
 import { absences, returnLabel } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
@@ -403,14 +405,12 @@ export default async function WeekPage({
   const onCourt = liveGameIds.length
     ? await loadOnCourt(liveGameIds).catch(() => new Map<number, boolean>())
     : new Map<number, boolean>();
-  // Snapshots are taken before each day's games; "Now" is added once today's games start.
-  const started = [...myLive, ...(oppLive ?? [])].some(
-    (r) => r.row.game && r.row.game.state !== "pre",
-  );
   const weekStart = Date.parse(`${dateForScoringPeriod(periods[0]!)}T07:00:00Z`); // Arizona midnight
   const winPoints = [
     ...history.map((h) => ({ t: h.t, pWin: h.p })),
-    ...(pWin != null && mode === "now" && started ? [{ t: nowMs(), pWin }] : []),
+    // "Now" is always the headline number (before today's tips the last logged point is the
+    // morning's, and news since can move it).
+    ...(pWin != null && mode === "now" ? [{ t: nowMs(), pWin }] : []),
     // A finished week ends at its result.
     ...(pWin != null && mode === "past"
       ? [{ t: weekStart + periods.length * 86_400_000 - 3_600_000, pWin }]
@@ -449,6 +449,18 @@ export default async function WeekPage({
     ),
   ];
   const dropped = await loadPlayersById(notRostered, sp).catch(() => new Map<number, never>());
+  // Who was ruled out on each past day (no projection shown for them).
+  const pastIds = [
+    ...new Set(
+      [...pastFinals.values()].flatMap((byTeam) =>
+        [...(byTeam?.values() ?? [])].flat().map((e) => e.playerId),
+      ),
+    ),
+  ];
+  const outPast = await outOnDays(
+    pastIds,
+    periods.filter((d) => d < sp).map((d) => dateForScoringPeriod(d)),
+  ).catch(() => new Set<string>());
   // Ruled-out players: out until ESPN's estimated return, then back.
   const out = absences([...data.ahead.me.roster, ...(oppAhead?.roster ?? [])], data.injuries, sp);
   const slots = startingSlots(data.settings.slotCounts);
@@ -495,6 +507,7 @@ export default async function WeekPage({
             p,
             p ? gameOn(data.games, p.proTeamId, day, "post") : null,
             p ? perGameProjection(p, day).fppg : 0,
+            pastOut(e, outPast.has(`${e.playerId}|${dateForScoringPeriod(day)}`)),
           );
         });
       return [final(data.me.id), opp ? final(opp.id) : []];
@@ -633,15 +646,18 @@ export default async function WeekPage({
         />
       )}
 
-      {weekMatchups.length > 1 && (
-        <LeagueStrip
-          matchups={weekMatchups}
-          names={names}
-          viewed={viewedId}
-          mode={mode}
-          href={(team) => href(mp, team)}
-          jack={league.me.id}
-        />
+      {/* Right under the headline win chance: the two belong together. */}
+      {winPoints.length > 1 && (
+        <section className="space-y-1.5">
+          <SectionTitle
+            aside={mode === "now" ? "Before each day's games and through them" : "Through the week"}
+          >
+            {mode === "now" ? "Win chance this week" : "Win chance during the week"}
+          </SectionTitle>
+          <div className="rounded-xl border bg-card p-3">
+            <WinChart points={winPoints} start={weekStart} days={periods.length} />
+          </div>
+        </section>
       )}
 
       {mode === "now" && mineIsJack && (
@@ -659,17 +675,15 @@ export default async function WeekPage({
         />
       )}
 
-      {winPoints.length > 1 && (
-        <section className="space-y-1.5">
-          <SectionTitle
-            aside={mode === "now" ? "Before each day's games and through them" : "Through the week"}
-          >
-            {mode === "now" ? "Win chance this week" : "Win chance during the week"}
-          </SectionTitle>
-          <div className="rounded-xl border bg-card p-3">
-            <WinChart points={winPoints} start={weekStart} days={periods.length} />
-          </div>
-        </section>
+      {weekMatchups.length > 1 && (
+        <LeagueStrip
+          matchups={weekMatchups}
+          names={names}
+          viewed={viewedId}
+          mode={mode}
+          href={(team) => href(mp, team)}
+          jack={league.me.id}
+        />
       )}
 
       <section className="space-y-1.5">

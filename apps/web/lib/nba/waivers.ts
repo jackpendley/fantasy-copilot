@@ -84,6 +84,8 @@ export interface StreamOption {
   addUsage: { games: number; starts: number } | null;
   /** Starts the dropped player would have made for the rest of the season. */
   dropStarts: number | null;
+  /** He's the one the IR-return plan cuts anyway: who comes back for him. */
+  dropCutFor: string | null;
   /** With this move, who comes back from IR and whom the roster cuts for him (teamValue). */
   ilCuts: { back: string; drop: string }[];
   /**
@@ -231,7 +233,14 @@ export function waiverAnalysis(a: WaiverInputs): {
   ) => {
     if (!a.season || !baseSeason) {
       const delta = c.ros - d.ros;
-      return { rosDelta: delta, seasonScore: delta, addUsage: null, dropStarts: null, ilCuts: [] };
+      return {
+        rosDelta: delta,
+        seasonScore: delta,
+        addUsage: null,
+        dropStarts: null,
+        dropCutFor: null,
+        ilCuts: [],
+      };
     }
     // A waiver claim plays only once it clears.
     const from = availableFrom.get(c.player.id) ?? a.season.fromDay;
@@ -257,6 +266,9 @@ export function waiverAnalysis(a: WaiverInputs): {
       seasonScore: weighted(v) - weighted(baseSeason),
       addUsage: v.usage.get(c.player.id) ?? null,
       dropStarts: d.p ? (baseSeason.usage.get(d.p.id)?.starts ?? 0) : null,
+      dropCutFor: d.p
+        ? (baseSeason.activations.find((x) => x.drop?.id === d.p!.id)?.player.name ?? null)
+        : null,
       ilCuts: v.activations.flatMap((x) =>
         x.drop ? [{ back: x.player.name, drop: x.drop.name }] : [],
       ),

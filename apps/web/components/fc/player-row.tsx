@@ -160,10 +160,12 @@ export function PlayerRow({
               {stats}
             </div>
           ) : (
+            // A readable size that never shrinks: long notes wrap to two lines and end in "…"
+            // (the player card has the whole note).
             row.injuryNote && (
-              <FitText alone className="hidden text-xs text-muted-foreground sm:block">
+              <p className="line-clamp-2 text-xs leading-4 text-muted-foreground">
                 {row.injuryNote}
-              </FitText>
+              </p>
             )
           )}
         </div>

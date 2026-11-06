@@ -24,7 +24,7 @@ export function Logo() {
 export function SiteHeader() {
   const path = usePathname();
   return (
-    <header className="sticky top-0 z-30 border-b bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur">
+    <header className="sticky top-0 z-30 border-b bg-background pt-[env(safe-area-inset-top)]">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-4">
         <Logo />
         <div className="flex items-center gap-1">
@@ -94,7 +94,7 @@ export function BottomNav() {
   const path = usePathname();
   const items = NBA_NAV;
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t bg-background pb-[env(safe-area-inset-bottom)] lg:hidden">
       <div
         className="grid"
         style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}

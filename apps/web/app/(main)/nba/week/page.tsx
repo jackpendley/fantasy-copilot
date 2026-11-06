@@ -148,26 +148,24 @@ function LeagueStrip({
     [jack, viewed].find((id) => id === m.homeId || id === m.awayId) ?? m.homeId;
   const isOpen = (m: LeagueMatchup) => m.homeId === viewed || m.awayId === viewed;
   const isJacks = (m: LeagueMatchup) => m.homeId === jack || m.awayId === jack;
-  /** A finished matchup's winner in green, loser in red. */
+  /** A finished matchup's score: the winner's in green, the loser's in red (names stay plain). */
   const result = (won: boolean | null) => (won == null ? "" : won ? "text-success" : "text-danger");
+  // One fixed layout per team line, whatever the name's length: the name takes the room left
+  // (cut with "…"), the score and win chance keep fixed columns, so every box lines up.
   const line = (id: number, pts: number, final: number, p: number | null, won: boolean | null) => (
-    <div className={cn("flex items-baseline gap-2", result(won))}>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-2">
       <span
-        className={cn(
-          "min-w-0 flex-1 text-xs leading-tight break-words",
-          won ? "font-semibold" : "font-medium",
-        )}
+        className={cn("truncate text-xs leading-5", won ? "font-semibold" : "font-medium")}
+        title={names.get(id) ?? `Team ${id}`}
       >
         {names.get(id) ?? `Team ${id}`}
       </span>
-      <span className="text-xs font-semibold tabular-nums">
+      <span className={cn("w-12 text-right text-xs font-semibold tabular-nums", result(won))}>
         {fmtPts(mode === "later" ? final : pts)}
       </span>
-      {mode !== "past" && p != null && (
-        <span className="w-8 text-right text-[11px] text-muted-foreground tabular-nums">
-          {winChanceLabel(p, false)}
-        </span>
-      )}
+      <span className="w-8 text-right text-[11px] text-muted-foreground tabular-nums">
+        {mode !== "past" && p != null ? winChanceLabel(p, false) : ""}
+      </span>
     </div>
   );
   return (
@@ -203,7 +201,7 @@ function LeagueStrip({
                 href={href(side(m))}
                 aria-current={open ? "true" : undefined}
                 className={cn(
-                  "w-44 shrink-0 snap-start space-y-1 rounded-lg border bg-card px-2.5 py-2 transition-colors sm:w-auto",
+                  "w-52 shrink-0 snap-start space-y-0.5 rounded-lg border bg-card px-2.5 py-2 transition-colors sm:w-auto",
                   open ? "border-primary ring-1 ring-primary" : "hover:bg-muted/50",
                 )}
               >
@@ -560,7 +558,7 @@ export default async function WeekPage({
           ? "Final ESPN fantasy points in each slot. Under the points: his pregame projection, with ▲/▼ when he finished well above or below it."
           : d.sp > sp
             ? "Projected lineups (the best lineup each team can set that day), from rosters after pending moves. The number in each slot is his projection."
-            : "ESPN fantasy points in each slot. Under the points: his projection (live: points so far plus the rest of his projection). ▲/▼ = 5+ points and 20%+ off. While a game is on, a green dot by the points means he's on the court, grey on the bench. Tap a player for his card.",
+            : "ESPN fantasy points in each slot. Under the points: his projection (live: points so far plus the rest of his projection). ▲/▼ = 5+ points and 20%+ off. While his game is on, a green box with a green edge means he's on the court; greyed players don't play today. Tap a player for his card.",
     };
   });
   const opponentOf = (proTeamId: number, p: number) => {

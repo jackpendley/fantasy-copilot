@@ -20,24 +20,14 @@ import {
   type PlayerMetric,
 } from "./pbp-metrics";
 import { db, dbConfigured } from "@/lib/db";
+import { nameKey } from "@/lib/name-key";
+
+export { nameKey };
 import { memoFetch } from "@/lib/fetch-memo";
 
 const SLOW = memoFetch(6 * 3600_000);
 // DARKO publishes once a day at no fixed time: look again hourly.
 const HOURLY = memoFetch(3600_000);
-
-/** "Ja'Kobe Walter Jr." and "Jakobe Walter" both become "jakobe walter". */
-export function nameKey(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/['’.]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\b(jr|sr|ii|iii|iv|v)\b/g, "")
-    .trim()
-    .replace(/\s+/g, " ");
-}
 
 /** The entry for this player: same name, preferring his team when two share it. */
 function byName<T>(rows: T[], name: string, team: string, get: (r: T) => [string, string]) {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PushSettings } from "@/components/push-settings";
+import { DraftRankingsUpload } from "@/components/draft-rankings-upload";
 import { PageHeader } from "@/components/fc/bits";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { db, dbConfigured } from "@/lib/db";
@@ -9,6 +10,13 @@ import { fmtDayTime } from "@/lib/format";
 import { DAILY_CPU_BUDGET_S } from "@/lib/nba/move-sim";
 
 type JobRow = { job: string; status: string; detail: string | null; ran_at: Date };
+
+/** When the draft rankings were last uploaded (Players → Draft). */
+async function rankingsImportedAt(): Promise<Date | null> {
+  if (!dbConfigured()) return null;
+  const [r] = await db()<{ at: Date | null }[]>`select max(imported_at) as at from draft_rankings`;
+  return r?.at ?? null;
+}
 
 async function recentJobs() {
   if (!dbConfigured()) return [];
@@ -79,11 +87,12 @@ async function computeUse() {
 }
 
 export default async function SettingsPage() {
-  const [jobs, status, cpu, compute] = await Promise.all([
+  const [jobs, status, cpu, compute, rankingsAt] = await Promise.all([
     recentJobs().catch(() => []),
     jobStatus().catch(() => []),
     simulationCpu().catch(() => null),
     computeUse().catch(() => null),
+    rankingsImportedAt().catch(() => null),
   ]);
   const cpuOf = (job: string) => cpu?.get(job) ?? { month: 0, day: 0 };
   const cpuTotal = ["move-sim", "outlook-sim", "trade-sim"].reduce((a, j) => a + cpuOf(j).month, 0);
@@ -110,6 +119,19 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <ThemeToggle />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle>Draft rankings</CardTitle>
+          <CardDescription>
+            Your pre-draft rankings (apps/draft-nba/dist/rankings.csv) for Players → Draft: how each
+            ranking and projection held up. Stored privately with the app&apos;s data, never in the
+            code repository; a new upload replaces the last.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DraftRankingsUpload importedAt={rankingsAt ? fmtDayTime(rankingsAt) : null} />
         </CardContent>
       </Card>
       <Card>

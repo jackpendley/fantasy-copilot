@@ -723,3 +723,13 @@ The pre-registration above was committed (6ce7d6b) before the harness existed (`
 **When:** first evaluation once ≥60 absences have ended; one evaluation, no peeking before then.
 
 **Not part of this test:** how long day-to-day players sit (the day-to-day test, 2026-11-02).
+
+## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
+
+**What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.
+- **Judged:** ranked players with ≥10 games.
+- **Metric:** mean absolute error.
+- **Simple baseline:** last season's FP/G re-scored with this season's rules (the league changed its scoring), on the players with 20+ games last season. Both are reported on that same set.
+- **ESPN's preseason projection:** not available, since ESPN overwrites its projections in place and none were saved.
+
+**Status:** no numbers yet; they need the upload. The first numbers get recorded here, with the date and n, as the baseline any projection model must beat. This is a descriptive check, not a ship test: no model ships from it.

@@ -175,7 +175,10 @@ export default async function LeaguePage({
       {o?.waiting && (
         <p className="rounded-xl border bg-card px-3 py-2.5 text-sm text-muted-foreground">
           A newer roster move isn&apos;t in these odds yet: the next update (within{" "}
-          {othersWithinMinutes()} minutes) includes it.
+          {othersWithinMinutes() >= 120
+            ? `${othersWithinMinutes() / 60} hours)`
+            : `${othersWithinMinutes()} minutes)`}{" "}
+          includes it.
         </p>
       )}
 

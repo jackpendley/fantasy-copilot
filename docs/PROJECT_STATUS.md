@@ -42,6 +42,9 @@ Nov 6 (PRs #106–#113, plus the fix #115) carried out Jack's 14-request plan (`
 
 ## Daily CPU check (until ~Nov 20)
 
+- **The CPU saver (Nov 6 to Nov 22, docs/COMPUTE.md §9):** 3 h 34 m of 4 h on Nov 6 with little rolling off before Nov 18, so background work runs slower: game-window work every 10 min, availability before it every 30, other teams' moves within 6 h, news jobs at most hourly. Nothing is switched off. Target ~2 min a day; the morning check compares the total with the "on track" table there. Fallback: a month of Vercel Pro (Jack approves).
+- **No production checks during the saver:** verify locally and through Vercel's Usage and Observability.
+
 - **Schedule:** Claude checks Vercel → Usage every morning (session cron, 8:47 local) plus Settings' CPU card.
 - **Report:** 2–4 lines; nothing changes without Jack's OK.
 - **Expiry:** the job lasts 7 days per session. It re-creates around Nov 11 and stops Nov 21. **A new session before Nov 20 should set it up again.**

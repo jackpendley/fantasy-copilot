@@ -2,7 +2,7 @@ import "server-only";
 // Season simulations on the GitHub Actions worker (ADR-053). Vercel builds a job, the season as
 // it stands (the base run, i.e. the Outlook) plus every candidate waiver move (ADR-058), as
 // plain JSON. The moves are split into groups of 12, most important first; runners take a
-// group's chunks of 200 seasons, post back paired results, and the Outlook and the Moves checks
+// group's chunks of 500 seasons, post back paired results, and the Outlook and the Moves checks
 // update from the sums. Moves stop getting seasons once their title change is known to their
 // tier's precision (ADR-060: ±0.35 points for the moves Jack acts on, ±1 for the rest); clearly
 // worse moves stop early.
@@ -53,9 +53,14 @@ import {
 } from "./sim-moves";
 import { loadWaiverInputs } from "./waivers-view";
 import { SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
+import { saverOn } from "@/lib/cpu-saver";
 import { decodeWire, encodeWire } from "@/lib/wire-json";
 
-export const CHUNK_SEASONS = 200;
+/**
+ * Seasons per chunk. Each runner request carries 2 chunks per core, so bigger chunks mean fewer
+ * requests to Vercel per job (500 from Nov 6, was 200: a round takes ~12 s, not ~5).
+ */
+export const CHUNK_SEASONS = 500;
 export const REPLAYS = 10;
 /** The most any group can take (its own tier's limit is stored with it). */
 const MAX_CHUNKS = TOP_TIER.maxSeasons / CHUNK_SEASONS;
@@ -66,6 +71,8 @@ const MIN_BASE_CHUNKS = MIN_BASE_SEASONS / CHUNK_SEASONS;
  * ~10 s of a job's ~15 s). Numbers on the page lag by at most this plus its 10 s poll.
  */
 const REFRESH_GAP_S = 20;
+/** Under the CPU saver (lib/cpu-saver.ts). */
+const SAVER_REFRESH_GAP_S = 45;
 /** A job whose runners stopped posting is closed with what it has after this long. */
 const STALE_MS = 4 * 60_000;
 export const DEEP_KEY = "move-checks-deep";
@@ -509,7 +516,7 @@ export async function postChunks(
     const [due] = await db()`
       update sim_jobs set refreshed_at = now()
       where id = ${jobId} and (refreshed_at is null
-        or refreshed_at < now() - ${`${REFRESH_GAP_S} seconds`}::interval)
+        or refreshed_at < now() - ${`${saverOn() ? SAVER_REFRESH_GAP_S : REFRESH_GAP_S} seconds`}::interval)
       returning id
     `;
     if (!due) return { done: false };

@@ -286,3 +286,40 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - CPU per run and per step, and CPU on unchanged-league runs (`cpu_log`, Settings);
 - per simulation job: duration, moves, and Vercel CPU (`sim_jobs`);
 - the projected 30-day total (daily × 30) against 240 min.
+
+## 9. The CPU saver (Nov 6 to Nov 22)
+
+**Measured Nov 6, 15:35 MST:** 3 h 34 m of 4 h (26 min left).
+
+- **The days leaving the window are small until Nov 18:** Oct 7–17 total under 1 min. After that, by bar height: Oct 18 ~2, Oct 19 ~3, Oct 20 ~3.5, Oct 21 ~12, Oct 22–28 ~4–8.5 each, Oct 29 ~21, then ~12–23 a day.
+- **So the binding stretch is Nov 7–17:** ~2 min a day keeps ~4 min of margin on Nov 17. From Nov 22, ~5.5 min a day roughly matches what leaves, and from Nov 29 there's room.
+- **The quiet-day rate before the saver** was ~4–6 min a day (Observability, 12 h windows: 2.1 min in the day, 3.2 min overnight with games). `cpu_log`, last 24 h: gameday 1.4 min (201 runs × 417 ms), roster moves 0.5 min, 19 simulation jobs × 3.1 s. Days with development and production checks ran 15–20 min.
+
+**The saver (`lib/cpu-saver.ts`, until 2026-11-22 00:00 UTC; nothing is switched off):**
+
+| Change                                     | Was                       | Under the saver                                                |
+| ------------------------------------------ | ------------------------- | -------------------------------------------------------------- |
+| Game-window work (statuses, props, alerts) | every 5 min               | every 10 min                                                   |
+| Availability logging before the window     | every 10 min              | every 30 min                                                   |
+| Other teams' moves re-check Jack's moves   | at most every 90 min      | at most every 6 h                                              |
+| Injury news for Jack's players             | a new job unless one live | at most one job an hour                                        |
+| League load after a move seen by the watch | every run for 105 min     | only when a run starts; waiting moves re-read on the half hour |
+| Recompute of a job's numbers on posts      | every 20 s                | every 45 s                                                     |
+| Seasons per chunk (permanent)              | 200                       | 500 (fewer requests per job)                                   |
+
+- **Unchanged:** Jack's own moves (in this app or ESPN's), protected players, watch-list changes, the timeline every 15 minutes in games, the nightly and pregame jobs, every page.
+- **After Nov 22,** other teams' moves wait 90 minutes until Nov 29 (was until Nov 20), then 30.
+- **No production checks during the saver:** changes are verified locally and through Vercel's Usage and Observability.
+
+**On track if the morning total is at most** (2 min a day):
+
+| Date   | Total    |
+| ------ | -------- |
+| Nov 8  | 3 h 38 m |
+| Nov 10 | 3 h 42 m |
+| Nov 12 | 3 h 46 m |
+| Nov 14 | 3 h 50 m |
+| Nov 16 | 3 h 54 m |
+| Nov 18 | 3 h 56 m |
+
+**If a morning total is 3+ min over its line,** the fallback is Vercel Pro for one month ($20; 16 h of Active CPU; downgrade before it renews; Jack's approval). The 14-day Pro trial doesn't fit: it ends Nov 20, and a community report says trial usage counts against Hobby afterwards.

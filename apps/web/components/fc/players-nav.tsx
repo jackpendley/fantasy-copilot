@@ -10,12 +10,13 @@ const VIEWS = [
   { label: "Moves", href: "/nba/players" },
   { label: "Free agents", href: "/nba/players/free-agents" },
   { label: "Trends", href: "/nba/players/trends" },
+  { label: "Draft", href: "/nba/players/draft" },
 ] as const;
 
 export function PlayersTabs() {
   const path = usePathname();
   return (
-    <nav className="grid grid-cols-3 gap-1 rounded-lg border bg-card p-1" aria-label="Players">
+    <nav className="grid grid-cols-4 gap-1 rounded-lg border bg-card p-1" aria-label="Players">
       {VIEWS.map((v) => {
         const on = path === v.href;
         return (

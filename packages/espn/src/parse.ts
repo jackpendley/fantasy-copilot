@@ -392,6 +392,28 @@ export function parseLiveRosters(data: Json, matchupPeriod: number): Map<number,
   return out;
 }
 
+export interface DraftPick {
+  overall: number;
+  round: number;
+  teamId: number;
+  playerId: number;
+  keeper: boolean;
+}
+
+/** Every pick in order (keepers included, flagged), from the `mDraftDetail` view. */
+export function parseDraftOrder(data: Json): DraftPick[] {
+  return (data?.draftDetail?.picks ?? [])
+    .filter((p: Json) => p.playerId && p.overallPickNumber)
+    .map((p: Json) => ({
+      overall: p.overallPickNumber,
+      round: p.roundId ?? 0,
+      teamId: p.teamId,
+      playerId: p.playerId,
+      keeper: Boolean(p.keeper),
+    }))
+    .sort((a: DraftPick, b: DraftPick) => a.overall - b.overall);
+}
+
 /** Overall pick number for each drafted player, from the `mDraftDetail` view. */
 export function parseDraftPicks(data: Json): Map<number, number> {
   const picks = new Map<number, number>();

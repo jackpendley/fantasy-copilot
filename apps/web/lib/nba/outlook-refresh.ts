@@ -9,6 +9,7 @@ import "server-only";
 import { after } from "next/server";
 import { fetchLeague, parseTransactions, type LeagueTransaction } from "@fantasy-copilot/espn";
 import { CpuMeter, recordCpu } from "@/lib/cpu";
+import { saverOn } from "@/lib/cpu-saver";
 import { db } from "@/lib/db";
 import { forgetResponses } from "@/lib/fetch-memo";
 import { espnConfig } from "@/lib/env";
@@ -25,10 +26,10 @@ const LOCK = "outlook";
 export const RERUN_GAP_MS = 30 * 60_000;
 /**
  * The roster watch only reads the database when a move is at least this recent: the longest a
- * move waits (another team's, 90 minutes until Nov 20: OTHERS_GAP_MS) plus 15 minutes, so a
- * waiting move is still seen when its turn comes.
+ * move waits (another team's: othersGapMs) plus 15 minutes, so a waiting move is still seen
+ * when its turn comes.
  */
-export const WATCH_WINDOW_MS = 90 * 60_000 + 15 * 60_000;
+export const watchWindowMs = (now = Date.now()) => othersGapMs(now) + 15 * 60_000;
 
 /** A move newer than the latest run means the outlook is out of date. */
 export function isStale(moveAt: number | null, lastRunAt: number | null): boolean {
@@ -61,21 +62,23 @@ async function liveJobSince(since: number): Promise<{ queuedFor: number } | null
 }
 
 /**
- * Until Nov 20, 2026, other teams' moves re-check Jack's moves at most every 90 minutes
- * (docs/COMPUTE.md: Vercel's 30-day CPU window needs ~4 min a day until the heavy late-October
- * days roll off; Jack chose 90 on Nov 5). His own moves, and news, are checked right away.
- * Moves in between ride along.
+ * Other teams' moves re-check Jack's moves at most every 6 hours under the CPU saver (Nov 6),
+ * then every 90 minutes until Nov 29 (docs/COMPUTE.md: Vercel's 30-day CPU window needs a light
+ * month until the heavy late-October days roll off; Jack chose 90 on Nov 5). His own moves are
+ * checked right away. Moves in between ride along.
  */
-const OTHERS_GAP_UNTIL = Date.parse("2026-11-20T00:00:00Z");
-const OTHERS_GAP_MS = 90 * 60_000;
+const OTHERS_GAP_UNTIL = Date.parse("2026-11-29T00:00:00Z");
+const SAVER_GAP_MS = 6 * 3600_000;
+const TRIM_GAP_MS = 90 * 60_000;
+const othersGapMs = (now: number) =>
+  saverOn(now) ? SAVER_GAP_MS : now < OTHERS_GAP_UNTIL ? TRIM_GAP_MS : RERUN_GAP_MS;
 
 /** At most how long until another team's move is in the numbers (minutes, for the pages). */
-export const othersWithinMinutes = (now = Date.now()) =>
-  Math.round((now < OTHERS_GAP_UNTIL ? OTHERS_GAP_MS : RERUN_GAP_MS) / 60_000);
+export const othersWithinMinutes = (now = Date.now()) => Math.round(othersGapMs(now) / 60_000);
 
-/** Should another team's move wait (the last job is recent, and the trim is on)? */
+/** Should another team's move wait (the last job is recent, and a trim is on)? */
 export function othersWait(own: boolean, lastJobAt: number | null, now: number): boolean {
-  return !own && now < OTHERS_GAP_UNTIL && lastJobAt != null && now - lastJobAt < OTHERS_GAP_MS;
+  return !own && now < OTHERS_GAP_UNTIL && lastJobAt != null && now - lastJobAt < othersGapMs(now);
 }
 
 /** The worker hasn't picked a job up in this long: Vercel runs the Outlook itself. */
@@ -109,9 +112,19 @@ export function dueForRerun(moveAt: number | null, lastRunAt: number | null, now
   return isStale(moveAt, lastRunAt) && (lastRunAt == null || now - lastRunAt >= RERUN_GAP_MS);
 }
 
-/** Should the 5-minute watch look further (read the last run)? Only for a recent move. */
+/** A move this new is looked at on every run (Jack's own, made in ESPN's app, right away). */
+const NEW_MOVE_MS = 20 * 60_000;
+
+/**
+ * Should the 5-minute watch look further (read the last run)? Only for a recent move. Under the
+ * CPU saver a waiting move (up to 6 hours) is looked at again on the half hour, so the database
+ * can sleep in between.
+ */
 export function recentMove(moveAt: number | null, now: number): boolean {
-  return moveAt != null && now - moveAt <= WATCH_WINDOW_MS;
+  if (moveAt == null) return false;
+  const age = now - moveAt;
+  if (age <= NEW_MOVE_MS) return true;
+  return age <= watchWindowMs(now) && (!saverOn(now) || new Date(now).getUTCMinutes() % 30 < 5);
 }
 
 /**
@@ -217,8 +230,12 @@ export async function rosterWatch(now = new Date()): Promise<Record<string, unkn
   return { watch: await refreshIfStale(newest, lastRunAt, now.getTime(), own) };
 }
 
-/** News or IR-slot changes queue a new simulation job at most this often. */
+/**
+ * News or IR-slot changes queue a new simulation job at most this often: while a job is live,
+ * or (under the CPU saver) since the last job.
+ */
 const NEWS_GAP = "5 minutes";
+const SAVER_NEWS_GAP = "60 minutes";
 
 /**
  * Jack's roster as the latest simulation job saw it vs now (from the league the 5-minute job
@@ -233,11 +250,19 @@ export async function simRosterCheck(
 ): Promise<"current" | "waiting" | "queued"> {
   if (!workerEnabled()) return "current";
   const key = rosterKeyOf(roster, injuries);
+  const saver = saverOn();
   const [j] = await db()<
-    { roster_key: string | null; watch_key: string | null; recent: boolean; live: boolean }[]
+    {
+      roster_key: string | null;
+      watch_key: string | null;
+      recent: boolean;
+      live: boolean;
+      within_saver_gap: boolean;
+    }[]
   >`
     select roster_key, watch_key, created_at > now() - ${NEWS_GAP}::interval as recent,
-      status in ('queued', 'running') as live
+      status in ('queued', 'running') as live,
+      created_at > now() - ${SAVER_NEWS_GAP}::interval as within_saver_gap
     from sim_jobs where status <> 'superseded' order by id desc limit 1
   `;
   // A new watch list: its free agents and trade packages need checks (and the search).
@@ -248,7 +273,7 @@ export async function simRosterCheck(
   }
   if (!j?.roster_key || j.roster_key === key) return "current";
   const news = samePlayers(j.roster_key, key);
-  if (news && j.live && j.recent) return "waiting";
+  if (news && ((j.live && j.recent) || (saver && j.within_saver_gap))) return "waiting";
   await refreshLogged(news ? "Injury news for your players" : "Your roster changed (IR or slots)");
   return "queued";
 }

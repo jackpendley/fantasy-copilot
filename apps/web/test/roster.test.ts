@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { dayStarted, pendingMoves, rosterLocked, weekRoster } from "@/lib/nba/roster";
 import { projectTeamWeek } from "@/lib/nba/week";
-import { isStale, recentMove, WATCH_WINDOW_MS } from "@/lib/nba/outlook-refresh";
+import { isStale, recentMove, watchWindowMs } from "@/lib/nba/outlook-refresh";
 
 // Synthetic players.
 const player = (id: number, slot = "BE", fppg = 30, proTeamId = 1): RosterPlayer => ({
@@ -106,7 +106,14 @@ describe("outlook roster watch", () => {
   it("only looks at the database for a recent move", () => {
     const now = Date.parse("2026-10-20T23:40:00Z");
     expect(recentMove(now - 60_000, now)).toBe(true);
-    expect(recentMove(now - WATCH_WINDOW_MS - 1, now)).toBe(false);
+    expect(recentMove(now - watchWindowMs(now) - 1, now)).toBe(false);
     expect(recentMove(null, now)).toBe(false);
+  });
+  it("under the CPU saver, looks at a waiting move again on the half hour", () => {
+    const at = Date.parse("2026-11-08T20:05:00Z");
+    expect(recentMove(at - 10 * 60_000, at)).toBe(true);
+    expect(recentMove(at - 2 * 3600_000, at)).toBe(false);
+    expect(recentMove(at - 2 * 3600_000, at + 25 * 60_000)).toBe(true); // 20:30
+    expect(recentMove(at - 7 * 3600_000, at + 25 * 60_000)).toBe(false);
   });
 });

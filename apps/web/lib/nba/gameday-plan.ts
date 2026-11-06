@@ -27,16 +27,23 @@ export function gamedayPlan(a: {
   tips: number[];
   /** The roster watch saw a recent move. */
   moveSeen: boolean;
+  /** The CPU saver (lib/cpu-saver.ts): game-window work every 10 minutes, not 5. */
+  saver?: boolean;
 }): GamedayPlan {
   const games = a.tips.length > 0;
   const first = games ? Math.min(...a.tips) : 0;
   const last = games ? Math.max(...a.tips) : 0;
-  const window = games && a.t >= first - BEFORE_FIRST_TIP_MS && a.t <= last + AFTER_LAST_TIP_MS;
+  const inWindow = games && a.t >= first - BEFORE_FIRST_TIP_MS && a.t <= last + AFTER_LAST_TIP_MS;
+  const window = inWindow && (!a.saver || a.minute % 10 < 5);
   const timeline = games && a.t >= first && a.t <= last + TIMELINE_AFTER_MS && a.minute % 15 < 5;
   // From 9 AM ET: every 5 minutes in the game window, every 10 before it (MODEL_CARD,
-  // 2026-11-05 note: official reports come every 15 minutes, so none is missed).
+  // 2026-11-05 note: official reports come every 15 minutes, so none is missed). The saver
+  // looks every 10 in the window and every 30 before it.
   const availability =
-    games && a.etHour >= 9 && a.t <= last + AFTER_LAST_TIP_MS && (window || a.minute % 10 < 5);
+    games &&
+    a.etHour >= 9 &&
+    a.t <= last + AFTER_LAST_TIP_MS &&
+    (inWindow ? window : a.minute % (a.saver ? 30 : 10) < 5);
   // DARKO publishes once a day at no fixed time: looked for hourly from 6 AM ET.
   const darko = a.minute < 5 && a.etHour >= 6;
   return {

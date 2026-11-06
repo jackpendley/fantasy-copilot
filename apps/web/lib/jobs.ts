@@ -4,6 +4,7 @@ import "server-only";
 import { EspnError } from "@fantasy-copilot/espn";
 import { fetchDarko } from "@fantasy-copilot/nba-data";
 import { CpuMeter, recordCpu } from "./cpu";
+import { saverOn } from "./cpu-saver";
 import { db } from "./db";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
@@ -135,8 +136,13 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     t: now.getTime(),
     minute: now.getUTCMinutes(),
     etHour: etHour(now),
+    saver: saverOn(now.getTime()),
     tips: schedule.filter((g) => g.scoringPeriodId === sp).map((g) => g.date),
-    moveSeen: watch.watch !== "quiet",
+    // Under the CPU saver, only a move that set off a run loads the league (not one waiting its
+    // turn, or one already in the numbers).
+    moveSeen: saverOn(now.getTime())
+      ? watch.watch === "refreshing" || watch.watch === "queued"
+      : watch.watch !== "quiet",
   });
   if (!plan.load) {
     if (plan.snapshot) await m.step("snapshot", () => snapshotIfMissing(sp, now));
@@ -181,6 +187,8 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
             },
           ),
         );
+  // Waiting news (the saver's gap since the last job) is looked at again on the next run.
+  if (simRoster === "waiting") lastLeague = null;
 
   const darko = await m.step("darko", () =>
     darkoCheck(now, data, sp).catch(async (e: Error) => {

@@ -570,6 +570,11 @@ A3 beats B0 but not B1, so it fails the gate.
 - **The pre-tip cutoff** (tip − 1 h) is inside the window, so it's unchanged.
 - **The only effect:** the midday cutoff's ESPN observation can be up to 10 minutes old instead of 5. This works slightly against the baseline, and is recorded here before any evaluation.
 
+**Note (2026-11-06, no rows evaluated yet):** under the CPU saver (Nov 6 to Nov 22, docs/COMPUTE.md), logging runs every 30 minutes before the game window and every 10 minutes in it.
+
+- **In the window,** every 15-minute report is still read, and the pre-tip cutoff is unchanged.
+- **Before the window,** about half the official reports are not read. The midday row then uses the latest report read before its cutoff (up to 30 minutes older), and ESPN's observation can be up to 30 minutes old. Both sides lose freshness. Rows from these days are kept and evaluated with the rest, as registered.
+
 ## Pre-registration: day-to-day players on later days (2026-11-02, before any run)
 
 **Question:** how likely is a player listed day-to-day today to play his team's games on the next few days?

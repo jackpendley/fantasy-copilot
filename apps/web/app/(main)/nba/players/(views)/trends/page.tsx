@@ -13,6 +13,11 @@ import { loadPlayerPool } from "@/lib/nba/pool";
 import { perGameProjection, rosteredPercentile } from "@/lib/nba/projection";
 import { hotAndCold, injuryOpenings, ownershipRisers, type PoolPlayer } from "@/lib/nba/trends";
 import { searchPlayers } from "@/lib/player-search";
+import { nameKey, pbpUsages } from "@/lib/nba/advanced";
+import { refreshSeasonBaselines, seasonBaselines } from "@/lib/nba/season-baselines";
+import { dbConfigured } from "@/lib/db";
+import { after } from "next/server";
+import { vsLastSeason, type VsLastSeason } from "@/lib/nba/vs-last-season";
 import { TeamTabs } from "@/components/fc/team-tabs";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +139,95 @@ function Streaks({ hot, cold }: ReturnType<typeof hotAndCold>) {
   );
 }
 
+/** "2025-26" for an ESPN season (its end year). */
+const seasonLabel = (season: number) => `${season - 1}-${String(season).slice(2)}`;
+
+const pct1 = (x: number | null | undefined) => (x == null ? "—" : `${(x * 100).toFixed(0)}%`);
+
+/**
+ * Risers and fallers against their last full season: FP/G then → now, with the minutes,
+ * shooting, usage and per-36 behind it, and a role badge when the minutes moved a lot.
+ */
+function VsSeason({
+  rows,
+  usage,
+  current,
+}: {
+  rows: { risers: VsLastSeason<PoolPlayer>[]; fallers: VsLastSeason<PoolPlayer>[] };
+  usage: Map<string, number>;
+  current: number;
+}) {
+  if (!rows.risers.length && !rows.fallers.length)
+    return (
+      <Callout tone="info">
+        Comparisons appear once players have 5+ games this season and a prior season of 40+ games.
+      </Callout>
+    );
+  const usageOf = (r: VsLastSeason<PoolPlayer>, season: number) =>
+    usage.get(`${season}|${nameKey(r.entry.player.name)}`);
+  const line = (r: VsLastSeason<PoolPlayer>) => {
+    const parts = [
+      `MPG ${r.then.minutes.toFixed(0)}→${r.now.minutes.toFixed(0)}`,
+      `TS ${pct1(r.then.ts)}→${pct1(r.now.ts)}`,
+    ];
+    const u0 = usageOf(r, r.then.season);
+    const u1 = usageOf(r, current);
+    if (u0 != null || u1 != null)
+      parts.push(
+        `USG ${u0 != null ? u0.toFixed(0) : "—"}→${u1 != null ? `${u1.toFixed(0)}%` : "—"}`,
+      );
+    if (r.then.per36 != null && r.now.per36 != null)
+      parts.push(`/36 ${fmtPts(r.then.per36)}→${fmtPts(r.now.per36)}`);
+    return parts.join(" · ");
+  };
+  return (
+    <div className="grid gap-3 md:grid-cols-2">
+      {[
+        { title: "Up on last season", list: rows.risers },
+        { title: "Down on last season", list: rows.fallers },
+      ].map(({ title, list }) => (
+        <div key={title} className="space-y-1">
+          <div className="px-1 text-xs font-medium">{title}</div>
+          <List>
+            {list.map((r) => (
+              <div key={r.entry.player.id}>
+                <PlayerLink
+                  {...r.entry}
+                  sub={
+                    r.role && (
+                      <Pill tone={r.role === "bigger" ? "success" : "warning"}>{r.role} role</Pill>
+                    )
+                  }
+                  right={
+                    <>
+                      <div
+                        className={cn(
+                          "font-semibold",
+                          r.delta > 0 ? "text-success" : "text-danger",
+                        )}
+                      >
+                        {signed(r.delta)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        {fmtPts(r.then.fppg)} → {fmtPts(r.now.fppg)}
+                      </div>
+                    </>
+                  }
+                />
+                <p className="-mt-1.5 px-3 pb-2 pl-[58px] text-[11px] text-muted-foreground tabular-nums">
+                  {line(r)}
+                  {r.then.season !== current - 1 &&
+                    ` · vs ${seasonLabel(r.then.season)} (${r.then.games} games)`}
+                </p>
+              </div>
+            ))}
+          </List>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default async function PlayersPage({
   searchParams,
 }: {
@@ -178,6 +272,33 @@ export default async function PlayersPage({
     freeAgents,
   ).slice(0, 6);
   const rank = rosteredPercentile(data.teams.flatMap((t) => t.roster));
+  // Vs last season: scored with this season's rules (the league changed them), from the stored
+  // prior seasons (nightly); usage from the stored PBP Stats seasons.
+  const current = Number(process.env.ESPN_SEASON || 2027);
+  const baselines = q ? [] : await seasonBaselines(current).catch(() => []);
+  // Not stored yet (before the first nightly run): fetch them once, after this response.
+  if (!q && !baselines.length && dbConfigured())
+    after(() => refreshSeasonBaselines(current).catch(() => {}));
+  const scoring = data.settings.scoring;
+  const vsAll = vsLastSeason(pool, baselines, scoring, current);
+  const vsFree = vsLastSeason(
+    pool.filter((e) => e.available),
+    baselines,
+    scoring,
+    current,
+  );
+  const vsMine = vsLastSeason(
+    pool.filter((e) => e.mine),
+    baselines,
+    scoring,
+    current,
+    15,
+  );
+  const shownVs = [vsAll, vsFree, vsMine].flatMap((x) => [...x.risers, ...x.fallers]);
+  const usage = await pbpUsages(
+    [...new Set(shownVs.map((r) => r.entry.player.name))],
+    [current, current - 1],
+  ).catch(() => new Map<string, number>());
   const mine = [...data.me.roster].sort(
     (a, b) => perGameProjection(b).fppg - perGameProjection(a).fppg,
   );
@@ -226,6 +347,30 @@ export default async function PlayersPage({
               ]}
             />
           </section>
+
+          {baselines.length > 0 && (
+            <section className="space-y-1.5">
+              <SectionTitle aside="FP/G vs his last full season, this season's scoring">
+                Vs last season
+              </SectionTitle>
+              <TeamTabs
+                tabs={[
+                  {
+                    label: "All players",
+                    content: <VsSeason rows={vsAll} usage={usage} current={current} />,
+                  },
+                  {
+                    label: "Free agents",
+                    content: <VsSeason rows={vsFree} usage={usage} current={current} />,
+                  },
+                  {
+                    label: "Your roster",
+                    content: <VsSeason rows={vsMine} usage={usage} current={current} />,
+                  },
+                ]}
+              />
+            </section>
+          )}
 
           {openings.length > 0 && (
             <section className="space-y-1.5">

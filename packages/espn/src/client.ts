@@ -66,6 +66,31 @@ export async function fetchProSchedule(
   return res.json();
 }
 
+/**
+ * A season's player pool from ESPN's league-less defaults (public, no cookies): season totals
+ * for any season, including ones before the league existed. No league scoring is applied.
+ */
+export async function fetchSeasonPool(
+  season: number,
+  limit = 700,
+  fetchImpl: typeof fetch = fetch,
+): Promise<unknown> {
+  const url = `${READ_HOST}/apis/v3/games/fba/seasons/${season}/segments/0/leaguedefaults/3?view=kona_player_info`;
+  const res = await fetchImpl(url, {
+    headers: {
+      Accept: "application/json",
+      "X-Fantasy-Filter": JSON.stringify({
+        players: {
+          limit,
+          sortAppliedStatTotal: { sortAsc: false, sortPriority: 1, value: `00${season}` },
+        },
+      }),
+    },
+  });
+  if (!res.ok) throw new EspnError(res.status, `ESPN ${res.status} (season pool ${season})`);
+  return res.json();
+}
+
 /** Free agents and waiver players, most-owned first. */
 export const freeAgentFilter = (limit = 300) => ({
   players: {

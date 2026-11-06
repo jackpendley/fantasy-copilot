@@ -206,6 +206,24 @@ function leagueDistributions(season: number) {
   return dist;
 }
 
+/**
+ * Usage rates (percent) from the stored PBP Stats seasons, for many players at once: keyed
+ * `${season}|${nameKey(name)}` (a name shared by two players keeps the first; rare).
+ */
+export async function pbpUsages(names: string[], seasons: number[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!dbConfigured() || !names.length) return out;
+  const rows = await db()<{ season: number; name_key: string; usage: number | null }[]>`
+    select season, name_key, usage from pbp_players
+    where season = any(${seasons}::int[]) and name_key = any(${names.map(nameKey)}::text[])
+  `;
+  for (const r of rows) {
+    const k = `${r.season}|${r.name_key}`;
+    if (r.usage != null && !out.has(k)) out.set(k, r.usage);
+  }
+  return out;
+}
+
 /** His stored PBP Stats season (team breaks a name tie); null if not stored. */
 export async function pbpPlayer(name: string, team: string, season: number) {
   if (!dbConfigured()) return null;

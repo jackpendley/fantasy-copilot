@@ -72,7 +72,7 @@ Today (PRs #79–#103) did two things:
 
 ## Waiting on Jack
 
-- **Vercel's Git auto-deploy** was slow on Nov 5 (merged commits sat 5–30 min with no commit status). Jack OK'd deploying `main` from the dashboard when it happens. If it recurs, check github.com/settings/installations → Vercel for a pending permission request (that page needs his password).
+- **Vercel's Git auto-deploy** was slow on Nov 5 (merged commits sat 5–30 min with no commit status). Jack checked the Vercel GitHub app's permissions (github.com/settings/installations → Vercel) the same evening. If merges still don't deploy within a few minutes, deploy `main` from the dashboard (Jack's OK) and look again.
 - **1-minute transaction watch:** deferred until CPU has room (~0.1 s per call, ~2 min a day). The 5-minute watch stays.
 - **Optional:** the full job could drop from ~14 to ~7 min if moves beyond each card's opening drop ran to ±0.75 instead of ±0.5.
 

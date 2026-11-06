@@ -21,6 +21,9 @@ import { TeamLogo } from "./team-logo";
 // row has the same fixed height, each line on one line (shrunk to fit when it must).
 const ROW = "h-[58px] sm:h-[76px]";
 
+/** Statuses that keep a player out today (greyed). */
+const OUT_STATUSES = new Set(["OUT", "INJURY_RESERVE", "SUSPENSION"]);
+
 function GameText({ game }: { game: H2HGame | null }) {
   if (!game) return <span>No game</span>;
   return (
@@ -62,22 +65,7 @@ function Score({ c, right }: { c: H2HCell; right: boolean }) {
           c.points == null && "text-muted-foreground",
         )}
       >
-        <span className="relative">
-          {c.points != null ? fmtPts(c.points) : c.game ? "–" : ""}
-          {/* While his game is on: green on the court, grey on the bench (outside the text, so
-              nothing moves). */}
-          {live && c.onCourt != null && (
-            <span
-              className={cn(
-                "absolute top-1/2 size-1.5 -translate-y-1/2 rounded-full",
-                right ? "-right-2.5" : "-left-2.5",
-                c.onCourt ? "bg-success" : "bg-muted-foreground/40",
-              )}
-              title={c.onCourt ? "On the court" : "On the bench"}
-              aria-label={c.onCourt ? "On the court" : "On the bench"}
-            />
-          )}
-        </span>
+        {c.points != null ? fmtPts(c.points) : c.game ? "–" : ""}
       </div>
       {c.proj != null && (
         <div
@@ -112,6 +100,11 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
     );
   }
   const stats = c.line ? keepStatsTogether(statSummary(c.line)) : null;
+  // ESPN-app style: greyed when he won't play today (no game, or ruled out), green while he's on
+  // the court (a tint plus an edge on his side of the board, so it isn't color alone), plain
+  // otherwise (before tip, on the bench during his game, after it).
+  const inactive = !c.game || OUT_STATUSES.has(c.status);
+  const onCourt = c.game?.state === "in" && c.onCourt === true;
   // Logo, name, positions and status. On phones the name shrinks to fit instead of being cut.
   const nameLine = (phone: boolean) => (
     <div className={cn("flex min-w-0 items-center gap-0.5 sm:gap-1", right && "flex-row-reverse")}>
@@ -143,10 +136,14 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
         ROW,
         "flex items-center px-0.5 hover:bg-muted/40 sm:gap-2 sm:px-3",
         right && "flex-row-reverse",
-        !c.game && "opacity-55",
-        c.game?.state === "in" && "bg-success/5",
+        inactive && "opacity-55",
+        onCourt &&
+          (right
+            ? "bg-success/10 shadow-[inset_-3px_0_0_0_var(--color-success)]"
+            : "bg-success/10 shadow-[inset_3px_0_0_0_var(--color-success)]"),
       )}
     >
+      {onCourt && <span className="sr-only">On the court.</span>}
       {/* Phones in portrait: the Today row without the photo. Three single lines in a fixed
           height; when one is too wide, all the board's text shrinks together (FitGroup in
           matchup-days.tsx). The score sits in the corner beside the name and game, so the

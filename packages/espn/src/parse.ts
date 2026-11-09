@@ -205,6 +205,7 @@ export interface FantasyTeam {
   ownerId: string | null;
   wins: number;
   losses: number;
+  ties: number;
   pointsFor: number;
   /** Season-to-date lineup moves and waiver adds (`transactionCounter`), when ESPN sends it. */
   activity: {
@@ -230,6 +231,7 @@ export function parseTeams(data: Json): FantasyTeam[] {
     ownerId: t.primaryOwner ?? null,
     wins: t.record?.overall?.wins ?? 0,
     losses: t.record?.overall?.losses ?? 0,
+    ties: t.record?.overall?.ties ?? 0,
     pointsFor: t.record?.overall?.pointsFor ?? 0,
     activity: t.transactionCounter
       ? {

@@ -28,6 +28,7 @@ const team = (id: number, roster: RosterPlayer[]): FantasyTeam => ({
   ownerId: null,
   wins: 0,
   losses: 0,
+  ties: 0,
   pointsFor: 0,
   activity: null,
   roster,

@@ -231,6 +231,20 @@ export function waiverAnalysis(a: WaiverInputs): {
 
   // Rest of season with each move, by lineup fit (positions, schedule, injuries, IL returns).
   const baseSeason = a.season ? teamValue(a.roster, a.season) : null;
+  // A move that takes effect on a later day (a claim, or any move after the lock) leaves the
+  // days before it as they are: both rosters are compared from that day on.
+  const baseFrom = new Map<number, ReturnType<typeof teamValue>>();
+  const seasonFrom = (day: number) => {
+    if (day <= a.season!.fromDay) return { ctx: a.season!, base: baseSeason! };
+    const ctx = { ...a.season!, fromDay: day };
+    if (!baseFrom.has(day)) baseFrom.set(day, teamValue(a.roster, ctx));
+    return { ctx, base: baseFrom.get(day)! };
+  };
+  /** The first day a move with this add counts (a claim processes, or tomorrow after the lock). */
+  const moveDay = (c: WaiverCandidate) => availableFrom.get(c.player.id) ?? week.fromPeriod;
+  /** The move waits for that day: a waiver claim, or any move once today's roster has locked. */
+  const delayed = (c: WaiverCandidate) =>
+    moveDay(c) > week.fromPeriod && (Boolean(a.rosterLocked) || c.status === "WAIVERS");
   // Points to wins: a weekly matchup's win chance moves by about this much per point of
   // margin (the slope of the week's win probability at an even matchup and a typical week).
   const typicalWeek = baseSeason
@@ -252,18 +266,20 @@ export function waiverAnalysis(a: WaiverInputs): {
         ilCuts: [],
       };
     }
-    // A waiver claim plays only once it clears.
+    // A delayed move counts from its day; otherwise the add plays once he can (a game of his
+    // already under way today).
     const from = availableFrom.get(c.player.id) ?? a.season.fromDay;
+    const at = seasonFrom(delayed(c) ? from : a.season.fromDay);
     const ctx =
-      from > a.season.fromDay
+      from > at.ctx.fromDay
         ? {
-            ...a.season,
-            outUntil: new Map(a.season.outUntil).set(
+            ...at.ctx,
+            outUntil: new Map(at.ctx.outUntil).set(
               c.player.id,
-              Math.max(from, a.season.outUntil.get(c.player.id) ?? 0),
+              Math.max(from, at.ctx.outUntil.get(c.player.id) ?? 0),
             ),
           }
-        : a.season;
+        : at.ctx;
     const roster = [
       ...a.roster
         .filter((p) => p !== d.p)
@@ -271,13 +287,14 @@ export function waiverAnalysis(a: WaiverInputs): {
       { ...c.player, slot: "BE" },
     ];
     const v = teamValue(roster, ctx);
+    const b = at.base;
     return {
-      rosDelta: v.regular + v.playoffs - (baseSeason.regular + baseSeason.playoffs),
-      seasonScore: weighted(v) - weighted(baseSeason),
+      rosDelta: v.regular + v.playoffs - (b.regular + b.playoffs),
+      seasonScore: weighted(v) - weighted(b),
       addUsage: v.usage.get(c.player.id) ?? null,
-      dropStarts: d.p ? (baseSeason.usage.get(d.p.id)?.starts ?? 0) : null,
+      dropStarts: d.p ? (b.usage.get(d.p.id)?.starts ?? 0) : null,
       dropCutFor: d.p
-        ? (baseSeason.activations.find((x) => x.drop?.id === d.p!.id)?.player.name ?? null)
+        ? (b.activations.find((x) => x.drop?.id === d.p!.id)?.player.name ?? null)
         : null,
       ilCuts: v.activations.flatMap((x) =>
         x.drop ? [{ back: x.player.name, drop: x.drop.name }] : [],
@@ -292,14 +309,12 @@ export function waiverAnalysis(a: WaiverInputs): {
   for (const c of shortlist.values()) {
     const options: StreamOption[] = [];
     for (const d of drops) {
-      // A drop made after the lock still plays today; otherwise he's gone now.
-      const keepToday = a.rosterLocked && d.p;
-      const roster = [
-        ...current.filter((p) => keepToday || p !== d.p),
-        { ...c.player, slot: "BE" },
-      ];
+      // The dropped player plays until the move takes effect (a claim processes, or tomorrow
+      // after the lock); a free-agent move before the lock is immediate.
+      const keep = delayed(c) && d.p;
+      const roster = [...current.filter((p) => keep || p !== d.p), { ...c.player, slot: "BE" }];
       const availableUntil = new Map(week.availableUntil ?? []);
-      if (keepToday) availableUntil.set(d.p!.id, week.fromPeriod);
+      if (keep) availableUntil.set(d.p!.id, moveDay(c) - 1);
       const tw = projectTeamWeek(roster, { ...week, availableFrom, availableUntil });
       const deltaPts = tw.remaining - baseline.remaining;
       const starts = [...tw.startsByDay.values()].reduce((s, x) => s + x.size, 0);

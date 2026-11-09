@@ -99,6 +99,8 @@ export interface SeasonOutcome {
   playoffs: number[];
   /** Each team's share of the playoff replays it won (input order); 1 for the champion without replays. */
   titleShares: number[];
+  /** Each team's points by period (input order; index = period), banked points included. */
+  points: number[][];
 }
 
 export interface SimTeamResult {
@@ -735,6 +737,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       seed1: teams[seeds[0]!]!.id,
       playoffs: seeds.map((i) => teams[i]!.id),
       titleShares: Array.from(shares),
+      points: weekPts.map((w) => Array.from(w)),
     });
     seasonsDone++;
     yield summary;

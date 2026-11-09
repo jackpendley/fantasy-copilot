@@ -151,6 +151,20 @@ export async function enqueueSimJob(
   return m.step("store", () => storeJob(ctx, build.base, built));
 }
 
+/**
+ * One move as a job would simulate it right now: the season as it stands and the move built
+ * on it (for a one-off simulation elsewhere; nothing is stored). Null when the move isn't one
+ * the job would check (its add or drop is gone).
+ */
+export async function moveSimInput(
+  key: string,
+): Promise<{ teamId: number; base: WireInput; move: WireMove } | null> {
+  if (!dbConfigured()) return null;
+  const { build } = await prepareJob(null, [key], new CpuMeter());
+  const move = buildSimMoves(build).moves.find((m) => m.key === key);
+  return move ? { teamId: build.teamId, base: build.base, move } : null;
+}
+
 /** The job's own facts, kept with its build task until the moves come back. */
 interface JobContext {
   trigger: string | null;

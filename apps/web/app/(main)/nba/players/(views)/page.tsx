@@ -18,6 +18,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
 import { DeepTrade } from "@/components/fc/deep-trade";
+import { FindPackages } from "@/components/fc/find-packages";
 import { tradeKey } from "@/lib/nba/sim-moves";
 import { interestTargets, tradeForPackages, tradeHref } from "@/lib/nba/trade-view";
 import type { TradeIdea } from "@/lib/nba/trade";
@@ -170,8 +171,9 @@ function OnMyRoster({ ids, roster }: { ids: number[]; roster: { id: number; name
 }
 
 /**
- * "Trade for him": each watched player on another team with the best packages that get him
- * (the same rules as Trades' ideas), and each one's season simulation once it has one.
+ * "Trade for him": each watched player on another team, with the best packages that get him
+ * (the same rules as Trades' ideas) once Jack asks for them, and each one's season simulation.
+ * Nothing is searched until he asks (Nov 9: it used to run, and re-simulate, with every job).
  */
 async function TradeFor({
   rosters,
@@ -182,7 +184,7 @@ async function TradeFor({
 }) {
   const targets = interestTargets(rosters);
   if (!targets.length) return null;
-  const { packages, searched, updating } = await tradeForPackages(rosters);
+  const { packages, foundAt, asking } = await tradeForPackages(rosters);
   const keyOf = (i: TradeIdea) =>
     tradeKey(
       i.partnerId,
@@ -200,6 +202,7 @@ async function TradeFor({
       {targets.map((id) => {
         const { team, player } = owner.get(id)!;
         const list = packages.get(id) ?? [];
+        const found = foundAt.get(id);
         return (
           <div key={id} className="space-y-2 px-3 py-3">
             <div className="flex items-center gap-2">
@@ -216,47 +219,50 @@ async function TradeFor({
                 Trade for him
               </Pill>
             </div>
-            {list.length ? (
-              list.map((i, n) => {
-                const k = keyOf(i);
-                const sim = deep?.sims[k];
-                return (
-                  <div key={k} className="space-y-1.5">
-                    <Link
-                      href={tradeHref(
-                        i.partnerId,
-                        i.give.map((p) => p.id),
-                        i.get.map((p) => p.id),
-                      )}
-                      className="block text-sm hover:underline"
-                    >
-                      {n === 0 ? "Best package: " : "Or: "}
-                      give {i.give.map((p) => p.name).join(" + ")} for{" "}
-                      {i.get.map((p) => p.name).join(" + ")}
-                      {i.acceptance && (
-                        <span className="text-xs text-muted-foreground">
-                          {" "}
-                          · {i.acceptance.realism}
-                        </span>
-                      )}
-                    </Link>
-                    {sim ? (
-                      <DeepTrade sim={sim} state={deep?.states[k]} />
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Not simulated yet.</p>
+            {list.map((i, n) => {
+              const k = keyOf(i);
+              const sim = deep?.sims[k];
+              return (
+                <div key={k} className="space-y-1.5">
+                  <Link
+                    href={tradeHref(
+                      i.partnerId,
+                      i.give.map((p) => p.id),
+                      i.get.map((p) => p.id),
                     )}
-                  </div>
-                );
-              })
-            ) : (
+                    className="block text-sm hover:underline"
+                  >
+                    {n === 0 ? "Best package: " : "Or: "}
+                    give {i.give.map((p) => p.name).join(" + ")} for{" "}
+                    {i.get.map((p) => p.name).join(" + ")}
+                    {i.acceptance && (
+                      <span className="text-xs text-muted-foreground">
+                        {" "}
+                        · {i.acceptance.realism}
+                      </span>
+                    )}
+                  </Link>
+                  {sim ? (
+                    <DeepTrade sim={sim} state={deep?.states[k]} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Season simulation: queued.</p>
+                  )}
+                </div>
+              );
+            })}
+            {found && !list.length && (
               <p className="text-xs text-muted-foreground">
-                {updating
-                  ? "Searching packages…"
-                  : !searched.has(id)
-                    ? "Packages are now searched only when you ask (a button for it is coming in the next update)."
-                    : "No package that raises your lineup passes their manager's market check right now."}
+                No package that raises your lineup passes their manager&apos;s market check.
               </p>
             )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <FindPackages playerId={id} searching={asking.has(id)} again={found != null} />
+              {found && !asking.has(id) && (
+                <span className="text-xs text-muted-foreground">
+                  Searched {clearsAt(found.getTime())}
+                </span>
+              )}
+            </div>
           </div>
         );
       })}
@@ -360,7 +366,7 @@ export default async function MovesPage({
     if (ex && ey) return ey.title.d - ex.title.d;
     return Number(!!ey) - Number(!!ex);
   });
-  // Streams that help this week but cost more later than they gain now.
+  // This week's streams: the adds that raise this week's win chance most (not already above).
   const { streams } = shownNow;
   return (
     <>
@@ -409,8 +415,24 @@ export default async function MovesPage({
             </Callout>
           )}
 
-          {/* Jack's ESPN watch list: free agents get the usual card, players on other teams
-              the best packages that get him (the worker's targeted search). */}
+          {/* This week only: the adds that raise this week's win chance the most. */}
+          {streams.length > 0 && (
+            <section className="space-y-1.5 pt-2">
+              <SectionTitle aside="This week only: ranked by your win chance this week">
+                Best streams this week
+              </SectionTitle>
+              <p className="px-1 text-xs text-muted-foreground">
+                Adds that help most in this week&apos;s matchup. Some cost rest-of-season value
+                later: each card shows the season simulation.
+              </p>
+              <div className="divide-y overflow-hidden rounded-xl border bg-card">
+                {streams.map(card)}
+              </div>
+            </section>
+          )}
+
+          {/* Jack's ESPN watch list: free agents get the usual card; players on other teams get
+              the best packages that get him when he asks (the worker's targeted search). */}
           {v.data.me.watchList.length > 0 && (
             <section className="space-y-1.5 pt-2">
               <SectionTitle aside="Your ESPN watch list">Interested</SectionTitle>
@@ -422,7 +444,7 @@ export default async function MovesPage({
               <Suspense
                 fallback={
                   <div className="rounded-xl border bg-card px-3 py-4 text-sm text-muted-foreground">
-                    Loading trade packages…
+                    Loading watched players on other teams…
                   </div>
                 }
               >
@@ -436,20 +458,6 @@ export default async function MovesPage({
               </Suspense>
               <OnMyRoster ids={v.data.me.watchList} roster={v.data.ahead.me.roster} />
             </section>
-          )}
-
-          {streams.length > 0 && (
-            <details className="group">
-              <summary className="cursor-pointer list-none px-1 text-xs font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-                This-week-only streams ({streams.length}): they help now but cost more later
-                <span className="ml-1 inline-block transition-transform group-open:rotate-180">
-                  ▾
-                </span>
-              </summary>
-              <div className="mt-1.5 divide-y overflow-hidden rounded-xl border bg-card">
-                {streams.map(card)}
-              </div>
-            </details>
           )}
         </DeepLive>
       </section>

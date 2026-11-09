@@ -157,42 +157,114 @@ async function computeAndStore(v: LeagueView, fingerprint: string): Promise<Trad
 
 /**
  * Queue the search for the worker (its result lands in view_cache under KEY). The Interested
- * list's packages are searched only when Jack asks (Nov 9): they were re-searched, and
- * re-simulated at the top tier, with every job.
+ * list's packages are searched only when Jack asks (askPackages, Nov 9): they used to be
+ * re-searched, and re-simulated at the top tier, with every job.
  */
 async function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
   return enqueueTask("trade-search", fingerprint, searchInput(v));
 }
 
-export interface TradeForPackages {
-  /** Per watched player on another team: the best packages that get him (best first). */
-  packages: Map<number, TradeIdea[]>;
-  /** Searched at least once for him (an empty list then means no package works). */
-  searched: Set<number>;
-  /** A search for them is running. */
-  updating: boolean;
+/** Watched players whose packages Jack asked for and that are still being searched. */
+const ASKS_KEY = "trade-for-asks";
+/** An ask whose search never came back is forgotten after this long. */
+const ASK_MS = 30 * 60_000;
+
+/** Packages per watched player, with when they were found (older rows: a bare list). */
+type StoredPackages = Record<string, { at: string; ideas: StoredIdea[] } | StoredIdea[]>;
+
+const liveAsks = (asks: Record<string, string>, now: number) =>
+  Object.fromEntries(Object.entries(asks).filter(([, at]) => now - Date.parse(at) < ASK_MS));
+
+async function readAsks(now: number): Promise<Record<string, string>> {
+  return liveAsks(
+    (await readView<Record<string, string>>(ASKS_KEY).catch(() => null))?.value ?? {},
+    now,
+  );
 }
 
 /**
- * The Interested list's packages, from the last search (refreshed with the trade ideas;
- * packages whose players have moved are left out).
+ * Jack asked for a watched player's trade packages: queue the targeted search on the worker
+ * (with any other asks still waiting, since a newer task replaces a queued one). False when he
+ * isn't a watched player on another team.
  */
-export async function tradeForPackages(v: Rosters): Promise<TradeForPackages> {
-  const [row, updating] = dbConfigured()
+export async function askPackages(playerId: number, now = Date.now()): Promise<boolean> {
+  const v = await loadLeagueView();
+  if (!interestTargets(v).includes(playerId)) return false;
+  const asks = { ...(await readAsks(now)), [playerId]: new Date(now).toISOString() };
+  await writeView(ASKS_KEY, "", asks, 0);
+  const targets = Object.keys(asks)
+    .map(Number)
+    .sort((a, b) => a - b);
+  await enqueueTask("trade-for", fingerprintOf({ trades: tradeFingerprint(v), targets }), {
+    ...searchInput(v),
+    targets,
+  });
+  return true;
+}
+
+/** Is a search for this player's packages under way? */
+export async function packagesAsked(playerId: number, now = Date.now()): Promise<boolean> {
+  return String(playerId) in (await readAsks(now));
+}
+
+/**
+ * The worker found packages: store them by player (with the time), close those asks, and return
+ * the packages to simulate (each player's best to the top tier).
+ */
+export async function packagesFound(
+  result: Record<string, StoredIdea[]>,
+  fingerprint: string,
+  now = Date.now(),
+): Promise<{ spec: StoredIdea; top: boolean }[]> {
+  const at = new Date(now).toISOString();
+  const [row, asks] = await Promise.all([
+    readView<StoredPackages>(TRADE_FOR_KEY).catch(() => null),
+    readAsks(now),
+  ]);
+  const value: StoredPackages = { ...row?.value };
+  for (const [id, ideas] of Object.entries(result)) {
+    value[id] = { at, ideas };
+    delete asks[id];
+  }
+  await writeView(TRADE_FOR_KEY, fingerprint, value, 0);
+  await writeView(ASKS_KEY, "", asks, 0);
+  return Object.values(result).flatMap((ideas) =>
+    ideas.slice(0, PACKAGES_PER_TARGET).map((spec, n) => ({ spec, top: n === 0 })),
+  );
+}
+
+export interface TradeForPackages {
+  /** Per watched player on another team: the best packages that get him (best first). */
+  packages: Map<number, TradeIdea[]>;
+  /** When each player's packages were found (an empty list then means no package works). */
+  foundAt: Map<number, Date>;
+  /** Searches under way, by player. */
+  asking: Set<number>;
+}
+
+/**
+ * The Interested list's packages, from the last search Jack asked for (packages whose players
+ * have moved are left out).
+ */
+export async function tradeForPackages(v: Rosters, now = Date.now()): Promise<TradeForPackages> {
+  const [row, asks] = dbConfigured()
     ? await Promise.all([
-        readView<Record<string, StoredIdea[]>>(TRADE_FOR_KEY).catch(() => null),
-        taskPending("trade-for").catch(() => false),
+        readView<StoredPackages>(TRADE_FOR_KEY).catch(() => null),
+        readAsks(now).catch(() => ({})),
       ])
-    : [null, false];
+    : [null, {}];
   const packages = new Map<number, TradeIdea[]>();
-  const searched = new Set<number>();
+  const foundAt = new Map<number, Date>();
   for (const id of interestTargets(v)) {
     const stored = row?.value[id];
     if (!stored) continue;
-    searched.add(id);
-    packages.set(id, hydrate(stored, v).slice(0, PACKAGES_PER_TARGET));
+    const { at, ideas } = Array.isArray(stored)
+      ? { at: row!.computedAt.toISOString(), ideas: stored }
+      : stored;
+    foundAt.set(id, new Date(at));
+    packages.set(id, hydrate(ideas, v).slice(0, PACKAGES_PER_TARGET));
   }
-  return { packages, searched, updating };
+  return { packages, foundAt, asking: new Set(Object.keys(asks).map(Number)) };
 }
 
 export interface TradeTargets {

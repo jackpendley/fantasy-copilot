@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { acceptance, marketContext, marketValue } from "@/lib/nba/market";
-import { compact, runTradeFor, runTradeSearch, tradeSearchInput } from "@/lib/nba/trade-task";
+import {
+  compact,
+  runTradeFor,
+  runTradeSearch,
+  runTradeWith,
+  tradeSearchInput,
+} from "@/lib/nba/trade-task";
 import {
   applyTrade,
   evaluateTrade,
@@ -417,5 +423,32 @@ describe("the trade search as a worker task", () => {
     // Never giving a protected player.
     const kept = runTradeFor({ ...input, me: { ...input.me, noTrade: [11, 12] }, targets: [15] });
     for (const i of kept[15] ?? []) expect(i.give.some((id) => id === 11 || id === 12)).toBe(false);
+  });
+
+  it("finds trades with one team only (the Trades page's per-team search)", () => {
+    const jack = [p(11, "C", 20, 23), p(12, "C", 20, 23), p(13, "PG", 10, 1), p(14, "PG", 9, 1)];
+    const rival = [p(15, "C", 40, 40), p(16, "PG", 5, 1), p(17, "PG", 4, 1), p(18, "C", 3, 1)];
+    const other = [p(21, "C", 40, 40), p(22, "PG", 5, 1), p(23, "PG", 4, 1), p(24, "C", 3, 1)];
+    const free = [p(19, "PG", 18, 1)];
+    const mkt = marketContext([...jack, ...rival, ...other, ...free], new Map([[21, 3]]));
+    const input = JSON.parse(
+      JSON.stringify(
+        tradeSearchInput(
+          { teamId: 1, roster: jack },
+          [
+            { teamId: 2, roster: rival },
+            { teamId: 3, roster: other },
+          ],
+          ctx,
+          mkt,
+          free,
+        ),
+      ),
+    );
+    const out = runTradeWith({ ...input, partnerId: 3 });
+    expect(out.partnerId).toBe(3);
+    expect(out.ideas.length).toBeGreaterThan(0);
+    for (const i of out.ideas) expect(i.partnerId).toBe(3);
+    expect(runTradeWith({ ...input, partnerId: 9 }).ideas).toEqual([]);
   });
 });

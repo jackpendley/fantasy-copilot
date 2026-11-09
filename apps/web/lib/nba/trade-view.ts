@@ -267,6 +267,83 @@ export async function tradeForPackages(v: Rosters, now = Date.now()): Promise<Tr
   return { packages, foundAt, asking: new Set(Object.keys(asks).map(Number)) };
 }
 
+/** "Find trades with {team}": the latest search per team, and the searches under way. */
+const WITH_KEY = "trade-with";
+const WITH_ASKS_KEY = "trade-with-asks";
+
+type StoredWith = Record<string, { at: string; ideas: StoredIdea[] }>;
+
+async function readWithAsks(now: number): Promise<Record<string, string>> {
+  return liveAsks(
+    (await readView<Record<string, string>>(WITH_ASKS_KEY).catch(() => null))?.value ?? {},
+    now,
+  );
+}
+
+/** Jack asked for trades with one team: queue that search on the worker. */
+export async function askTradesWith(partnerId: number, now = Date.now()): Promise<boolean> {
+  const v = await loadLeagueView();
+  if (partnerId === v.data.me.id || !v.data.teams.some((t) => t.id === partnerId)) return false;
+  await writeView(
+    WITH_ASKS_KEY,
+    "",
+    { ...(await readWithAsks(now)), [partnerId]: new Date(now).toISOString() },
+    0,
+  );
+  await enqueueTask("trade-with", fingerprintOf({ trades: tradeFingerprint(v), partnerId }), {
+    ...searchInput(v),
+    partnerId,
+  });
+  return true;
+}
+
+/** Is a search for trades with this team under way? */
+export async function tradesWithAsked(partnerId: number, now = Date.now()): Promise<boolean> {
+  return String(partnerId) in (await readWithAsks(now));
+}
+
+/** The worker found trades with a team: store them and close the ask. */
+export async function tradesWithFound(
+  result: { partnerId: number; ideas: StoredIdea[] },
+  now = Date.now(),
+): Promise<void> {
+  const [row, asks] = await Promise.all([
+    readView<StoredWith>(WITH_KEY).catch(() => null),
+    readWithAsks(now),
+  ]);
+  delete asks[result.partnerId];
+  await writeView(
+    WITH_KEY,
+    "",
+    { ...row?.value, [result.partnerId]: { at: new Date(now).toISOString(), ideas: result.ideas } },
+    0,
+  );
+  await writeView(WITH_ASKS_KEY, "", asks, 0);
+}
+
+/**
+ * Trades with one team: its own search when Jack asked for one, else the league-wide ideas
+ * with that team (ideas whose players have moved are left out).
+ */
+export async function tradesWith(
+  v: Rosters,
+  partnerId: number,
+  leagueWide: TradeIdea[],
+  now = Date.now(),
+): Promise<{ ideas: TradeIdea[]; foundAt: Date | null; asking: boolean }> {
+  const [row, asks] = dbConfigured()
+    ? await Promise.all([
+        readView<StoredWith>(WITH_KEY).catch(() => null),
+        readWithAsks(now).catch(() => ({})),
+      ])
+    : [null, {}];
+  const own = row?.value[partnerId];
+  const asking = String(partnerId) in asks;
+  if (!own)
+    return { ideas: leagueWide.filter((i) => i.partnerId === partnerId), foundAt: null, asking };
+  return { ideas: hydrate(own.ideas, v), foundAt: new Date(own.at), asking };
+}
+
 export interface TradeTargets {
   ideas: TradeIdea[];
   /** False when rosters or news changed since the search (the ideas shown are the last ones). */

@@ -15,8 +15,16 @@ import { fmtDayTime, fmtPts } from "@/lib/format";
 import { loadLeagueView } from "@/lib/nba/league-view";
 import { marketValue, type MarketContext, type Realism } from "@/lib/nba/market";
 import { perGameProjection } from "@/lib/nba/projection";
-import { evaluateTrade, tradeSize, type RosterMoves, type TradeEval } from "@/lib/nba/trade";
-import { tradeHref, tradeTargets } from "@/lib/nba/trade-view";
+import {
+  evaluateTrade,
+  tradeSize,
+  type RosterMoves,
+  type TradeEval,
+  type TradeIdea,
+} from "@/lib/nba/trade";
+import { tradeHref, tradeTargets, tradesWith } from "@/lib/nba/trade-view";
+import { askPending } from "@/lib/nba/asked-trades";
+import { WorkerSearch } from "@/components/fc/worker-search";
 import { rosterKeyOf } from "@/lib/nba/move-checks";
 import type { ShownSim, ShownState } from "@/lib/nba/move-shown";
 import { DeepTrade, pts } from "@/components/fc/deep-trade";
@@ -158,13 +166,16 @@ function Evaluation({
   partner,
   addsLeft,
   deep,
+  pending,
 }: {
   e: TradeEval;
   partner: FantasyTeam;
   /** Jack's adds left this matchup week (null when unknown). */
   addsLeft: number | null;
-  /** The worker's simulation of this trade, when it's one of the stored ideas. */
+  /** The worker's simulation of this trade, when it has one (an idea, or asked for). */
   deep: { sim: ShownSim; state: ShownState | undefined } | null;
+  /** Jack asked to simulate it and the result is still coming. */
+  pending: boolean;
 }) {
   const rows = [
     { who: "You", d: e.mine },
@@ -231,11 +242,111 @@ function Evaluation({
         ) : (
           <SimulateTrade
             partnerId={partner.id}
-            partnerName={partner.name}
             give={e.give.map((p) => p.id)}
             get={e.get.map((p) => p.id)}
+            pending={pending}
           />
         )}
+      </div>
+    </section>
+  );
+}
+
+/** One trade idea: a link that opens it in the evaluator (where it can be simulated). */
+function IdeaRow({ i, partner, sim }: { i: TradeIdea; partner?: string; sim?: ShownSim }) {
+  return (
+    <Link
+      href={tradeHref(
+        i.partnerId,
+        i.give.map((p) => p.id),
+        i.get.map((p) => p.id),
+      )}
+      className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50"
+    >
+      <div className="hidden shrink-0 -space-x-2 sm:flex">
+        {[...i.give, ...i.get].slice(0, 4).map((p) => (
+          <PlayerAvatar key={p.id} id={p.id} name={p.name} size={28} />
+        ))}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm">
+          <span className="text-muted-foreground">Send</span> <Names players={i.give} />{" "}
+          <span className="text-muted-foreground">for</span>{" "}
+          <span className="font-medium">
+            <Names players={i.get} />
+          </span>
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+          {i.acceptance && <RealismPill realism={i.acceptance.realism} />}
+          <span>{tradeSize(i)}</span>
+          <span className="min-w-0 break-words">
+            · {partner} · their lineup {signed(i.theirs.regular + i.theirs.playoffs)}
+          </span>
+          <MovesBrief m={i.moves.mine} />
+        </div>
+      </div>
+      <div className="shrink-0 text-right tabular-nums">
+        <div className={cn("font-semibold", tone(i.mine.regular))}>{signed(i.mine.regular)}</div>
+        <div className="text-[11px] text-muted-foreground">{signed(i.mine.playoffs)} playoffs</div>
+        {sim && <div className="text-[11px] text-muted-foreground">title {pts(sim.title.d)}</div>}
+      </div>
+    </Link>
+  );
+}
+
+/**
+ * Trades with the team Jack opened: that team's own search when he asked for one ("Find trades
+ * with {team}", on the worker), else the league-wide ideas with that team.
+ */
+async function WithTeam({
+  view,
+  partner,
+}: {
+  view: Awaited<ReturnType<typeof loadLeagueView>>;
+  partner: FantasyTeam;
+}) {
+  const { ideas: leagueWide } = await tradeTargets(view);
+  const { ideas, foundAt, asking } = await tradesWith(view, partner.id, leagueWide);
+  const keyOf = (i: TradeIdea) =>
+    tradeKey(
+      i.partnerId,
+      i.give.map((p) => p.id),
+      i.get.map((p) => p.id),
+    );
+  const deep = await deepChecksFor(
+    ideas.map(keyOf),
+    rosterKeyOf(view.data.me.roster, view.data.injuries),
+  ).catch(() => null);
+  return (
+    <section className="space-y-1.5">
+      <SectionTitle aside="Ranked by your gain; tap one to evaluate or simulate it">
+        Best trades with {partner.name}
+      </SectionTitle>
+      {ideas.length ? (
+        <div className="divide-y overflow-hidden rounded-xl border bg-card">
+          {ideas.map((i) => (
+            <IdeaRow key={keyOf(i)} i={i} partner={partner.name} sim={deep?.sims[keyOf(i)]} />
+          ))}
+        </div>
+      ) : (
+        <Callout tone="info">
+          {foundAt
+            ? "No trade with this team raises your lineup and passes their manager's market check right now."
+            : "None of the league-wide ideas is with this team. Search this team's roster for more."}
+        </Callout>
+      )}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+        <WorkerSearch
+          url="/api/trades/with"
+          body={{ partnerId: partner.id }}
+          statusUrl={`/api/trades/with?team=${partner.id}`}
+          searching={asking}
+          label={foundAt ? "Search again" : `Find more trades with ${partner.name}`}
+          busyText="Searching their roster (usually a minute or two)…"
+        />
+        <span className="text-xs text-muted-foreground">
+          {foundAt ? `Searched ${fmtDayTime(foundAt)}.` : "From the league-wide search."}
+        </span>
       </div>
     </section>
   );
@@ -303,52 +414,12 @@ async function Targets({
       {shown.length ? (
         <div className="divide-y overflow-hidden rounded-xl border bg-card">
           {shown.map((i) => (
-            <Link
-              key={`${i.partnerId}-${i.give.map((p) => p.id).join(".")}-${i.get.map((p) => p.id).join(".")}`}
-              href={tradeHref(
-                i.partnerId,
-                i.give.map((p) => p.id),
-                i.get.map((p) => p.id),
-              )}
-              className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/50"
-            >
-              <div className="hidden shrink-0 -space-x-2 sm:flex">
-                {[...i.give, ...i.get].slice(0, 4).map((p) => (
-                  <PlayerAvatar key={p.id} id={p.id} name={p.name} size={28} />
-                ))}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-sm">
-                  <span className="text-muted-foreground">Send</span> <Names players={i.give} />{" "}
-                  <span className="text-muted-foreground">for</span>{" "}
-                  <span className="font-medium">
-                    <Names players={i.get} />
-                  </span>
-                </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                  {i.acceptance && <RealismPill realism={i.acceptance.realism} />}
-                  <span>{tradeSize(i)}</span>
-                  <span className="min-w-0 break-words">
-                    · {name.get(i.partnerId)} · their lineup{" "}
-                    {signed(i.theirs.regular + i.theirs.playoffs)}
-                  </span>
-                  <MovesBrief m={i.moves.mine} />
-                </div>
-              </div>
-              <div className="shrink-0 text-right tabular-nums">
-                <div className={cn("font-semibold", tone(i.mine.regular))}>
-                  {signed(i.mine.regular)}
-                </div>
-                <div className="text-[11px] text-muted-foreground">
-                  {signed(i.mine.playoffs)} playoffs
-                </div>
-                {deep?.sims[keyOf(i)] && (
-                  <div className="text-[11px] text-muted-foreground">
-                    title {pts(deep.sims[keyOf(i)]!.title.d)}
-                  </div>
-                )}
-              </div>
-            </Link>
+            <IdeaRow
+              key={keyOf(i)}
+              i={i}
+              partner={name.get(i.partnerId)}
+              sim={deep?.sims[keyOf(i)]}
+            />
           ))}
         </div>
       ) : (
@@ -409,6 +480,7 @@ export default async function TradesPage({
   const checked = key
     ? await deepChecksFor([key], rosterKeyOf(me.roster, v.data.injuries)).catch(() => null)
     : null;
+  const pending = key ? await askPending(key).catch(() => false) : false;
   const deepTrade =
     key && checked?.sims[key] ? { sim: checked.sims[key]!, state: checked.states[key] } : null;
   const size = sp.size && SIZE_ORDER.includes(sp.size) ? sp.size : null;
@@ -483,7 +555,27 @@ export default async function TradesPage({
       {partner && (give.length > 0 || get.length > 0) && !e && (
         <Callout tone="info">Pick at least one player on each side.</Callout>
       )}
-      {e && partner && <Evaluation e={e} partner={partner} addsLeft={addsLeft} deep={deepTrade} />}
+      {e && partner && (
+        <Evaluation
+          e={e}
+          partner={partner}
+          addsLeft={addsLeft}
+          deep={deepTrade}
+          pending={pending}
+        />
+      )}
+
+      {partner && (
+        <Suspense
+          fallback={
+            <div className="rounded-xl border bg-card px-3 py-6 text-center text-sm text-muted-foreground">
+              Loading trades with {partner.name}…
+            </div>
+          }
+        >
+          <WithTeam view={v} partner={partner} />
+        </Suspense>
+      )}
 
       <section className="space-y-1.5">
         <SectionTitle aside="Up to 3-for-3, ranked by your gain">Trade targets</SectionTitle>

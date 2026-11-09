@@ -73,3 +73,8 @@ export async function pendingAskedTrades(now = Date.now()): Promise<AskedTrade[]
   `;
   return stillPending(list, new Map(rows.map((r) => [r.key, r.settled_at])), now);
 }
+
+/** Is this trade still waiting for the result Jack asked for? */
+export async function askPending(key: string, now = Date.now()): Promise<boolean> {
+  return (await pendingAskedTrades(now)).some((a) => a.key === key);
+}

@@ -9,7 +9,7 @@ import { requestTradeChecks, storeBuiltJob } from "@/lib/nba/sim-jobs";
 import type { StoredIdea } from "@/lib/nba/trade-task";
 import { claimTask, finishTask, taskRunnerNeeded } from "@/lib/nba/worker-tasks";
 import { writeView } from "@/lib/view-cache";
-import { packagesFound } from "@/lib/nba/trade-view";
+import { packagesFound, tradesWithFound } from "@/lib/nba/trade-view";
 import { workerAuthorized } from "@/lib/worker-auth";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
       task.fingerprint,
     );
     after(() => requestTradeChecks(trades, "You asked for trade packages").catch(() => null));
+  } else if (task.kind === "trade-with") {
+    await tradesWithFound(body.result as { partnerId: number; ideas: StoredIdea[] });
   } else if (task.kind === "sim-build") {
     const job = await storeBuiltJob(
       body.id,

@@ -1,59 +1,53 @@
 "use client";
 
-import { useState } from "react";
+// Simulate a trade's season odds on the worker (app/api/trades/simulate): thousands of seasons
+// with and without it, to the top tier's precision. It takes a few minutes (a runner starts,
+// then the job), so the button checks every 20 seconds (a one-row read) and reloads the page
+// once the result is in. Read-only: nothing is sent to ESPN.
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
-interface Odds {
-  playoffs: number;
-  champ: number;
-  expWins: number;
-}
-interface Result {
-  seasons: number;
-  mine: { before: Odds; after: Odds };
-  theirs: { before: Odds; after: Odds };
-}
-
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
-
-function Delta({ before, after }: { before: number; after: number }) {
-  const d = (after - before) * 100;
-  return (
-    <span className="tabular-nums">
-      {pct(before)} → <span className="font-semibold">{pct(after)}</span>{" "}
-      <span
-        className={cn(
-          "text-xs",
-          Math.abs(d) < 0.05 ? "text-muted-foreground" : d > 0 ? "text-success" : "text-danger",
-        )}
-      >
-        ({d >= 0 ? "+" : ""}
-        {d.toFixed(1)})
-      </span>
-    </span>
-  );
-}
-
-/** Runs the season simulation with and without the trade (read-only; nothing goes to ESPN). */
 export function SimulateTrade({
   partnerId,
-  partnerName,
   give,
   get,
+  pending = false,
+  compact = false,
 }: {
   partnerId: number;
-  partnerName: string;
   give: number[];
   get: number[];
+  /** Already asked, and its result is still coming. */
+  pending?: boolean;
+  /** A small button (in a list of ideas). */
+  compact?: boolean;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
+  const router = useRouter();
+  const [key, setKey] = useState<string | null>(null);
+  const [busy, setBusy] = useState(pending);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!busy || !key) return;
+    const id = setInterval(async () => {
+      const r = await fetch(`/api/trades/simulate?key=${encodeURIComponent(key)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null);
+      if (r && !r.pending) {
+        clearInterval(id);
+        setBusy(false);
+        router.refresh();
+      }
+    }, 20_000);
+    return () => clearInterval(id);
+  }, [busy, key, router]);
+
   async function run() {
-    setBusy(true);
     setError(null);
+    setBusy(true);
     try {
       const res = await fetch("/api/trades/simulate", {
         method: "POST",
@@ -62,66 +56,31 @@ export function SimulateTrade({
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error ?? res.status);
-      setResult(out);
+      setKey(out.key);
     } catch (e) {
-      setError((e as Error).message);
-    } finally {
       setBusy(false);
+      setError((e as Error).message);
     }
   }
 
+  if (busy)
+    return (
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground" aria-live="polite">
+        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />
+        Simulating the season with and without it (a few minutes; this page updates when it&apos;s
+        done).
+      </p>
+    );
   return (
-    <div className="space-y-3">
-      <Button onClick={run} disabled={busy} variant={result ? "outline" : "default"}>
-        {busy ? "Simulating seasons…" : result ? "Run again" : "Simulate playoff & title odds"}
+    <div className="space-y-1">
+      <Button
+        onClick={run}
+        size={compact ? "sm" : "default"}
+        variant={compact ? "outline" : "default"}
+      >
+        Simulate season odds
       </Button>
-      {busy && (
-        <p className="text-xs text-muted-foreground">
-          Plays out the rest of the season hundreds of times, with and without the trade. Takes up
-          to a minute.
-        </p>
-      )}
-      {error && <p className="text-sm text-danger">{error}</p>}
-      {result && (
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-xs text-muted-foreground">
-                <th className="px-3 py-2 text-left font-medium" />
-                <th className="px-3 py-2 text-left font-medium">Playoffs</th>
-                <th className="px-3 py-2 text-left font-medium">Title</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              <tr>
-                <td className="px-3 py-2 font-medium">You</td>
-                <td className="px-3 py-2">
-                  <Delta before={result.mine.before.playoffs} after={result.mine.after.playoffs} />
-                </td>
-                <td className="px-3 py-2">
-                  <Delta before={result.mine.before.champ} after={result.mine.after.champ} />
-                </td>
-              </tr>
-              <tr>
-                <td className="px-3 py-2 font-medium break-words">{partnerName}</td>
-                <td className="px-3 py-2">
-                  <Delta
-                    before={result.theirs.before.playoffs}
-                    after={result.theirs.after.playoffs}
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <Delta before={result.theirs.before.champ} after={result.theirs.after.champ} />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="border-t px-3 py-2 text-xs text-muted-foreground">
-            {result.seasons} simulated seasons each, same random draws. Changes under about 2 points
-            are within simulation noise.
-          </p>
-        </div>
-      )}
+      {error && <p className="text-xs text-danger">{error}</p>}
     </div>
   );
 }

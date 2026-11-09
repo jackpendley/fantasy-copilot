@@ -18,7 +18,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Suspense } from "react";
 import { DeepTrade } from "@/components/fc/deep-trade";
-import { FindPackages } from "@/components/fc/find-packages";
+import { WorkerSearch } from "@/components/fc/worker-search";
 import { tradeKey } from "@/lib/nba/sim-moves";
 import { interestTargets, tradeForPackages, tradeHref } from "@/lib/nba/trade-view";
 import type { TradeIdea } from "@/lib/nba/trade";
@@ -256,7 +256,14 @@ async function TradeFor({
               </p>
             )}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <FindPackages playerId={id} searching={asking.has(id)} again={found != null} />
+              <WorkerSearch
+                url="/api/trades/packages"
+                body={{ playerId: id }}
+                statusUrl={`/api/trades/packages?id=${id}`}
+                searching={asking.has(id)}
+                label={found ? "Search again" : "Find trade packages"}
+                busyText="Searching packages (usually a minute or two). Their simulations follow."
+              />
               {found && !asking.has(id) && (
                 <span className="text-xs text-muted-foreground">
                   Searched {clearsAt(found.getTime())}

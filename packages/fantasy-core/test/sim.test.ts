@@ -410,6 +410,19 @@ describe("season outcomes", { timeout: 30_000 }, () => {
     expect(seasons).toBe(60);
     expect(res.find((r) => r.teamId === 2)!.champ).toBeCloseTo(champs / 60, 12);
   });
+
+  it("reports each team's points by week, whose regular-season sum is its points for", () => {
+    const input = goldenInput();
+    let pf = 0;
+    const res = simulateSeason({
+      ...input,
+      inspect: (_s, o) => {
+        const i = input.teams.findIndex((t) => t.id === 2);
+        for (let p = 1; p <= input.regularWeeks; p++) pf += o.points[i]![p] ?? 0;
+      },
+    });
+    expect(pf / 60).toBeCloseTo(res.find((r) => r.teamId === 2)!.expPointsFor, 6);
+  });
 });
 
 describe("playoff replays", { timeout: 60_000 }, () => {

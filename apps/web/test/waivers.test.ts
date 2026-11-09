@@ -287,6 +287,55 @@ describe("waiverAnalysis by lineup fit", () => {
     expect(top.laterPts).toBeCloseTo(top.seasonScore - top.deltaPts, 10);
   });
 
+  it("a claim changes nothing before it processes: the dropped player plays until then", () => {
+    // Clears on day 7, after this week (days 1-6): the week can't change, whatever the drop.
+    const claim = fa(31, "Guard", 99, 22, ["PG"], "WAIVERS", Date.parse("2026-10-26T07:00:00Z"));
+    const res = run([claim]);
+    const options = res.dropOptions.get(31)!;
+    expect(options.length).toBeGreaterThan(1);
+    for (const o of options) {
+      expect(o.deltaPts).toBe(0);
+      expect(o.deltaStarts).toBe(0);
+      expect(o.deltaWin).toBe(0);
+    }
+    // The season counts from day 7 too: the same as the move made then.
+    const fromDay7 = waiverAnalysis({
+      ...base,
+      roster,
+      freeAgents: [fa(31, "Guard", 99, 22, ["PG"])],
+      week: {
+        periods: [1, 2, 3, 4, 5, 6],
+        fromPeriod: 1,
+        games: daily,
+        slotCounts: slots,
+        injuries: [],
+      },
+      rosterLimit: 5,
+      lastDay: 20,
+      season: valueContext(daily, slots, 7, 20, 2),
+    }).dropOptions.get(31)!;
+    for (const o of options) {
+      const same = fromDay7.find((x) => x.drop?.id === o.drop?.id)!;
+      expect(o.seasonScore).toBeCloseTo(same.seasonScore, 10);
+      expect(o.rosDelta).toBeCloseTo(same.rosDelta, 10);
+    }
+  });
+
+  it("a claim for tomorrow keeps today's starter today; a free-agent move before the lock doesn't", () => {
+    // Drop the 12-point guard who starts at PG: as a claim (clears day 2) he still starts day 1.
+    const claim = run([
+      fa(31, "Guard", 99, 22, ["PG"], "WAIVERS", Date.parse("2026-10-21T07:00:00Z")),
+    ]).dropOptions.get(31)!;
+    const now = run([fa(31, "Guard", 99, 22, ["PG"])]).dropOptions.get(31)!;
+    const drop4 = (os: typeof claim) => os.find((o) => o.drop?.id === 4)!;
+    // Immediately: the guard plays all six days for him. As a claim: days 2-6, and he plays day 1.
+    expect(drop4(now).deltaStarts).toBe(0);
+    expect(drop4(claim).deltaStarts).toBe(0);
+    const perDay = drop4(now).deltaPts / 6;
+    expect(perDay).toBeGreaterThan(0);
+    expect(drop4(claim).deltaPts).toBeCloseTo(5 * perDay, 6);
+  });
+
   it("keeps every drop for an add, best first, for swapping the drop", () => {
     const res = run([fa(31, "Guard", 99, 22, ["PG"])]);
     const options = res.dropOptions.get(31)!;

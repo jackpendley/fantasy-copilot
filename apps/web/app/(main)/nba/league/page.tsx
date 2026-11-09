@@ -12,6 +12,7 @@ import { StandingsTable, type StandingsRow } from "@/components/fc/standings-tab
 import { WhatChanged } from "@/components/fc/what-changed";
 import { LiveRefresh } from "@/components/live-refresh";
 import { OddsChart } from "@/components/odds-chart";
+import { nowMs } from "@/lib/nba/calendar";
 import { minimalOn } from "@/lib/cpu-saver";
 import { RunOutlook } from "@/components/run-outlook";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
@@ -281,7 +282,7 @@ export default async function LeaguePage({
         <section className="space-y-1.5">
           <SectionTitle>Your odds over time</SectionTitle>
           <div className="rounded-xl border bg-card p-3 sm:p-4">
-            <OddsChart points={o.history} />
+            <OddsChart points={o.history} now={nowMs()} />
           </div>
         </section>
       )}

@@ -6,6 +6,7 @@ import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
 import { minimalOn } from "@/lib/cpu-saver";
 import { WinChart } from "@/components/win-chart";
+import { dayWindows } from "@/lib/chart-axes";
 import { ExpandCard } from "@/components/fc/expand-card";
 import { recordOf, weekSide, type WeekSide } from "@/lib/nba/week-summary";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
@@ -471,6 +472,17 @@ export default async function WeekPage({
   ];
 
   const days = periods.map((p) => ({ sp: p, date: dateForScoringPeriod(p) }));
+  // The chart's days: each one's tips, and its last logged point (a long game's end).
+  const dayOf = (t: number) => Math.floor((t - weekStart) / 86_400_000);
+  const winWindows = dayWindows(
+    weekStart,
+    periods.length,
+    periods.map((p) => data.games.filter((g) => g.scoringPeriodId === p).map((g) => g.date)),
+    periods.map((_, i) => {
+      const ts = winPoints.filter((w) => dayOf(w.t) === i).map((w) => w.t);
+      return ts.length ? Math.max(...ts) : null;
+    }),
+  );
 
   // Every day of the week head to head, rendered together so switching days is instant:
   // past days from ESPN's finals, today live, days ahead projected. ?day= picks the first one.
@@ -748,7 +760,7 @@ export default async function WeekPage({
             {mode === "now" ? "Win chance this week" : "Win chance during the week"}
           </SectionTitle>
           <div className="rounded-xl border bg-card p-3">
-            <WinChart points={winPoints} start={weekStart} days={periods.length} />
+            <WinChart points={winPoints} windows={winWindows} />
           </div>
         </section>
       )}

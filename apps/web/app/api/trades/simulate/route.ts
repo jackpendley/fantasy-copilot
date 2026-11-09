@@ -1,10 +1,17 @@
-// Simulate the season with and without a trade (read-only: nothing is sent to ESPN).
+// Simulate a trade Jack built (or picked) on the worker: the season with and without it, to
+// the top tier's precision (ADR-060), as an asked trade (lib/nba/asked-trades.ts). POST asks;
+// GET says whether its result is still coming (the button polls, then reloads once). Read-only:
+// nothing is sent to ESPN.
 
 import { NextResponse, type NextRequest } from "next/server";
-import { simulateTrade } from "@/lib/nba/outlook-run";
+import { askPending } from "@/lib/nba/asked-trades";
+import { loadLeagueView } from "@/lib/nba/league-view";
+import { requestTradeChecks } from "@/lib/nba/sim-jobs";
+import { tradeKey } from "@/lib/nba/sim-moves";
+import { evaluateTrade } from "@/lib/nba/trade";
+import { compact } from "@/lib/nba/trade-task";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
 
 const ids = (v: unknown) =>
   Array.isArray(v) && v.length > 0 && v.length <= 3 && v.every((x) => Number.isInteger(x) && x > 0)
@@ -14,17 +21,40 @@ const ids = (v: unknown) =>
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const partnerId = Number(body?.partnerId);
-  const give = ids(body?.give);
-  const get = ids(body?.get);
-  if (!Number.isInteger(partnerId) || !give || !get) {
+  const giveIds = ids(body?.give);
+  const getIds = ids(body?.get);
+  if (!Number.isInteger(partnerId) || !giveIds || !getIds) {
     return NextResponse.json(
       { error: "partnerId, give and get (1-3 player ids each) are required" },
       { status: 400 },
     );
   }
-  try {
-    return NextResponse.json(await simulateTrade(partnerId, give, get));
-  } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 409 });
-  }
+  const v = await loadLeagueView();
+  const me = v.data.me;
+  const partner = v.data.teams.find((t) => t.id === partnerId && t.id !== me.id);
+  const give = me.roster.filter((p) => giveIds.includes(p.id));
+  const get = partner?.roster.filter((p) => getIds.includes(p.id)) ?? [];
+  if (!partner || give.length !== giveIds.length || get.length !== getIds.length)
+    return NextResponse.json(
+      { error: "Those players have moved: reload the page" },
+      { status: 409 },
+    );
+  // The same evaluation as the page: the drops and pickups the trade needs come with it.
+  const e = evaluateTrade(
+    { teamId: me.id, roster: me.roster, noDrop: [...v.prefs.noDrop] },
+    { teamId: partner.id, roster: partner.roster },
+    give,
+    get,
+    v.ctx,
+    { freeAgents: v.freeAgents, market: v.market },
+  );
+  const spec = compact({ ...e, partnerId, score: 0 });
+  await requestTradeChecks([{ spec, top: true }], "You asked to simulate a trade");
+  return NextResponse.json({ key: tradeKey(partnerId, spec.give, spec.get) });
+}
+
+export async function GET(request: NextRequest) {
+  const key = request.nextUrl.searchParams.get("key");
+  if (!key) return NextResponse.json({ error: "key is required" }, { status: 400 });
+  return NextResponse.json({ pending: await askPending(key) });
 }

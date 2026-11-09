@@ -96,6 +96,24 @@ export function runTradeFor(
   return out;
 }
 
+/** Ideas kept per trade size when Jack asks for trades with one team. */
+export const PER_SIZE_WITH_TEAM = 4;
+
+/** "Find trades with {team}" (Trades page): the same search, with only that team. */
+export function runTradeWith(input: TradeSearchInput & { partnerId: number }): {
+  partnerId: number;
+  ideas: StoredIdea[];
+} {
+  const { ctx, market } = fromInput(input);
+  const partner = input.others.find((o) => o.teamId === input.partnerId);
+  const ideas = partner
+    ? findTradeTargets(input.me, [partner], ctx, market, input.freeAgents, {
+        perSize: PER_SIZE_WITH_TEAM,
+      }).map(compact)
+    : [];
+  return { partnerId: input.partnerId, ideas };
+}
+
 function fromInput(input: TradeSearchInput): { ctx: ValueContext; market: MarketContext } {
   return {
     ctx: {

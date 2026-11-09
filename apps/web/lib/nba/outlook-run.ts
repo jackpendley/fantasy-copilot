@@ -11,14 +11,12 @@ import {
 import { simulateSeasonAsync, type SimTeamResult } from "@fantasy-copilot/fantasy-core";
 import { db } from "../db";
 import { espnConfig } from "../env";
-import { loadPrefs } from "./prefs";
 import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
 import { weekPointsThroughToday } from "./matchup";
 import { buildOutlookInput } from "./outlook";
 import { absences } from "./availability";
 import { dayStarted } from "./roster";
-import { applyTrade, marginalValues, valueContext } from "./trade";
 
 export interface OutlookTeam {
   teamId: number;
@@ -235,93 +233,4 @@ export async function outlookHistory(teamId: number) {
       champ: r.t!.champ,
       expWins: r.t!.expWins,
     }));
-}
-
-/**
- * A trade's effect on playoff and title odds: the season simulated with and without it, same
- * seed and the same number of seasons, so most of the noise cancels.
- */
-export async function simulateTrade(
-  partnerId: number,
-  giveIds: number[],
-  getIds: number[],
-  seasons = 400,
-) {
-  const [{ data, previousTeams, freeAgents, fromDay, bankedNow, injured }, prefs] =
-    await Promise.all([outlookSetup(), loadPrefs()]);
-  const partner = data.teams.find((t) => t.id === partnerId);
-  if (!partner) throw new Error("unknown team");
-  const give = data.me.roster.filter((p) => giveIds.includes(p.id));
-  const get = partner.roster.filter((p) => getIds.includes(p.id));
-  if (give.length !== giveIds.length || get.length !== getIds.length) {
-    throw new Error("a player in this trade is no longer on that roster");
-  }
-  // Same roster balancing as the trade evaluation: uneven trades drop or add players.
-  const ctx = valueContext(
-    data.games,
-    data.settings.slotCounts,
-    fromDay,
-    LAST_SCORING_PERIOD,
-    data.settings.regularSeasonWeeks,
-    injured,
-  );
-  const taken = new Set<number>();
-  const mine = applyTrade(
-    data.me.roster,
-    give,
-    get,
-    ctx,
-    freeAgents,
-    taken,
-    marginalValues(data.me.roster, ctx),
-    prefs.noDrop,
-  );
-  const theirs = applyTrade(
-    partner.roster,
-    get,
-    give,
-    ctx,
-    freeAgents,
-    taken,
-    marginalValues(partner.roster, ctx),
-  );
-  const traded = data.teams.map((t) =>
-    t.id === data.me.id
-      ? { ...t, roster: mine.roster }
-      : t.id === partnerId
-        ? { ...t, roster: theirs.roster }
-        : t,
-  );
-  const cpu0 = process.cpuUsage();
-  // Playoffs replayed 10 times per season: title odds ~2.4x as precise per CPU second (ADR-047).
-  const run = (teams: FantasyTeam[]) =>
-    simulateSeasonAsync({
-      ...buildOutlookInput({
-        teams,
-        previousTeams,
-        freeAgents: freeAgents.filter((f) => !taken.has(f.id)),
-        games: data.games,
-        matchups: data.matchups,
-        slotCounts: data.settings.slotCounts,
-        addCapPerWeek: data.settings.addsPerWeek ?? 3,
-        regularWeeks: data.settings.regularSeasonWeeks,
-        fromDay,
-        bankedNow,
-        injured,
-        seasons,
-      }).input,
-      playoffReplays: 10,
-    });
-  const before = await run(data.teams);
-  const after = await run(traded);
-  await logCpu("trade-sim", cpu0, { seasons: 2 * seasons });
-  const pick = (rs: typeof before, id: number) => {
-    const r = rs.find((x) => x.teamId === id)!;
-    return { playoffs: r.playoffs, champ: r.champ, expWins: r.expWins };
-  };
-  return {
-    seasons,
-    mine: { before: pick(before, data.me.id), after: pick(after, data.me.id) },
-    theirs: { before: pick(before, partnerId), after: pick(after, partnerId) },
-  };
 }

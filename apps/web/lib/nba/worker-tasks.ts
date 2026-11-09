@@ -8,7 +8,7 @@ import { db, dbConfigured } from "@/lib/db";
 import { dispatchWorker } from "./github-dispatch";
 
 /** trade-search: the trade idea search; sim-build: a simulation job's moves (ADR-059). */
-export type TaskKind = "trade-search" | "sim-build" | "trade-for";
+export type TaskKind = "trade-search" | "sim-build" | "trade-for" | "trade-with";
 
 /** A claimed task runs at most this long before it's handed out again. */
 const LEASE = "5 minutes";

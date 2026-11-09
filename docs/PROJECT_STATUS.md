@@ -1,4 +1,4 @@
-# Project status (2026-11-09)
+# Project status (2026-11-09, evening)
 
 ## Where things stand
 
@@ -19,7 +19,7 @@
 - **MarketScope** keeps running (its site uses ~0.5–0.85 min a day).
 - **No production page checks during the saver.** Jack sees the changes on his phone.
 
-Nov 9 (PRs #118–#123, #125) carried out Jack's six requests (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
+Nov 9 (PRs #118–#128) carried out Jack's six requests and the fixes after he tried them (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
 
 | PR   | What                                                                                                                                                                                                                                                                                                                                                                |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,14 +29,16 @@ Nov 9 (PRs #118–#123, #125) carried out Jack's six requests (plan: `~/.claude/
 | #121 | **Mobile:** an opaque status bar (`statusBarStyle: "default"`, theme-color follows the toggle). This fixes the tab bar sitting ~62 pt high while pages load, and the blur behind the clock. **"Expected return: Nov 24"** labels.                                                                                                                                   |
 | #122 | **Matchup scoreboard:** each team's record and place. Tap the card for starts and points per start, so far and projected, and the projected finals.                                                                                                                                                                                                                 |
 | #123 | **Charts:** the win chance spreads each day by its games (`lib/chart-axes.ts`). Odds over time on a daily date axis.                                                                                                                                                                                                                                                |
+| #125 | **Old Home Screen installs:** iOS keeps the status-bar style from when the app was added (WebKit bug 260508), so #121 only applied after a re-add. A callout asks old installs to re-add (`components/home-screen-check.tsx`). Jack re-added Nov 9: tabs and blur fixed.                                                                                            |
+| #127 | **Simulate button:** one per trade (keyed), keeps polling after reloads and when the app returns to the front, shows the numbers so far ("refining"). Trades links no longer prefetch (40–60 function calls per visit).                                                                                                                                             |
+| #128 | **Asked trades get a small job of their own** (task `sim-asked`, `sim_jobs.asked_only`): only the asked trades, run ahead of the full job without replacing it. The pages (`liveJob()`, outlook-refresh) ignore it; the simulate button reads `liveJob(true)`. A full job still replaces it.                                                                        |
 
-**Deviation from the plan:** asked trades queue a normal job, not a "small" one. A new job always supersedes the live one, so a small job would cancel the job behind the Moves numbers. Each ask costs ~5 s of Vercel CPU.
+**Asked trades (fixed in #128):** until #128 each ask queued a full job (~250 moves plus the Outlook), so League and Players showed loaders and the trade waited ~12 min. Now an ask queues an asked-only job that doesn't replace the full one. Each ask still costs ~5 s of Vercel CPU (`prepareJob`).
 
 ## Waiting on Jack
 
 - **Check on the phone:**
-  - **Tab bar and blur (#125):** both persisted after #121 because iOS keeps a Home Screen app's status-bar style from when it was added (WebKit bug 260508). Jack must **delete the icon and add it again** from Safari (sign in once, re-enable alerts in Settings). The app shows a callout while the old install is in use (`components/home-screen-check.tsx`). After re-adding, check Players and Matchup.
-  - **Status bar colors:** if it's white in dark mode, switch `statusBarStyle` to `"black"`.
+  - **Simulate a trade (#128):** League and Players should show no loaders; the trade's numbers should appear within a few minutes.
   - **Features:** the scoreboard details, both charts, Moves, Trades, and the Expected-return labels.
 - **Tripwire:** pay for one Pro month (Vercel → Settings → Billing) only if a morning check reads ≥ 3 h 56 m.
 - **Worker → Neon directly** (after Nov 21, approved Nov 9): Jack adds `DATABASE_URL` as a GitHub Actions secret when the PR is ready.

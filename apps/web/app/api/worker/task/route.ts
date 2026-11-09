@@ -3,13 +3,13 @@
 // bring tasks), 204 when it can leave. POST returns its result, or its error, and stores the
 // result where its pages read it.
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import type { WireMove } from "@fantasy-copilot/fantasy-core";
-import { storeBuiltJob } from "@/lib/nba/sim-jobs";
+import { requestTradeChecks, storeBuiltJob } from "@/lib/nba/sim-jobs";
 import type { StoredIdea } from "@/lib/nba/trade-task";
 import { claimTask, finishTask, taskRunnerNeeded } from "@/lib/nba/worker-tasks";
 import { writeView } from "@/lib/view-cache";
-import { TRADE_FOR_KEY } from "@/lib/nba/trade-view";
+import { packagesFound } from "@/lib/nba/trade-view";
 import { workerAuthorized } from "@/lib/worker-auth";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +39,12 @@ export async function POST(request: NextRequest) {
   if (task.kind === "trade-search") {
     await writeView("trade-targets", task.fingerprint, body.result as StoredIdea[], 0);
   } else if (task.kind === "trade-for") {
-    await writeView(
-      TRADE_FOR_KEY,
-      task.fingerprint,
+    // Packages Jack asked for: store them, then simulate them (lib/nba/asked-trades.ts).
+    const trades = await packagesFound(
       body.result as Record<string, StoredIdea[]>,
-      0,
+      task.fingerprint,
     );
+    after(() => requestTradeChecks(trades, "You asked for trade packages").catch(() => null));
   } else if (task.kind === "sim-build") {
     const job = await storeBuiltJob(
       body.id,

@@ -287,10 +287,10 @@ export interface SimBuildInput extends Omit<MoveBuildArgs, "injured"> {
   teams: { id: number; roster: RosterPlayer[] }[];
   ideas: TradeSpec[];
   /**
-   * The Interested list's "Trade for him" packages: each watched player's best (top tier,
-   * ADR-060) and the next ones (with the other trade ideas).
+   * Trades Jack asked to check (lib/nba/asked-trades.ts): the top ones join the top tier
+   * (ADR-060), the rest go with the trade ideas.
    */
-  interest?: { top: TradeSpec[]; rest: TradeSpec[] };
+  asked?: { top: TradeSpec[]; rest: TradeSpec[] };
 }
 
 /**
@@ -326,22 +326,22 @@ export function buildSimMoves(i: SimBuildInput): {
   };
   const waiver = buildWireMoves(args, options);
   const withTeams = { ...args, teams: i.teams };
-  // The watched players' best packages join the top tier, after the waiver moves in it.
-  const interestTop = buildTradeMoves(withTeams, i.interest?.top ?? []);
-  const seen = new Set(interestTop.map((m) => m.key));
-  const trades = buildTradeMoves(withTeams, [...i.ideas, ...(i.interest?.rest ?? [])]).filter(
+  // Asked-for trades join the top tier, after the waiver moves in it.
+  const askedTop = buildTradeMoves(withTeams, i.asked?.top ?? []);
+  const seen = new Set(askedTop.map((m) => m.key));
+  const trades = buildTradeMoves(withTeams, [...(i.asked?.rest ?? []), ...i.ideas]).filter(
     (m) => !seen.has(m.key) && seen.add(m.key),
   );
   return {
     moves: [
       ...waiver.slice(0, top),
-      ...interestTop,
+      ...askedTop,
       ...waiver.slice(top, others),
       ...trades,
       ...waiver.slice(others),
     ],
-    leading: leading + interestTop.length,
-    top: top + interestTop.length,
-    others: others + interestTop.length,
+    leading: leading + askedTop.length,
+    top: top + askedTop.length,
+    others: others + askedTop.length,
   };
 }

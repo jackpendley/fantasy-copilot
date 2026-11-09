@@ -65,6 +65,15 @@ export function rosterKeyOf(
 export const watchKeyOf = (watchList: number[]): string =>
   fingerprintOf([...watchList].sort((a, b) => a - b));
 
+/**
+ * The watched players who are free agents: only they get move checks in every job (watched
+ * players on other teams get trade packages when Jack asks), so only they change the key.
+ */
+export const watchedFreeAgents = (watchList: number[], teams: { roster: { id: number }[] }[]) => {
+  const rostered = new Set(teams.flatMap((t) => t.roster.map((p) => p.id)));
+  return watchList.filter((id) => !rostered.has(id));
+};
+
 export const rosterKey = (v: WaiverView): string =>
   rosterKeyOf(v.data.ahead.me.roster, v.data.injuries);
 

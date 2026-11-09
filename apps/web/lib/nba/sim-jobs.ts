@@ -28,9 +28,10 @@ import {
   type Tier,
 } from "./deep-check";
 import { CpuMeter } from "@/lib/cpu";
+import { addAskedTrades, pendingAskedTrades } from "./asked-trades";
 import { dispatchWorker } from "./github-dispatch";
 import type { StoredIdea } from "./trade-task";
-import { rosterKeyOf, watchKeyOf } from "./move-checks";
+import { rosterKeyOf, watchKeyOf, watchedFreeAgents } from "./move-checks";
 import {
   chooseShown,
   deepView,
@@ -49,6 +50,7 @@ import {
   pickGroup,
   type SimBuildInput,
   type SimGroup,
+  type TradeSpec,
 } from "./sim-moves";
 import { loadWaiverInputs } from "./waivers-view";
 import { SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
@@ -181,6 +183,12 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     0,
     TRADE_MOVES,
   );
+  // Trades Jack asked to check, until each has a result.
+  const pending = await pendingAskedTrades().catch(() => []);
+  const asked = {
+    top: pending.filter((a) => a.top).map((a) => a.spec),
+    rest: pending.filter((a) => !a.top).map((a) => a.spec),
+  };
   const build: SimBuildInput = {
     waiver: w.inputs,
     extraKeys,
@@ -197,6 +205,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     injuries: data.injuries,
     teams: data.teams.map((t) => ({ id: t.id, roster: t.roster })),
     ideas,
+    asked,
   };
   const key = rosterKeyOf(w.data.ahead.me.roster, w.data.injuries);
   const ctx: JobContext = {
@@ -206,7 +215,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     readAt: setup.readAt.toISOString(),
     rosterKey: key,
     waiverFingerprint: fingerprintOf({ sp: w.sp, key }),
-    watchKey: watchKeyOf(data.me.watchList),
+    watchKey: watchKeyOf(watchedFreeAgents(data.me.watchList, data.teams)),
     meta: data.teams.map((t) => {
       const a = base.activity.get(t.id)!;
       return {
@@ -903,4 +912,29 @@ export async function requestMoveCheck(key: string): Promise<number | null> {
     return live.id;
   }
   return enqueueSimJob("You asked for a deep check of a move", [key]);
+}
+
+/**
+ * Jack asked to simulate these trades (the first of each ask to the top tier): the job under
+ * way already has them all, or a new job checks them (and the asks stay until they're settled).
+ */
+export async function requestTradeChecks(
+  trades: { spec: TradeSpec; top: boolean }[],
+  label: string,
+): Promise<number | null> {
+  if (!dbConfigured() || !trades.length) return null;
+  const keys = await addAskedTrades(trades);
+  const [live] = await db()<{ id: number; has: number }[]>`
+    select id, (
+      select count(distinct k)::int from sim_groups g, unnest(g.keys) k
+      where g.job_id = j.id and k = any(${keys})
+    ) as has
+    from sim_jobs j where status in ('queued', 'running')
+    order by id desc limit 1
+  `;
+  if (live && live.has === keys.length) {
+    await startWorker();
+    return live.id;
+  }
+  return enqueueSimJob(label);
 }

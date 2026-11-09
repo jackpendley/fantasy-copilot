@@ -33,7 +33,7 @@ import {
 } from "./nba/matchup-snapshots";
 import { latestOutlook, runOutlook } from "./nba/outlook-run";
 import { enqueueSimJob, pruneSimJobs } from "./nba/sim-jobs";
-import { refreshMoveChecks } from "./nba/move-checks";
+import { refreshMoveChecks, watchedFreeAgents } from "./nba/move-checks";
 import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
 import { pruneTasks } from "./nba/worker-tasks";
@@ -181,12 +181,14 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     leagueChanged === false
       ? null
       : await m.step("sim-trigger", () =>
-          simRosterCheck(data.ahead.me.roster, data.injuries, data.me.watchList).catch(
-            async (e: Error) => {
-              await log("sim-trigger", "error", e.message).catch(() => {});
-              return null;
-            },
-          ),
+          simRosterCheck(
+            data.ahead.me.roster,
+            data.injuries,
+            watchedFreeAgents(data.me.watchList, data.teams),
+          ).catch(async (e: Error) => {
+            await log("sim-trigger", "error", e.message).catch(() => {});
+            return null;
+          }),
         );
   // Waiting news (the saver's gap since the last job) is looked at again on the next run.
   if (simRoster === "waiting") lastLeague = null;

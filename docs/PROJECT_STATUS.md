@@ -19,7 +19,7 @@
 - **MarketScope** keeps running (its site uses ~0.5–0.85 min a day).
 - **No production page checks during the saver.** Jack sees the changes on his phone.
 
-Nov 9 (PRs #118–#123) carried out Jack's six requests (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
+Nov 9 (PRs #118–#123, #125) carried out Jack's six requests (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
 
 | PR   | What                                                                                                                                                                                                                                                                                                                                                                |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -35,7 +35,7 @@ Nov 9 (PRs #118–#123) carried out Jack's six requests (plan: `~/.claude/plans/
 ## Waiting on Jack
 
 - **Check on the phone:**
-  - **Tab bar and blur:** reopen the Home Screen app (re-add it if the status bar still looks see-through), then check Players and Matchup.
+  - **Tab bar and blur (#125):** both persisted after #121 because iOS keeps a Home Screen app's status-bar style from when it was added (WebKit bug 260508). Jack must **delete the icon and add it again** from Safari (sign in once, re-enable alerts in Settings). The app shows a callout while the old install is in use (`components/home-screen-check.tsx`). After re-adding, check Players and Matchup.
   - **Status bar colors:** if it's white in dark mode, switch `statusBarStyle` to `"black"`.
   - **Features:** the scoreboard details, both charts, Moves, Trades, and the Expected-return labels.
 - **Tripwire:** pay for one Pro month (Vercel → Settings → Billing) only if a morning check reads ≥ 3 h 56 m.

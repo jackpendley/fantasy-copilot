@@ -4,7 +4,7 @@ import "server-only";
 import { EspnError } from "@fantasy-copilot/espn";
 import { fetchDarko } from "@fantasy-copilot/nba-data";
 import { CpuMeter, recordCpu } from "./cpu";
-import { saverOn } from "./cpu-saver";
+import { minimalOn, saverOn } from "./cpu-saver";
 import { db } from "./db";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
@@ -137,6 +137,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     minute: now.getUTCMinutes(),
     etHour: etHour(now),
     saver: saverOn(now.getTime()),
+    minimal: minimalOn(now.getTime()),
     tips: schedule.filter((g) => g.scoringPeriodId === sp).map((g) => g.date),
     // Under the CPU saver, only a move that set off a run loads the league (not one waiting its
     // turn, or one already in the numbers).
@@ -203,12 +204,12 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   const tips = games.map((g) => g.date);
   const t = now.getTime();
 
-  // The Matchup chart's line through the day: every 15 minutes from the first tip until the
-  // last game is surely over (3.5 hours after the last tip).
+  // The Matchup chart's line through the day: every 15 minutes (30 in minimal mode) from the
+  // first tip until the last game is surely over (3.5 hours after the last tip).
   const timeline =
     t >= Math.min(...tips) &&
     t <= Math.max(...tips) + TIMELINE_AFTER_MS &&
-    now.getUTCMinutes() % 15 < 5
+    now.getUTCMinutes() % (minimalOn(t) ? 30 : 15) < 5
       ? await m.step("timeline", () => step("matchup-timeline", () => recordTimeline(data, sp)))
       : null;
 
@@ -230,14 +231,17 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
 
   const morningNews =
     availability && "rosteredNews" in availability ? availability.rosteredNews : 0;
-  // New injury news changes trade values: refresh the stored trade ideas.
-  const refreshTrades = () =>
-    m.step("trades", () =>
-      refreshTradeTargets().catch(async (e: Error) => {
-        await log("trade-targets", "error", e.message);
-        return null;
-      }),
-    );
+  // New injury news changes trade values: refresh the stored trade ideas (in minimal mode they
+  // wait for the nightly run or Jack's own move).
+  const refreshTrades = async () =>
+    minimalOn(t)
+      ? null
+      : m.step("trades", () =>
+          refreshTradeTargets().catch(async (e: Error) => {
+            await log("trade-targets", "error", e.message);
+            return null;
+          }),
+        );
 
   if (t < Math.min(...tips) - BEFORE_FIRST_TIP_MS || t > Math.max(...tips) + AFTER_LAST_TIP_MS) {
     const trades = morningNews ? await refreshTrades() : null;

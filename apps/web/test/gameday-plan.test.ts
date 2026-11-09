@@ -44,4 +44,27 @@ describe("what the 5-minute job does each run", () => {
     expect(saver("2026-11-06T15:10:00Z", 10)).toMatchObject({ load: false, availability: false });
     expect(saver("2026-11-06T15:30:00Z", 10).availability).toBe(true);
   });
+
+  it("in minimal mode: everything on the hour and half hour only", () => {
+    const minimal = (iso: string, etHour: number) => {
+      const t = Date.parse(iso);
+      return gamedayPlan({
+        t,
+        minute: new Date(t).getUTCMinutes(),
+        etHour,
+        tips,
+        moveSeen: false,
+        saver: true,
+        minimal: true,
+      });
+    };
+    // In the game window: :00 and :30 load, :10 and :15 (the timeline's quarter hour) don't.
+    expect(minimal("2026-11-06T23:00:00Z", 18)).toMatchObject({ load: true, availability: true });
+    expect(minimal("2026-11-06T23:10:00Z", 18).load).toBe(false);
+    expect(minimal("2026-11-07T01:15:00Z", 20).load).toBe(false);
+    expect(minimal("2026-11-07T01:30:00Z", 20).load).toBe(true);
+    // Before it: availability on the half hour.
+    expect(minimal("2026-11-06T15:30:00Z", 10).availability).toBe(true);
+    expect(minimal("2026-11-06T15:10:00Z", 10).availability).toBe(false);
+  });
 });

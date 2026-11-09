@@ -243,18 +243,18 @@ async function TradeFor({
                     {sim ? (
                       <DeepTrade sim={sim} state={deep?.states[k]} />
                     ) : (
-                      <p className="text-xs text-muted-foreground">
-                        Season simulation: queued with the next check.
-                      </p>
+                      <p className="text-xs text-muted-foreground">Not simulated yet.</p>
                     )}
                   </div>
                 );
               })
             ) : (
               <p className="text-xs text-muted-foreground">
-                {updating || !searched.has(id)
+                {updating
                   ? "Searching packages…"
-                  : "No package that raises your lineup passes their manager's market check right now."}
+                  : !searched.has(id)
+                    ? "Packages are now searched only when you ask (a button for it is coming in the next update)."
+                    : "No package that raises your lineup passes their manager's market check right now."}
               </p>
             )}
           </div>

@@ -287,7 +287,7 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - per simulation job: duration, moves, and Vercel CPU (`sim_jobs`);
 - the projected 30-day total (daily × 30) against 240 min.
 
-## 9. The CPU saver (Nov 6 to Nov 22)
+## 9. The CPU saver (Nov 6 to Nov 29) and minimal mode (Nov 9 to Nov 21)
 
 **Measured Nov 6, 15:35 MST:** 3 h 34 m of 4 h (26 min left).
 
@@ -295,7 +295,7 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - **So the binding stretch is Nov 7–17:** ~2 min a day keeps ~4 min of margin on Nov 17. From Nov 22, ~5.5 min a day roughly matches what leaves, and from Nov 29 there's room.
 - **The quiet-day rate before the saver** was ~4–6 min a day (Observability, 12 h windows: 2.1 min in the day, 3.2 min overnight with games). `cpu_log`, last 24 h: gameday 1.4 min (201 runs × 417 ms), roster moves 0.5 min, 19 simulation jobs × 3.1 s. Days with development and production checks ran 15–20 min.
 
-**The saver (`lib/cpu-saver.ts`, until 2026-11-22 00:00 UTC; nothing is switched off):**
+**The saver (`lib/cpu-saver.ts`, until 2026-11-29 00:00 UTC since Nov 9; nothing is switched off):**
 
 | Change                                     | Was                       | Under the saver                                                |
 | ------------------------------------------ | ------------------------- | -------------------------------------------------------------- |
@@ -308,18 +308,24 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 | Seasons per chunk (permanent)              | 200                       | 500 (fewer requests per job)                                   |
 
 - **Unchanged:** Jack's own moves (in this app or ESPN's), protected players, watch-list changes, the timeline every 15 minutes in games, the nightly and pregame jobs, every page.
-- **After Nov 22,** other teams' moves wait 90 minutes until Nov 29 (was until Nov 20), then 30.
+- **After Nov 29,** other teams' moves wait 30 minutes (the 90-minute trim is gone; the saver covers it).
 - **No production checks during the saver:** changes are verified locally and through Vercel's Usage and Observability.
 
-**On track if the morning total is at most** (2 min a day):
+**What happened instead (Nov 7–9):** the saver ran ~5–7 min a day (Friday and Sunday games, ~17–20 simulation jobs a day), and Nov 9 opened at 3 h 51 m. Only ~8 min leave the window before Nov 21.
 
-| Date   | Total    |
-| ------ | -------- |
-| Nov 8  | 3 h 38 m |
-| Nov 10 | 3 h 42 m |
-| Nov 12 | 3 h 46 m |
-| Nov 14 | 3 h 50 m |
-| Nov 16 | 3 h 54 m |
-| Nov 18 | 3 h 56 m |
+**Minimal mode (Nov 9, Jack's choice over paying for Pro; `minimalOn`, until 2026-11-21 00:00 UTC):** the budget until Nov 17 is ~0.85 min a day for all projects. MarketScope keeps running.
 
-**If a morning total is 3+ min over its line,** the fallback is Vercel Pro for one month ($20; 16 h of Active CPU; downgrade before it renews; Jack's approval). The 14-day Pro trial doesn't fit: it ends Nov 20, and a community report says trial usage counts against Hobby afterwards.
+| Area                                           | Saver                               | Minimal mode                                                    |
+| ---------------------------------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| Gameday work (statuses, availability, alerts)  | every 10 min in the window          | on the hour and half hour (cron-job.org also every 30 min)      |
+| Win-chance timeline in games                   | every 15 min                        | every 30 min                                                    |
+| Other teams' moves (league odds, Jack's moves) | at most every 6 h                   | the nightly job; the watch looks only at moves under 35 min old |
+| Injury news and watch-list changes             | at most one job an hour             | wait for the nightly job or Jack's own move                     |
+| Trade ideas refreshed                          | 15 min after changes                | nightly and after Jack's own moves                              |
+| Open pages' auto-refresh in games              | every minute                        | every 5 minutes (pull to refresh anytime)                       |
+| Streams' season check                          | top tier (±0.35)                    | rest tier (±1.0), until Nov 29                                  |
+| Trade packages for watched players elsewhere   | searched and simulated in every job | only when Jack asks (permanent, Nov 9)                          |
+
+- **Unchanged:** every page reads ESPN live when opened; Jack's own moves and asked deep checks get full simulations; the nightly job.
+- **Tripwire:** if a morning total is **3 h 56 m or more** before Nov 18, Jack pays for one month of Pro that day (16 h; downgrade before it renews). After a Pro month, Hobby's window still contains that month, so the cuts stay.
+- **After Nov 29:** the steady state must stay ≤ ~7 min a day for all projects (Hobby averages 8). The worker writing to Neon directly (planned ~Nov 21) is the main lever.

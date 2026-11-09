@@ -14,17 +14,12 @@ import "server-only";
 
 import { after } from "next/server";
 import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
+import { minimalOn } from "@/lib/cpu-saver";
 import { dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import { loadLeagueView } from "./league-view";
 import { findTradeTargets, type TradeIdea } from "./trade";
-import {
-  PACKAGES_PER_TARGET,
-  compact,
-  runTradeFor,
-  tradeSearchInput,
-  type StoredIdea,
-} from "./trade-task";
+import { PACKAGES_PER_TARGET, compact, tradeSearchInput, type StoredIdea } from "./trade-task";
 import { enqueueTask, taskPending } from "./worker-tasks";
 
 export { compact, type StoredIdea };
@@ -47,12 +42,15 @@ export const WORKER_REFRESH_GAP_MS = 15 * 60_000;
 /** The search runs on the GitHub Actions worker (it's set up, and results can be stored). */
 const onWorker = () => Boolean(process.env.WORKER_SECRET) && dbConfigured();
 
-/** Is a refresh allowed now (no stored ideas, or they're older than the gap)? */
+/**
+ * Is a refresh allowed now (no stored ideas, or they're older than the gap)? In minimal mode
+ * (lib/cpu-saver.ts) only nightly and Jack's own moves refresh them.
+ */
 export const refreshDue = (
   computedAt: Date | null,
   now = Date.now(),
   gap = onWorker() ? WORKER_REFRESH_GAP_MS : TRADE_REFRESH_GAP_MS,
-) => computedAt == null || now - computedAt.getTime() >= gap;
+) => computedAt == null || (!minimalOn(now) && now - computedAt.getTime() >= gap);
 
 /** Everything the search depends on. */
 export function tradeFingerprint(v: LeagueView): string {
@@ -65,7 +63,6 @@ export function tradeFingerprint(v: LeagueView): string {
     freeAgents: v.freeAgents.map((p) => p.id).sort(),
     noTrade: [...v.prefs.noTrade].sort(),
     noDrop: [...v.prefs.noDrop].sort(),
-    targets: interestTargets(v),
   });
 }
 
@@ -155,24 +152,16 @@ async function computeAndStore(v: LeagueView, fingerprint: string): Promise<Trad
   const t0 = performance.now();
   const ideas = search(v);
   await writeView(KEY, fingerprint, ideas.map(compact), performance.now() - t0);
-  const targets = interestTargets(v);
-  if (targets.length) {
-    const t1 = performance.now();
-    const packages = runTradeFor({ ...searchInput(v), targets });
-    await writeView(TRADE_FOR_KEY, fingerprint, packages, performance.now() - t1);
-  }
   return ideas;
 }
 
 /**
- * Queue the search for the worker (its result lands in view_cache under KEY), and the
- * Interested list's packages (under TRADE_FOR_KEY) when Jack watches players on other teams.
+ * Queue the search for the worker (its result lands in view_cache under KEY). The Interested
+ * list's packages are searched only when Jack asks (Nov 9): they were re-searched, and
+ * re-simulated at the top tier, with every job.
  */
 async function queueSearch(v: LeagueView, fingerprint: string): Promise<boolean> {
-  const input = searchInput(v);
-  const targets = interestTargets(v);
-  if (targets.length) await enqueueTask("trade-for", fingerprint, { ...input, targets });
-  return enqueueTask("trade-search", fingerprint, input);
+  return enqueueTask("trade-search", fingerprint, searchInput(v));
 }
 
 export interface TradeForPackages {

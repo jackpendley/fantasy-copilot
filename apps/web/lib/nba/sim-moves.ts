@@ -27,13 +27,15 @@ export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
  * 3. for the other evaluated adds (the Free agents tab), their best few drops.
  * `first`: moves asked for by key, ahead of all of these. `leading`: how many are in 1;
  * `top`: how many of those are checked to the top precision (asked for, and the cards' opening
- * moves; ADR-060); `others`: where 3 starts (trade ideas go before it).
+ * moves; ADR-060); `others`: where 3 starts (trade ideas go before it). `streamsTop: false`
+ * checks the this-week streams' opening moves to the rest tier instead (the CPU saver).
  */
 export function jobMoveOptions(
   a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek" | "dropOptions"> & {
     watched?: StreamOption[];
   },
   first: string[] = [],
+  streamsTop = true,
 ): { options: StreamOption[]; leading: number; top: number; others: number } {
   const all = [...a.dropOptions.values()].flat();
   const byKey = new Map(all.map((o) => [moveKey(o), o]));
@@ -48,9 +50,13 @@ export function jobMoveOptions(
       seen.add(k);
       return true;
     });
-  const top = unique([...first.flatMap((k) => byKey.get(k) ?? []), ...shown]);
+  const top = unique([
+    ...first.flatMap((k) => byKey.get(k) ?? []),
+    ...(streamsTop ? shown : [...best, ...(a.watched ?? [])]),
+  ]);
   const opening = [
     ...top,
+    ...unique(streamsTop ? [] : streams),
     ...unique([...all].sort((x, y) => y.netWins - x.netWins).slice(0, TOP_MOVES)),
   ];
   const rest = unique(shown.flatMap((o) => a.dropOptions.get(o.add.player.id) ?? []));
@@ -273,6 +279,8 @@ export interface SimBuildInput extends Omit<MoveBuildArgs, "injured"> {
   waiver: WaiverInputs;
   /** Moves asked for, ahead of the rest. */
   extraKeys: string[];
+  /** Streams' opening moves at the top tier (false under the CPU saver); absent = true. */
+  streamsTop?: boolean;
   /** Known absences (the season setup's), and the injury feed for the adds' own. */
   injured: Map<number, { outUntil: number }>;
   injuries: Parameters<typeof absences>[1];
@@ -296,7 +304,11 @@ export function buildSimMoves(i: SimBuildInput): {
   others: number;
 } {
   const analysis = waiverAnalysis(i.waiver);
-  const { options, leading, top, others } = jobMoveOptions(analysis, i.extraKeys);
+  const { options, leading, top, others } = jobMoveOptions(
+    analysis,
+    i.extraKeys,
+    i.streamsTop ?? true,
+  );
   // The adds' own absences (they're not on a roster, so not in the setup's).
   const injured = new Map(i.injured);
   const adds = options.map((o) => o.add.player);

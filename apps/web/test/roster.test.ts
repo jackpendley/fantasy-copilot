@@ -110,10 +110,16 @@ describe("outlook roster watch", () => {
     expect(recentMove(null, now)).toBe(false);
   });
   it("under the CPU saver, looks at a waiting move again on the half hour", () => {
-    const at = Date.parse("2026-11-08T20:05:00Z");
+    const at = Date.parse("2026-11-24T20:05:00Z");
     expect(recentMove(at - 10 * 60_000, at)).toBe(true);
     expect(recentMove(at - 2 * 3600_000, at)).toBe(false);
     expect(recentMove(at - 2 * 3600_000, at + 25 * 60_000)).toBe(true); // 20:30
     expect(recentMove(at - 7 * 3600_000, at + 25 * 60_000)).toBe(false);
+  });
+  it("in minimal mode, looks only at a move new since the last half-hourly run", () => {
+    const at = Date.parse("2026-11-12T20:00:00Z");
+    expect(recentMove(at - 30 * 60_000, at)).toBe(true);
+    expect(recentMove(at - 40 * 60_000, at)).toBe(false);
+    expect(recentMove(at - 2 * 3600_000, at + 30 * 60_000)).toBe(false);
   });
 });

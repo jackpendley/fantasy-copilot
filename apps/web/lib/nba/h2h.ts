@@ -33,7 +33,7 @@ export interface H2HGame {
 export interface H2HCell {
   player: Pick<RosterPlayer, "id" | "name" | "proTeam" | "positions">;
   status: string;
-  /** "back ~Nov 9" for a ruled-out player. */
+  /** "Exp. return Nov 9" for a ruled-out player. */
   back?: string | null;
   game: H2HGame | null;
   /** Fantasy points scored; null before his game starts. */

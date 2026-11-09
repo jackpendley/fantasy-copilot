@@ -7,8 +7,9 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: "Copilot",
     start_url: "/nba/today",
     display: "standalone",
-    background_color: "#ffffff",
-    theme_color: "#0a0a0a",
+    // The dark theme's background (the default): the launch screen and status bar match it.
+    background_color: "#0a0e16",
+    theme_color: "#0a0e16",
     icons: [
       { src: "/icon", sizes: "512x512", type: "image/png" },
       { src: "/apple-icon", sizes: "180x180", type: "image/png" },

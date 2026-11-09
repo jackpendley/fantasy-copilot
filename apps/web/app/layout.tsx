@@ -10,7 +10,11 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export const metadata: Metadata = {
   title: "Fantasy Copilot",
   description: "Lineups, matchups, roster moves and season odds for ESPN fantasy leagues",
-  appleWebApp: { capable: true, title: "Copilot", statusBarStyle: "black-translucent" },
+  // An opaque status bar in the installed app, colored by theme-color (components/
+  // theme-provider.tsx). "black-translucent" drew the page under the clock, where iOS blurred
+  // it, and sized the screen short by the status bar while a page loaded, so the bottom tabs
+  // sat ~62 pt too high (Jack's screenshot, Nov 9).
+  appleWebApp: { capable: true, title: "Copilot", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

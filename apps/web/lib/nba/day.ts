@@ -45,7 +45,7 @@ export interface DayRow {
   locked: boolean;
   status: string;
   injuryNote: string | null;
-  /** "back ~Nov 9" / "out for the season" for a ruled-out player (ESPN's estimate). */
+  /** "Exp. return Nov 9" / "Out for the season" for a ruled-out player (ESPN's estimate). */
   back: string | null;
   playProb: number;
   projection: PerGame;
@@ -182,7 +182,7 @@ export function buildDayBoard(input: DayInputs): DayBoard {
       injuryNote: note,
       back: (() => {
         const a = absenceOf(player, injury.report, input.games[0]?.scoringPeriodId ?? 0);
-        return a ? returnLabel(a) : null;
+        return a ? returnLabel(a, true) : null;
       })(),
       playProb,
       projection,

@@ -55,10 +55,20 @@ export function absences(
   return out;
 }
 
-/** "back ~Nov 9", "out for the season", or "out" for display. */
-export function returnLabel(a: Absence): string {
-  if (a.season) return "out for the season";
-  if (!a.returnDate) return "out";
+/** ESPN's estimated return day, "Nov 9" (null when out for the season or undated). */
+export function returnDay(a: Absence): string | null {
+  if (a.season || !a.returnDate) return null;
   const d = new Date(`${a.returnDate}T12:00:00Z`);
-  return `back ~${d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })}`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+/**
+ * "Expected return: Nov 9" ("Exp. return Nov 9" in tight rows), "Out for the season", or "Out".
+ * The date is ESPN's estimate.
+ */
+export function returnLabel(a: Absence, compact = false): string {
+  if (a.season) return "Out for the season";
+  const day = returnDay(a);
+  if (!day) return "Out";
+  return compact ? `Exp. return ${day}` : `Expected return: ${day}`;
 }

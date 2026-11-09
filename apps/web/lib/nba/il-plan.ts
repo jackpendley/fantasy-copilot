@@ -4,7 +4,7 @@
 
 import type { FantasyTeam, LeagueSettings, ProGame } from "@fantasy-copilot/espn";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
-import { absences, returnLabel, type Absence } from "./availability";
+import { absences, returnDay, type Absence } from "./availability";
 import { LAST_SCORING_PERIOD } from "./calendar";
 import { teamValue, valueContext, type Activation } from "./trade";
 
@@ -35,9 +35,10 @@ export function ilReturnPlan(
   }));
 }
 
-/** "Jalen Duren (IL) back ~Nov 9: you'd drop Day'Ron Sharpe" */
+/** "Jalen Duren (IL, expected return Nov 9): you'd drop Day'Ron Sharpe" */
 export function describeReturn(r: ReturnPlan, who = "you'd"): string {
-  return `${r.player.name} (IL) ${returnLabel(r.absence)}: ${
+  const day = returnDay(r.absence);
+  return `${r.player.name} (IL${day ? `, expected return ${day}` : ""}): ${
     r.drop
       ? `${who} drop ${r.drop.name}, whom your lineup would miss least from then on`
       : "an open roster spot is waiting"

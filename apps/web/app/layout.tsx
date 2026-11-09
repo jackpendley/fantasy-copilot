@@ -34,7 +34,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="flex min-h-full flex-col">
+      {/* At least a screen and a status bar tall: a Home Screen app added before Nov 9 lays out
+          short by the status bar while the page is shorter than that (a loading skeleton), and
+          its bottom tabs rose with it. 100svh alone in the browser and newer installs (inset 0). */}
+      <body className="flex min-h-[calc(100svh+env(safe-area-inset-top))] flex-col">
         <ThemeProvider>
           {children}
           <Toaster richColors position="top-center" />

@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
   if (!key) return NextResponse.json({ error: "key is required" }, { status: 400 });
   const [pending, job, last] = await Promise.all([
     askPending(key),
-    liveJob(),
+    liveJob(true),
     settledResults([key]),
   ]);
   // Numbers so far, from the job under way (read for Jack's roster as that job has it: a page

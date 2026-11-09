@@ -5,7 +5,7 @@
 //
 //   APP_URL=https://fantasycopilot.vercel.app WORKER_SECRET=... node tasks.mjs
 
-import { buildSimMoves, type SimBuildInput } from "../lib/nba/sim-moves";
+import { buildAskedMoves, buildSimMoves, type SimBuildInput } from "../lib/nba/sim-moves";
 import {
   runTradeFor,
   runTradeSearch,
@@ -22,6 +22,9 @@ const HANDLERS: Record<string, (input: never) => unknown> = {
   "trade-with": (input: TradeSearchInput & { partnerId: number }) => runTradeWith(input),
   // A simulation job's moves: the add-and-drop analysis, then each move built (ADR-059).
   "sim-build": (input: { build: unknown }) => buildSimMoves(decodeWire<SimBuildInput>(input.build)),
+  // Only the trades Jack asked to simulate, for a small job of their own.
+  "sim-asked": (input: { build: unknown }) =>
+    buildAskedMoves(decodeWire<SimBuildInput>(input.build)),
 };
 
 /**

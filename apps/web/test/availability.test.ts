@@ -11,13 +11,14 @@ describe("absenceOf", () => {
     const a = absenceOf(player(1), { status: "Out", returnDate: "2026-11-09" }, today)!;
     expect(a.outUntil).toBe(scoringPeriodForDate("2026-11-09"));
     expect(a.season).toBe(false);
-    expect(returnLabel(a)).toBe("back ~Nov 9");
+    expect(returnLabel(a)).toBe("Expected return: Nov 9");
+    expect(returnLabel(a, true)).toBe("Exp. return Nov 9");
   });
   it("marks a return after the fantasy season as out for the season", () => {
     const a = absenceOf(player(1), { status: "Out", returnDate: "2027-04-20" }, today)!;
     expect(a.season).toBe(true);
     expect(a.outUntil).toBeGreaterThan(LAST_SCORING_PERIOD);
-    expect(returnLabel(a)).toBe("out for the season");
+    expect(returnLabel(a)).toBe("Out for the season");
   });
   it("treats a passed date as tomorrow and no date as a week", () => {
     expect(absenceOf(player(1), { status: "Out", returnDate: "2026-10-20" }, today)!.outUntil).toBe(

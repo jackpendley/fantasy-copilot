@@ -519,7 +519,7 @@ export default async function WeekPage({
       outThatDay(p) ? "OUT" : out.has(p.id) || mode === "later" ? "ACTIVE" : statusFor(p);
     const backAhead = (p: { id: number }) => {
       const a = out.get(p.id);
-      return a && outThatDay(p) ? returnLabel(a) : null;
+      return a && outThatDay(p) ? returnLabel(a, true) : null;
     };
     const ahead = (roster: typeof data.me.roster, slotOf: Map<number, string> | undefined) =>
       cellsAhead(roster, slotOf, data.games, day, projAhead, statusAhead, backAhead, slots);

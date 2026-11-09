@@ -6,6 +6,7 @@ import { PlayerCardButton } from "@/components/fc/player-card";
 import { SectionTitle } from "@/components/fc/bits";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { OddsChart } from "@/components/odds-chart";
+import { nowMs } from "@/lib/nba/calendar";
 import { DISPLAY_TZ } from "@/lib/env";
 import { fmtPts } from "@/lib/format";
 import type {
@@ -116,7 +117,7 @@ export async function TeamStory({
         <section className="space-y-1.5">
           <SectionTitle>Odds over time</SectionTitle>
           <div className="rounded-xl border bg-card p-3 sm:p-4">
-            <OddsChart points={odds} />
+            <OddsChart points={odds} now={nowMs()} />
           </div>
         </section>
       )}

@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { dayStarts } from "@/lib/chart-axes";
 
 export interface OddsPoint {
   at: string;
@@ -26,10 +27,20 @@ const SERIES = [
   { key: "champ", label: "Title", color: "var(--chart-3)" },
 ] as const;
 
-const day = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
-};
+const TZ = "America/Phoenix";
+/** Arizona keeps MST all year: its midnight is 07:00 UTC. */
+const AZ_OFFSET_MS = 7 * 3600_000;
+const DAY = 86_400_000;
+const day = (t: number) =>
+  new Date(t).toLocaleDateString("en-US", { month: "numeric", day: "numeric", timeZone: TZ });
+const moment = (t: number) =>
+  new Date(t).toLocaleString("en-US", {
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: TZ,
+  });
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 /** Vertical nudges (px) so end labels whose values are close don't overlap. */
@@ -48,16 +59,35 @@ function labelOffsets(lastPoint: OddsPoint | undefined): Record<string, number> 
   return offsets;
 }
 
-export function OddsChart({ points }: { points: OddsPoint[] }) {
+/**
+ * One date per day, evenly spaced, from the first run's day through today (each run at its own
+ * time, so several runs in a day stay inside that day). Labels thin out to fit the width.
+ */
+export function OddsChart({
+  points,
+  now,
+}: {
+  points: OddsPoint[];
+  /** The server's now (ms). */ now: number;
+}) {
   const last = points.length - 1;
   const offsets = labelOffsets(points[last]);
+  const data = points.map((p) => ({ ...p, t: Date.parse(p.at) }));
+  const starts = dayStarts(data[0]?.t ?? now, Math.max(now, data.at(-1)?.t ?? now), AZ_OFFSET_MS);
+  const domain = [starts[0]!, starts.at(-1)! + DAY];
+  const ticks = starts.map((d) => d + DAY / 2);
   return (
     <div className="h-60 w-full">
       <ResponsiveContainer>
-        <LineChart data={points} margin={{ top: 12, right: 40, bottom: 0, left: -18 }}>
+        <LineChart data={data} margin={{ top: 12, right: 40, bottom: 0, left: -18 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
-            dataKey="at"
+            type="number"
+            dataKey="t"
+            domain={domain}
+            ticks={ticks}
+            interval="preserveStartEnd"
+            minTickGap={8}
             tickFormatter={day}
             fontSize={11}
             stroke="var(--muted-foreground)"
@@ -73,7 +103,7 @@ export function OddsChart({ points }: { points: OddsPoint[] }) {
             axisLine={false}
           />
           <Tooltip
-            labelFormatter={(v) => day(String(v))}
+            labelFormatter={(t) => moment(Number(t))}
             formatter={(v, name) => [pct(Number(v)), String(name)]}
             contentStyle={{
               background: "var(--popover)",

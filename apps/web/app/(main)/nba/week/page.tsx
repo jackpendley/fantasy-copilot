@@ -6,6 +6,8 @@ import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
 import { minimalOn } from "@/lib/cpu-saver";
 import { WinChart } from "@/components/win-chart";
+import { ExpandCard } from "@/components/fc/expand-card";
+import { recordOf, weekSide, type WeekSide } from "@/lib/nba/week-summary";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
 import { TeamLogo } from "@/components/fc/team-logo";
@@ -58,6 +60,9 @@ type Mode = "past" | "now" | "later";
 function Scoreboard({
   me,
   opp,
+  myRecord,
+  oppRecord,
+  sides,
   myBanked,
   oppBanked,
   myFinal,
@@ -69,6 +74,11 @@ function Scoreboard({
 }: {
   me: string;
   opp: string;
+  /** "5-2 · 3rd". */
+  myRecord: string;
+  oppRecord: string;
+  /** Starts and points per start, so far and still to come (the details). */
+  sides: [WeekSide, WeekSide];
   myBanked: number;
   oppBanked: number;
   myFinal: number;
@@ -80,9 +90,10 @@ function Scoreboard({
   /** A past week shows its final; a later week its projection. */
   mode: Mode;
 }) {
-  const side = (name: string, pts: number, final: number, right: boolean) => (
+  const side = (name: string, record: string, pts: number, final: number, right: boolean) => (
     <div className={cn("min-w-0", right && "text-right")}>
       <div className="text-xs font-medium break-words text-muted-foreground sm:text-sm">{name}</div>
+      <div className="text-[11px] text-muted-foreground tabular-nums sm:text-xs">{record}</div>
       <div className="text-4xl font-semibold tracking-tight tabular-nums sm:text-5xl">
         {fmtPts(mode === "later" ? final : pts)}
       </div>
@@ -92,16 +103,66 @@ function Scoreboard({
     </div>
   );
   const result = (p: number) => (p > 0.5 ? "Won" : p < 0.5 ? "Lost" : "Tied");
+  const fmt = (n: number | null) => (n == null ? "–" : n.toFixed(1));
+  type Row = [string, (s: WeekSide, final: number) => string];
+  const soFar: Row[] = [
+    ["Starts so far", (s) => String(s.startsSoFar)],
+    ["Points per start so far", (s) => fmt(s.perStartSoFar)],
+  ];
+  const left: Row[] = [
+    ["Projected starts left", (s) => String(s.startsLeft)],
+    ["Projected points per start left", (s) => fmt(s.perStartLeft)],
+  ];
+  const rows: Row[] = [
+    ...(mode !== "later" ? soFar : []),
+    ...(mode !== "past" ? left : []),
+    ["Starts this week", (s) => String(s.startsSoFar + s.startsLeft)],
+    [mode === "past" ? "Final" : "Projected final", (_, final) => fmtPts(final)],
+  ];
+  const finals = [mode === "past" ? myBanked : myFinal, mode === "past" ? oppBanked : oppFinal];
+  const details = (
+    <div className="space-y-3">
+      <table className="w-full text-sm tabular-nums">
+        <thead>
+          <tr className="text-xs text-muted-foreground">
+            <th className="py-1 text-left font-medium" />
+            <th className="max-w-24 truncate py-1 text-right font-medium" title={me}>
+              {me}
+            </th>
+            <th className="max-w-24 truncate py-1 text-right font-medium" title={opp}>
+              {opp}
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map(([label, value]) => (
+            <tr key={label}>
+              <td className="py-1.5 pr-2 text-xs text-muted-foreground">{label}</td>
+              <td className="py-1.5 text-right font-medium">{value(sides[0], finals[0]!)}</td>
+              <td className="py-1.5 text-right font-medium">{value(sides[1], finals[1]!)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs text-muted-foreground">
+        {mode === "past"
+          ? "Final scores."
+          : mode === "later"
+            ? "Projected from today's rosters: each team's best lineup every day, injured players back from their estimated returns. The win chance uses 2025-26 weekly volatility."
+            : `Big numbers are points so far${live ? ` (updating every ${minimalOn() ? "5 minutes" : "minute"})` : ""}. Projected finals assume both teams set their best lineup every day; the win chance uses 2025-26 weekly volatility.`}
+      </p>
+    </div>
+  );
   return (
-    <div className="rounded-xl border bg-card p-4 sm:p-5">
+    <ExpandCard details={details} label="Matchup details">
       {/* A long team name wraps rather than shrinking; the scores line up along the bottom. */}
       <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-3">
-        {side(me, myBanked, myFinal, false)}
+        {side(me, myRecord, myBanked, myFinal, false)}
         <div className="flex flex-col items-center gap-1 self-center">
           <span className="text-xs font-semibold text-muted-foreground">VS</span>
           {live && <Pill tone="success">Live</Pill>}
         </div>
-        {side(opp, oppBanked, oppFinal, true)}
+        {side(opp, oppRecord, oppBanked, oppFinal, true)}
       </div>
       <div className="mt-4">
         <div className="mb-1.5 flex justify-between text-xs font-semibold tabular-nums sm:text-sm">
@@ -116,14 +177,7 @@ function Scoreboard({
           <div className="bg-primary" style={{ width: `${pWin * 100}%` }} />
         </div>
       </div>
-      <p className="mt-3 text-xs text-muted-foreground">
-        {mode === "past"
-          ? "Final scores."
-          : mode === "later"
-            ? "Projected from today's rosters: each team's best lineup every day, injured players back from their estimated returns. The win chance uses 2025-26 weekly volatility."
-            : `Big numbers are points so far${live ? " (updating every minute)" : ""}. Projected finals assume both teams set their best lineup every day; the win chance uses 2025-26 weekly volatility.`}
-      </p>
-    </div>
+    </ExpandCard>
   );
 }
 
@@ -615,6 +669,43 @@ export default async function WeekPage({
   const startsOn = (side: number, day: number) => schedules[side]?.startsByDay.get(day)?.size ?? 0;
   const totalStarts = periods.reduce((a, d) => a + startsOn(0, d), 0);
 
+  // The scoreboard's details: starts and points per start, so far and still to come. Past days
+  // count each lineup's actual starts; today splits at each game's tip; days ahead are projected.
+  const sideOf = (
+    team: FantasyTeam | undefined,
+    week: typeof mine | null | undefined,
+    today: ReturnType<typeof liveRows> | null,
+    banked: number,
+  ): WeekSide => {
+    const actual = team ? played(team).startsByDay : new Map<number, Set<number>>();
+    const sum = (days: number[], by: Map<number, Set<number>> | undefined) =>
+      days.reduce((a, d) => a + (by?.get(d)?.size ?? 0), 0);
+    const state = new Map((today ?? []).map((r) => [r.row.player.id, r.row.game?.state]));
+    const isNow = mode === "now";
+    return weekSide({
+      pastStarts: sum(
+        periods.filter((d) => mode === "past" || (isNow && d < sp)),
+        actual,
+      ),
+      todayStarted: isNow
+        ? (today ?? []).filter((r) => r.starting && r.row.game && r.row.game.state !== "pre").length
+        : 0,
+      todayLeft: isNow
+        ? [...(week?.startsByDay.get(sp) ?? [])].filter((id) => state.get(id) === "pre").length
+        : 0,
+      aheadStarts: sum(
+        periods.filter((d) => mode === "later" || (isNow && d > sp)),
+        week?.startsByDay,
+      ),
+      banked: mode === "later" ? 0 : banked,
+      remaining: mode === "past" ? 0 : (week?.remaining ?? 0),
+    });
+  };
+  const sides: [WeekSide, WeekSide] = [
+    sideOf(data.me, mine, myLive, myBanked),
+    sideOf(opp, theirs, oppLive, oppBanked),
+  ];
+
   return (
     <>
       <PageHeader
@@ -634,6 +725,9 @@ export default async function WeekPage({
         <Scoreboard
           me={data.me.name}
           opp={opp.name}
+          myRecord={recordOf(data.me, league.teams)}
+          oppRecord={recordOf(opp, league.teams)}
+          sides={sides}
           myBanked={myBanked}
           oppBanked={oppBanked}
           myFinal={myBanked + mine.remaining}

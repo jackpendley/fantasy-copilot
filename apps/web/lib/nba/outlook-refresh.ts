@@ -45,7 +45,8 @@ export const workerEnabled = () => Boolean(process.env.WORKER_SECRET);
 /** When the latest simulation job was queued (null when there's none). */
 async function lastJobAt(): Promise<number | null> {
   const [j] = await db()<{ created_at: Date }[]>`
-    select created_at from sim_jobs where status <> 'superseded' order by id desc limit 1
+    select created_at from sim_jobs where status <> 'superseded' and not asked_only
+    order by id desc limit 1
   `;
   return j?.created_at.getTime() ?? null;
 }
@@ -54,7 +55,7 @@ async function lastJobAt(): Promise<number | null> {
 async function liveJobSince(since: number): Promise<{ queuedFor: number } | null> {
   const [j] = await db()<{ status: string; created_at: Date }[]>`
     select status, created_at from sim_jobs
-    where status in ('queued', 'running') and created_at >= ${new Date(since)}
+    where status in ('queued', 'running') and not asked_only and created_at >= ${new Date(since)}
     order by id desc limit 1
   `;
   if (!j) return null;
@@ -166,7 +167,8 @@ export async function outlookRunning(): Promise<boolean> {
   const rows = await db()`
     select 1 from job_locks where name = ${LOCK} and until > now()
     union all
-    select 1 from sim_jobs where status = 'running' and last_worker_at > now() - interval '3 minutes'
+    select 1 from sim_jobs where status = 'running' and not asked_only
+      and last_worker_at > now() - interval '3 minutes'
   `;
   return rows.length > 0;
 }
@@ -266,7 +268,7 @@ export async function simRosterCheck(
     select roster_key, watch_key, created_at > now() - ${NEWS_GAP}::interval as recent,
       status in ('queued', 'running') as live,
       created_at > now() - ${SAVER_NEWS_GAP}::interval as within_saver_gap
-    from sim_jobs where status <> 'superseded' order by id desc limit 1
+    from sim_jobs where status <> 'superseded' and not asked_only order by id desc limit 1
   `;
   // A new watch list: its free agents need checks (minimal mode: with the next job).
   const minimal = minimalOn();

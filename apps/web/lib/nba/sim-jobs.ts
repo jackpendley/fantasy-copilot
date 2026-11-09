@@ -5,7 +5,8 @@ import "server-only";
 // group's chunks of 500 seasons, post back paired results, and the Outlook and the Moves checks
 // update from the sums. Moves stop getting seasons once their title change is known to their
 // tier's precision (ADR-060: ±0.35 points for the moves Jack acts on, ±1 for the rest); clearly
-// worse moves stop early.
+// worse moves stop early. Trades Jack asks to simulate get a small job of their own (sim-asked:
+// only those trades), run before the full job and invisible to the Moves and League pages.
 
 import {
   toWire,
@@ -44,6 +45,7 @@ import { buildOutlookInput } from "./outlook";
 import { outlookSetup, type OutlookTeam } from "./outlook-run";
 import {
   TRADE_MOVES,
+  buildAskedMoves,
   buildSimMoves,
   groupsOf,
   hasChunksLeft,
@@ -77,6 +79,8 @@ const SAVER_REFRESH_GAP_S = 45;
 /** A job whose runners stopped posting is closed with what it has after this long. */
 const STALE_MS = 4 * 60_000;
 export const DEEP_KEY = "move-checks-deep";
+/** The latest asked-trades job's checks (the Moves page's stay in DEEP_KEY). */
+const ASKED_KEY = "asked-checks-deep";
 /** Stored trade ideas (lib/nba/trade-view.ts). */
 const TRADE_VIEW = "trade-targets";
 
@@ -96,6 +100,7 @@ export interface DeepChecks {
 interface JobRow {
   id: number;
   status: string;
+  asked_only: boolean;
   trigger: string | null;
   team_id: number;
   scoring_period: number;
@@ -127,17 +132,22 @@ export async function enqueueSimJob(
   trigger: string | null,
   extraKeys: string[] = [],
   m = new CpuMeter(),
+  askedOnly = false,
 ): Promise<number | null> {
   if (!dbConfigured()) return null;
   const { build, ctx } = await prepareJob(trigger, extraKeys, m);
+  if (askedOnly) ctx.askedOnly = true;
   if (process.env.WORKER_SECRET) {
     // The worker runs the analysis and builds the moves (docs/COMPUTE.md); the job is stored
     // when it posts them (storeBuiltJob).
     const input = { build: encodeWire(build), ctx };
-    await m.step("queue-build", () => enqueueTask("sim-build", fingerprintOf(input), input));
+    const kind = askedOnly ? "sim-asked" : "sim-build";
+    await m.step("queue-build", () => enqueueTask(kind, fingerprintOf(input), input));
     return null;
   }
-  const built = await m.step("build-moves", () => buildSimMoves(build));
+  const built = await m.step("build-moves", () =>
+    askedOnly ? buildAskedMoves(build) : buildSimMoves(build),
+  );
   return m.step("store", () => storeJob(ctx, build.base, built));
 }
 
@@ -151,6 +161,8 @@ interface JobContext {
   waiverFingerprint: string;
   /** Jack's watch list (watchKeyOf); absent on builds queued before it existed. */
   watchKey?: string;
+  /** Only the trades Jack asked for (enqueueSimJob's askedOnly). */
+  askedOnly?: boolean;
   meta: OutlookTeam[];
 }
 
@@ -238,23 +250,25 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
 }
 
 /**
- * The worker built a job's moves (a sim-build task): store the job, unless a newer build has
- * been asked for since (its job will replace this one).
+ * The worker built a job's moves (a sim-build or sim-asked task): store the job, unless a newer
+ * build has been asked for since (its job will replace this one; a full job also checks the
+ * asked trades, so it replaces an asked one too).
  */
 export async function storeBuiltJob(
   taskId: number,
   built: { moves: WireMove[]; leading: number; top?: number; others: number },
 ): Promise<number | null> {
-  const [newer] = await db()`
-    select 1 from worker_tasks where kind = 'sim-build' and id > ${taskId}
-      and status in ('queued', 'running', 'done') limit 1
-  `;
-  if (newer) return null;
   // Only the job's context and the base season (finishTask kept them; the rest is cleared).
   const [t] = await db()<{ ctx: JobContext; base: unknown }[]>`
     select input->'ctx' as ctx, input->'base' as base from worker_tasks where id = ${taskId}
   `;
   if (!t?.ctx || !t.base) return null;
+  const kinds = t.ctx.askedOnly ? ["sim-build", "sim-asked"] : ["sim-build"];
+  const [newer] = await db()`
+    select 1 from worker_tasks where kind = any(${kinds}) and id > ${taskId}
+      and status in ('queued', 'running', 'done') limit 1
+  `;
+  if (newer) return null;
   return storeJob(t.ctx, decodeWire<WireInput>(t.base), built);
 }
 
@@ -279,8 +293,11 @@ async function storeJob(
     if (same.status !== "done") await startWorker();
     return same.id;
   }
+  // A full job replaces every live job (it checks the asked trades too); an asked one replaces
+  // only an earlier asked one, and runs first (runners take the newest job).
+  const askedOnly = ctx.askedOnly ?? false;
   await db()`update sim_jobs set status = 'superseded', updated_at = now()
-    where status in ('queued', 'running')`;
+    where status in ('queued', 'running') and (asked_only or ${!askedOnly})`;
   const [row] = await db()<{ id: number }[]>`
     insert into sim_jobs ${db()({
       trigger: ctx.trigger,
@@ -298,6 +315,7 @@ async function storeJob(
       max_chunks: MAX_CHUNKS,
       active: [],
       meta: db().json(ctx.meta as never),
+      asked_only: askedOnly,
     })}
     returning id
   `;
@@ -629,8 +647,8 @@ async function baseRun(jobId: number) {
 
 async function refreshJob(jobId: number, closing = false): Promise<{ done: boolean }> {
   const [job] = await db()<JobRow[]>`
-    select id, status, trigger, team_id, scoring_period, read_at, waiver_fingerprint, roster_key,
-      replays, chunk_seasons, max_chunks, outlook_run_id, meta
+    select id, status, asked_only, trigger, team_id, scoring_period, read_at, waiver_fingerprint,
+      roster_key, replays, chunk_seasons, max_chunks, outlook_run_id, meta
     from sim_jobs where id = ${jobId}
   `;
   if (!job) return { done: true };
@@ -692,7 +710,7 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
     .map((r) => ({ ...meta.get(r.teamId)!, ...r }))
     .sort((a, b) => b.champ - a.champ);
   let runId = job.outlook_run_id;
-  if (job.status !== "superseded") {
+  if (job.status !== "superseded" && !job.asked_only) {
     if (runId == null) {
       const [r] = await db()<{ id: number }[]>`
         insert into outlook_runs (run_at, scoring_period, seasons, results, trigger, status, updated_at)
@@ -719,6 +737,11 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
       at: new Date().toISOString(),
     };
     await writeView(DEEP_KEY, job.waiver_fingerprint ?? "", value, 0);
+  }
+  if (job.status !== "superseded") {
+    // An asked job's numbers so far, for the trades' simulate buttons only (no Outlook).
+    if (job.asked_only)
+      await writeView(ASKED_KEY, "", { jobId, rosterKey: job.roster_key ?? "", effects }, 0);
     // Each move's settled numbers, kept while later checks run (every move once the job's done,
     // for the final P(best)).
     await storeSettled(
@@ -745,6 +768,10 @@ export async function closeQuietJobs(): Promise<{ closed: number; unstarted: num
   const quiet = await db()<{ id: number }[]>`
     select id from sim_jobs where status = 'running'
       and coalesce(last_worker_at, created_at) < now() - ${`${STALE_MS / 1000} seconds`}::interval
+      and not exists (
+        select 1 from sim_jobs o
+        where o.last_worker_at > now() - ${`${STALE_MS / 1000} seconds`}::interval
+      )
   `;
   for (const j of quiet) await refreshJob(j.id, true);
   const [u] = await db()<{ n: number }[]>`
@@ -768,7 +795,7 @@ export async function pruneSimJobs(): Promise<number> {
   if (!dbConfigured()) return 0;
   const rows = await db()`
     delete from sim_jobs where created_at < now() - interval '2 days'
-      and id <> coalesce((select max(id) from sim_jobs where status = 'done'), 0)
+      and id <> coalesce((select max(id) from sim_jobs where status = 'done' and not asked_only), 0)
     returning id
   `;
   // CPU measurements are kept for 30 days (Vercel's window).
@@ -794,12 +821,17 @@ async function storeSettled(jobId: number, rosterKey: string, effects: DeepEffec
   `;
 }
 
-/** The latest worker job, with its results when the stored deep checks are this job's. */
-export async function liveJob(): Promise<
+/**
+ * The latest worker job, with its results when the stored deep checks are this job's. Asked
+ * jobs only with `withAsked` (the simulate buttons): the pages follow the full job.
+ */
+export async function liveJob(
+  withAsked = false,
+): Promise<
   (LiveJob & { trigger: string | null; createdAt: Date; settled: number; total: number }) | null
 > {
   if (!dbConfigured()) return null;
-  const [[j], deep] = await Promise.all([
+  const [[j], deep, asked] = await Promise.all([
     db()<
       {
         id: number;
@@ -810,12 +842,17 @@ export async function liveJob(): Promise<
       }[]
     >`
       select id, status, trigger, roster_key, created_at from sim_jobs
-      where status <> 'superseded' order by id desc limit 1
+      where status <> 'superseded' and (${withAsked} or not asked_only) order by id desc limit 1
     `,
     latestDeepChecks(),
+    withAsked
+      ? readView<Pick<DeepChecks, "jobId" | "effects">>(ASKED_KEY)
+          .then((v) => v?.value ?? null)
+          .catch(() => null)
+      : null,
   ]);
   if (!j) return null;
-  const mine = deep?.jobId === j.id ? deep : null;
+  const mine = [deep, asked].find((d) => d?.jobId === j.id) ?? null;
   const effects = mine ? new Map(mine.effects.map((e) => [e.key, e])) : null;
   const keys = await db()<{ n: number }[]>`
     select coalesce(sum(cardinality(keys)), 0)::int as n from sim_groups where job_id = ${j.id}
@@ -903,7 +940,7 @@ export async function requestMoveCheck(key: string): Promise<number | null> {
   const [live] = await db()<{ id: number; has: boolean }[]>`
     select id,
       exists (select 1 from sim_groups g where g.job_id = j.id and ${key} = any(g.keys)) as has
-    from sim_jobs j where status in ('queued', 'running')
+    from sim_jobs j where status in ('queued', 'running') and not asked_only
     order by id desc limit 1
   `;
   // Already in the live job: make sure a runner is on it (e.g. after one failed to start).
@@ -916,7 +953,8 @@ export async function requestMoveCheck(key: string): Promise<number | null> {
 
 /**
  * Jack asked to simulate these trades (the first of each ask to the top tier): the job under
- * way already has them all, or a new job checks them (and the asks stay until they're settled).
+ * way already has them all, or a small job of only the asked trades checks them (the Moves and
+ * League numbers keep their job; the asks stay until they're settled).
  */
 export async function requestTradeChecks(
   trades: { spec: TradeSpec; top: boolean }[],
@@ -936,5 +974,5 @@ export async function requestTradeChecks(
     await startWorker();
     return live.id;
   }
-  return enqueueSimJob(label);
+  return enqueueSimJob(label, [], undefined, true);
 }

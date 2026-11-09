@@ -4,6 +4,7 @@ import { applyMove, toWire } from "@fantasy-copilot/fantasy-core";
 import { buildOutlookInput } from "@/lib/nba/outlook";
 import { applyTrade, valueContext } from "@/lib/nba/trade";
 import {
+  buildAskedMoves,
   buildTradeMoves,
   buildWireMoves,
   groupsOf,
@@ -314,5 +315,36 @@ describe("trade ideas built as patches on the base season", () => {
     });
     expect(move!.key).toBe(tradeKey(2, spec.give, spec.get));
     expect(applyMove(wire, 1, move!)).toEqual(toWire(full.input));
+  });
+
+  it("an asked job holds only the asked trades, the top ones first and each once", () => {
+    const base = buildOutlookInput({ ...args, teams, freeAgents, injured });
+    const none = { dropped: [], added: [], toIL: [] };
+    const spec = (partnerId: number, give: number, get: number) => ({
+      partnerId,
+      give: [give],
+      get: [get],
+      moves: { mine: none, theirs: none },
+    });
+    const a = spec(2, mine[1]!.id, teams[1]!.roster[0]!.id);
+    const b = spec(3, mine[2]!.id, teams[2]!.roster[0]!.id);
+    const built = buildAskedMoves({
+      base: toWire(base.input),
+      teamId: 1,
+      roster: mine,
+      freeAgents,
+      games,
+      slotCounts: SLOTS,
+      fromDay: 1,
+      regularWeeks: 2,
+      injured,
+      teams,
+      asked: { top: [a], rest: [b, a] },
+    });
+    expect(built.moves.map((m) => m.key)).toEqual([
+      tradeKey(2, a.give, a.get),
+      tradeKey(3, b.give, b.get),
+    ]);
+    expect(built).toMatchObject({ top: 1, leading: 2, others: 2 });
   });
 });

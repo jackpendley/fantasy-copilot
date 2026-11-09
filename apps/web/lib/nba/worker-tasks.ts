@@ -7,8 +7,11 @@ import "server-only";
 import { db, dbConfigured } from "@/lib/db";
 import { dispatchWorker } from "./github-dispatch";
 
-/** trade-search: the trade idea search; sim-build: a simulation job's moves (ADR-059). */
-export type TaskKind = "trade-search" | "sim-build" | "trade-for" | "trade-with";
+/**
+ * trade-search: the trade idea search; sim-build: a simulation job's moves (ADR-059);
+ * sim-asked: an asked-trades job's moves (only those trades).
+ */
+export type TaskKind = "trade-search" | "sim-build" | "sim-asked" | "trade-for" | "trade-with";
 
 /** A claimed task runs at most this long before it's handed out again. */
 const LEASE = "5 minutes";
@@ -129,7 +132,7 @@ export async function finishTask(
   const [t] = await db()<{ kind: TaskKind; fingerprint: string }[]>`
     update worker_tasks set status = ${error ? "failed" : "done"}, finished_at = now(),
       error = ${error ?? null},
-      input = case when kind = 'sim-build'
+      input = case when kind in ('sim-build', 'sim-asked')
         then jsonb_build_object('ctx', input->'ctx', 'base', input->'build'->'base')
         else '{}'::jsonb end
     where id = ${id} and status = 'running'

@@ -345,3 +345,50 @@ export function buildSimMoves(i: SimBuildInput): {
     others: others + askedTop.length,
   };
 }
+
+/**
+ * Only the trades Jack asked to check, for a job of their own (sim-asked): his roster, the
+ * free agents and the other teams as the full job sees them, but no waiver moves or trade ideas,
+ * so the Moves and League numbers keep their job.
+ */
+export function buildAskedMoves(
+  i: Pick<
+    SimBuildInput,
+    | "base"
+    | "teamId"
+    | "roster"
+    | "freeAgents"
+    | "games"
+    | "slotCounts"
+    | "fromDay"
+    | "regularWeeks"
+    | "injured"
+    | "teams"
+    | "asked"
+  >,
+): {
+  moves: WireMove[];
+  leading: number;
+  top: number;
+  others: number;
+} {
+  const withTeams = {
+    base: i.base,
+    teamId: i.teamId,
+    roster: i.roster,
+    freeAgents: i.freeAgents,
+    games: i.games,
+    slotCounts: i.slotCounts,
+    fromDay: i.fromDay,
+    regularWeeks: i.regularWeeks,
+    injured: i.injured,
+    teams: i.teams,
+  };
+  const top = buildTradeMoves(withTeams, i.asked?.top ?? []);
+  const seen = new Set(top.map((m) => m.key));
+  const rest = buildTradeMoves(withTeams, i.asked?.rest ?? []).filter(
+    (m) => !seen.has(m.key) && seen.add(m.key),
+  );
+  const moves = [...top, ...rest];
+  return { moves, leading: moves.length, top: top.length, others: moves.length };
+}

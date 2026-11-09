@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     after(() => requestTradeChecks(trades, "You asked for trade packages").catch(() => null));
   } else if (task.kind === "trade-with") {
     await tradesWithFound(body.result as { partnerId: number; ideas: StoredIdea[] });
-  } else if (task.kind === "sim-build") {
+  } else if (task.kind === "sim-build" || task.kind === "sim-asked") {
     const job = await storeBuiltJob(
       body.id,
       body.result as { moves: WireMove[]; leading: number; top?: number; others: number },

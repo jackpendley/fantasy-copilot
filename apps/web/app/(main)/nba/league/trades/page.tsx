@@ -27,7 +27,7 @@ import { askPending } from "@/lib/nba/asked-trades";
 import { WorkerSearch } from "@/components/fc/worker-search";
 import { rosterKeyOf } from "@/lib/nba/move-checks";
 import type { ShownSim, ShownState } from "@/lib/nba/move-shown";
-import { DeepTrade, pts } from "@/components/fc/deep-trade";
+import { pts } from "@/components/fc/deep-trade";
 import { deepChecksFor } from "@/lib/nba/sim-jobs";
 import { tradeKey } from "@/lib/nba/sim-moves";
 import { matchupPeriodOf } from "@/lib/nba/calendar";
@@ -165,10 +165,13 @@ function Evaluation({
   e,
   partner,
   addsLeft,
+  simKey,
   deep,
   pending,
 }: {
   e: TradeEval;
+  /** The trade's key (tradeKey): its simulation's. */
+  simKey: string;
   partner: FantasyTeam;
   /** Jack's adds left this matchup week (null when unknown). */
   addsLeft: number | null;
@@ -237,25 +240,30 @@ function Evaluation({
           )}
           <Moves who="They'd" m={e.moves.theirs} />
         </ul>
-        {deep ? (
-          <DeepTrade sim={deep.sim} state={deep.state} />
-        ) : (
-          <SimulateTrade
-            partnerId={partner.id}
-            give={e.give.map((p) => p.id)}
-            get={e.get.map((p) => p.id)}
-            pending={pending}
-          />
-        )}
+        <SimulateTrade
+          // One per trade: opening another trade starts fresh instead of keeping this one's state.
+          key={simKey}
+          simKey={simKey}
+          partnerId={partner.id}
+          give={e.give.map((p) => p.id)}
+          get={e.get.map((p) => p.id)}
+          sim={deep?.sim}
+          state={deep?.state}
+          pending={pending}
+        />
       </div>
     </section>
   );
 }
 
-/** One trade idea: a link that opens it in the evaluator (where it can be simulated). */
+/**
+ * One trade idea: a link that opens it in the evaluator (where it can be simulated). Not
+ * prefetched: a page lists dozens of ideas, and each prefetch was a server request (Vercel CPU).
+ */
 function IdeaRow({ i, partner, sim }: { i: TradeIdea; partner?: string; sim?: ShownSim }) {
   return (
     <Link
+      prefetch={false}
       href={tradeHref(
         i.partnerId,
         i.give.map((p) => p.id),
@@ -337,6 +345,7 @@ async function WithTeam({
       )}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
         <WorkerSearch
+          key={partner.id}
           url="/api/trades/with"
           body={{ partnerId: partner.id }}
           statusUrl={`/api/trades/with?team=${partner.id}`}
@@ -397,6 +406,7 @@ async function Targets({
           return (
             <Link
               key={s}
+              prefetch={false}
               href={s === "All" ? "/nba/league/trades" : `/nba/league/trades?size=${s}`}
               className={cn(
                 "rounded-lg border px-2.5 py-1 text-xs font-medium",
@@ -507,6 +517,7 @@ export default async function TradesPage({
           {others.map((t) => (
             <Link
               key={t.id}
+              prefetch={false}
               href={`/nba/league/trades?team=${t.id}`}
               className={cn(
                 "rounded-lg border px-2.5 py-1 text-xs font-medium break-words",
@@ -555,9 +566,10 @@ export default async function TradesPage({
       {partner && (give.length > 0 || get.length > 0) && !e && (
         <Callout tone="info">Pick at least one player on each side.</Callout>
       )}
-      {e && partner && (
+      {e && partner && key && (
         <Evaluation
           e={e}
+          simKey={key}
           partner={partner}
           addsLeft={addsLeft}
           deep={deepTrade}

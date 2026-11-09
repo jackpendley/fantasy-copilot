@@ -1,12 +1,13 @@
 // Simulate a trade Jack built (or picked) on the worker: the season with and without it, to
 // the top tier's precision (ADR-060), as an asked trade (lib/nba/asked-trades.ts). POST asks;
-// GET says whether its result is still coming (the button polls, then reloads once). Read-only:
-// nothing is sent to ESPN.
+// GET says whether its result is still coming and its numbers so far (the button polls, then
+// reloads once). Read-only: nothing is sent to ESPN.
 
 import { NextResponse, type NextRequest } from "next/server";
 import { askPending } from "@/lib/nba/asked-trades";
 import { loadLeagueView } from "@/lib/nba/league-view";
-import { requestTradeChecks } from "@/lib/nba/sim-jobs";
+import { liveJob, requestTradeChecks, settledResults } from "@/lib/nba/sim-jobs";
+import { deepView } from "@/lib/nba/move-shown";
 import { tradeKey } from "@/lib/nba/sim-moves";
 import { evaluateTrade } from "@/lib/nba/trade";
 import { compact } from "@/lib/nba/trade-task";
@@ -56,5 +57,18 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const key = request.nextUrl.searchParams.get("key");
   if (!key) return NextResponse.json({ error: "key is required" }, { status: 400 });
-  return NextResponse.json({ pending: await askPending(key) });
+  const [pending, job, last] = await Promise.all([
+    askPending(key),
+    liveJob(),
+    settledResults([key]),
+  ]);
+  // Numbers so far, from the job under way (read for Jack's roster as that job has it: a page
+  // load checks it against the roster now).
+  const view = deepView([key], job, last, job?.rosterKey ?? "");
+  return NextResponse.json({
+    pending,
+    sim: view.sims[key] ?? null,
+    state: view.states[key] ?? null,
+    running: job?.live ?? false,
+  });
 }

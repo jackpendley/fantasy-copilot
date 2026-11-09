@@ -8,6 +8,7 @@ import { FitGroup } from "@/components/fc/fit-text";
 import { PlayerRow } from "@/components/fc/player-row";
 import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
+import { minimalOn } from "@/lib/cpu-saver";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import {
   LAST_SCORING_PERIOD,
@@ -251,7 +252,8 @@ export default async function TodayPage({
           </p>
         </FitGroup>
       </div>
-      <LiveRefresh active={gamesLive} />
+      {/* Minimal mode (lib/cpu-saver.ts): every 5 minutes; pull to refresh anytime. */}
+      <LiveRefresh active={gamesLive} seconds={minimalOn() ? 300 : 60} />
     </>
   );
 }

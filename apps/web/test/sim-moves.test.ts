@@ -195,6 +195,16 @@ describe("the moves a job checks", () => {
     for (const d of [2, 3, 4]) expect(keys).toContain(`509:${d}:`);
   });
 
+  it("checks streams' opening moves to the rest tier under the CPU saver", () => {
+    const stream = { ...opts(509, [1], 0.05)[0]!, deltaWin: 0.02 } as StreamOption;
+    const full = jobMoveOptions({ best, thisWeek: [stream], dropOptions });
+    expect(full.options.map(moveKey).slice(0, full.top)).toContain("509:1:");
+    const light = jobMoveOptions({ best, thisWeek: [stream], dropOptions }, [], false);
+    const keys = light.options.map(moveKey);
+    expect(keys.slice(0, light.top)).not.toContain("509:1:");
+    expect(keys.slice(light.top, light.leading)).toContain("509:1:");
+  });
+
   it("checks the cards' opening moves (and asked-for ones) to the top tier", () => {
     const { top, leading } = jobMoveOptions({ best, thisWeek: [], dropOptions }, ["509:3:"]);
     // The asked-for move and the 8 cards' opening moves; the best-by-estimate are rest tier.

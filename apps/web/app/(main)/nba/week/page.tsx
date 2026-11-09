@@ -4,6 +4,7 @@ import { TeamTabs } from "@/components/fc/team-tabs";
 import { MatchupDays, type MatchupDay } from "@/components/fc/matchup-days";
 import { PendingMovesNote } from "@/components/fc/pending-moves";
 import { LiveRefresh } from "@/components/live-refresh";
+import { minimalOn } from "@/lib/cpu-saver";
 import { WinChart } from "@/components/win-chart";
 import { PlayerAvatar } from "@/components/fc/player-avatar";
 import { Pill, StatusPill } from "@/components/fc/status-pill";
@@ -662,7 +663,8 @@ export default async function WeekPage({
         <PendingMovesNote mine={myPending} theirs={oppPending} opponent={opp?.name} />
       )}
 
-      <LiveRefresh active={gamesLive} />
+      {/* Minimal mode (lib/cpu-saver.ts): every 5 minutes; pull to refresh anytime. */}
+      <LiveRefresh active={gamesLive} seconds={minimalOn() ? 300 : 60} />
 
       {opp && (
         <MatchupDays

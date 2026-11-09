@@ -572,6 +572,8 @@ A3 beats B0 but not B1, so it fails the gate.
 
 **Note (2026-11-06, no rows evaluated yet):** under the CPU saver (Nov 6 to Nov 22, docs/COMPUTE.md), logging runs every 30 minutes before the game window and every 10 minutes in it.
 
+**Note (2026-11-09, no rows evaluated yet):** in minimal mode (Nov 9 to Nov 21) logging runs every 30 minutes throughout, and the saver's cadence then holds until Nov 29. Official reports come every 15 minutes, so a status may be logged up to ~30 minutes after it appeared.
+
 - **In the window,** every 15-minute report is still read, and the pre-tip cutoff is unchanged.
 - **Before the window,** about half the official reports are not read. The midday row then uses the latest report read before its cutoff (up to 30 minutes older), and ESPN's observation can be up to 30 minutes old. Both sides lose freshness. Rows from these days are kept and evaluated with the rest, as registered.
 

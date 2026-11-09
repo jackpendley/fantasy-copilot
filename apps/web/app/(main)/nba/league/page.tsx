@@ -12,6 +12,7 @@ import { StandingsTable, type StandingsRow } from "@/components/fc/standings-tab
 import { WhatChanged } from "@/components/fc/what-changed";
 import { LiveRefresh } from "@/components/live-refresh";
 import { OddsChart } from "@/components/odds-chart";
+import { minimalOn } from "@/lib/cpu-saver";
 import { RunOutlook } from "@/components/run-outlook";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { Button } from "@/components/ui/button";
@@ -174,11 +175,13 @@ export default async function LeaguePage({
 
       {o?.waiting && (
         <p className="rounded-xl border bg-card px-3 py-2.5 text-sm text-muted-foreground">
-          A newer roster move isn&apos;t in these odds yet: the next update (within{" "}
-          {othersWithinMinutes() >= 120
-            ? `${othersWithinMinutes() / 60} hours)`
-            : `${othersWithinMinutes()} minutes)`}{" "}
-          includes it.
+          {minimalOn()
+            ? "A newer roster move isn't in these odds yet: tonight's update includes it."
+            : `A newer roster move isn't in these odds yet: the next update (within ${
+                othersWithinMinutes() >= 120
+                  ? `${othersWithinMinutes() / 60} hours)`
+                  : `${othersWithinMinutes()} minutes)`
+              } includes it.`}
         </p>
       )}
 

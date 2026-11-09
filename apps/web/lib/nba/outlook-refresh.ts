@@ -9,7 +9,7 @@ import "server-only";
 import { after } from "next/server";
 import { fetchLeague, parseTransactions, type LeagueTransaction } from "@fantasy-copilot/espn";
 import { CpuMeter, recordCpu } from "@/lib/cpu";
-import { saverOn } from "@/lib/cpu-saver";
+import { minimalOn, saverOn } from "@/lib/cpu-saver";
 import { db } from "@/lib/db";
 import { forgetResponses } from "@/lib/fetch-memo";
 import { espnConfig } from "@/lib/env";
@@ -62,23 +62,22 @@ async function liveJobSince(since: number): Promise<{ queuedFor: number } | null
 }
 
 /**
- * Other teams' moves re-check Jack's moves at most every 6 hours under the CPU saver (Nov 6),
- * then every 90 minutes until Nov 29 (docs/COMPUTE.md: Vercel's 30-day CPU window needs a light
- * month until the heavy late-October days roll off; Jack chose 90 on Nov 5). His own moves are
- * checked right away. Moves in between ride along.
+ * Other teams' moves re-check Jack's moves only with the nightly job in minimal mode (until
+ * Nov 21), at most every 6 hours under the CPU saver (until Nov 29), then every 30 minutes
+ * (docs/COMPUTE.md: Vercel's 30-day CPU window needs a light month until the heavy late-October
+ * days roll off). His own moves are checked right away. Moves in between ride along.
  */
-const OTHERS_GAP_UNTIL = Date.parse("2026-11-29T00:00:00Z");
+const MINIMAL_GAP_MS = 24 * 3600_000;
 const SAVER_GAP_MS = 6 * 3600_000;
-const TRIM_GAP_MS = 90 * 60_000;
 const othersGapMs = (now: number) =>
-  saverOn(now) ? SAVER_GAP_MS : now < OTHERS_GAP_UNTIL ? TRIM_GAP_MS : RERUN_GAP_MS;
+  minimalOn(now) ? MINIMAL_GAP_MS : saverOn(now) ? SAVER_GAP_MS : RERUN_GAP_MS;
 
 /** At most how long until another team's move is in the numbers (minutes, for the pages). */
 export const othersWithinMinutes = (now = Date.now()) => Math.round(othersGapMs(now) / 60_000);
 
 /** Should another team's move wait (the last job is recent, and a trim is on)? */
 export function othersWait(own: boolean, lastJobAt: number | null, now: number): boolean {
-  return !own && now < OTHERS_GAP_UNTIL && lastJobAt != null && now - lastJobAt < othersGapMs(now);
+  return !own && saverOn(now) && lastJobAt != null && now - lastJobAt < othersGapMs(now);
 }
 
 /** The worker hasn't picked a job up in this long: Vercel runs the Outlook itself. */
@@ -114,15 +113,19 @@ export function dueForRerun(moveAt: number | null, lastRunAt: number | null, now
 
 /** A move this new is looked at on every run (Jack's own, made in ESPN's app, right away). */
 const NEW_MOVE_MS = 20 * 60_000;
+/** Minimal mode's runs are 30 minutes apart: a move is new for one of them. */
+const MINIMAL_NEW_MOVE_MS = 35 * 60_000;
 
 /**
  * Should the 5-minute watch look further (read the last run)? Only for a recent move. Under the
  * CPU saver a waiting move (up to 6 hours) is looked at again on the half hour, so the database
- * can sleep in between.
+ * can sleep in between. In minimal mode only a new move is looked at (other teams' wait for the
+ * nightly job, which needs no watch).
  */
 export function recentMove(moveAt: number | null, now: number): boolean {
   if (moveAt == null) return false;
   const age = now - moveAt;
+  if (minimalOn(now)) return age <= MINIMAL_NEW_MOVE_MS;
   if (age <= NEW_MOVE_MS) return true;
   return age <= watchWindowMs(now) && (!saverOn(now) || new Date(now).getUTCMinutes() % 30 < 5);
 }
@@ -265,14 +268,17 @@ export async function simRosterCheck(
       created_at > now() - ${SAVER_NEWS_GAP}::interval as within_saver_gap
     from sim_jobs where status <> 'superseded' order by id desc limit 1
   `;
-  // A new watch list: its free agents and trade packages need checks (and the search).
+  // A new watch list: its free agents need checks (minimal mode: with the next job).
+  const minimal = minimalOn();
   const watchChanged = j?.watch_key != null && j.watch_key !== watchKeyOf(watchList);
-  if (watchChanged && !(j.live && j.recent)) {
+  if (watchChanged && !minimal && !(j.live && j.recent)) {
     await refreshLogged("You changed your watch list");
     return "queued";
   }
   if (!j?.roster_key || j.roster_key === key) return "current";
   const news = samePlayers(j.roster_key, key);
+  // Minimal mode: injury news waits for the nightly job or Jack's own move.
+  if (news && minimal) return "current";
   if (news && ((j.live && j.recent) || (saver && j.within_saver_gap))) return "waiting";
   await refreshLogged(news ? "Injury news for your players" : "Your roster changed (IR or slots)");
   return "queued";
@@ -317,8 +323,10 @@ export async function refreshLogged(trigger?: string | null) {
     await m.step("outlook", () => refreshVercel(trigger));
   }
   // Rosters changed: have the trade ideas ready before a visit. Jack's own moves refresh them
-  // now; other teams' at most every 3 hours (the search costs ~7.5 s of CPU).
+  // now; other teams' at most every 3 hours (the search costs ~7.5 s of CPU), and in minimal
+  // mode only nightly.
   const own = trigger?.startsWith("You ") ?? false;
+  if (!own && minimalOn()) return recordCpu("roster-move", m, { trigger: trigger ?? null });
   try {
     if (await m.step("trades", () => refreshTradeTargets({ force: own })))
       await record("trade-targets", "ok", "refreshed");

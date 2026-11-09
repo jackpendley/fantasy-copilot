@@ -1,4 +1,5 @@
 import { PlayerCardProvider } from "@/components/fc/player-card";
+import { HomeScreenCheck } from "@/components/home-screen-check";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import { BottomNav, SiteHeader } from "@/components/site-header";
 
@@ -10,6 +11,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       <SiteHeader />
       <PullToRefresh />
       <main className="mx-auto w-full max-w-6xl flex-1 space-y-5 px-4 pt-5 pb-28 lg:pb-10">
+        <HomeScreenCheck />
         {children}
       </main>
       <BottomNav />

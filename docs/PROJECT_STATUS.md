@@ -19,7 +19,7 @@
 - **MarketScope** keeps running (its site uses ~0.5–0.85 min a day).
 - **No production page checks during the saver.** Jack sees the changes on his phone.
 
-Nov 9 (PRs #118–#131) carried out Jack's six requests and the fixes after he tried them (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
+Nov 9 (PRs #118–#133) carried out Jack's six requests and the fixes after he tried them (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
 
 | PR   | What                                                                                                                                                                                                                                                                                                                                                                |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,6 +33,7 @@ Nov 9 (PRs #118–#131) carried out Jack's six requests and the fixes after he t
 | #127 | **Simulate button:** one per trade (keyed), keeps polling after reloads and when the app returns to the front, shows the numbers so far ("refining"). Trades links no longer prefetch (40–60 function calls per visit).                                                                                                                                             |
 | #128 | **Asked trades get a small job of their own** (task `sim-asked`, `sim_jobs.asked_only`): only the asked trades, run ahead of the full job without replacing it. The pages (`liveJob()`, outlook-refresh) ignore it; the simulate button reads `liveJob(true)`. A full job still replaces it.                                                                        |
 | #130 | **Claim timing:** a waiver claim (or any move after the lock) keeps the dropped player until it processes; the season part compares both rosters from that day (`waiverAnalysis`). The simulator reports each season's per-week points. `GET /api/moves/sim-input?key=` (session only) returns one move's simulation input, for one-off runs off Vercel.            |
+| #133 | **Deep checks time claims too:** a move whose add joins after the job's first day (a claim before the lock, or one clearing later) plays the current roster until then and swaps that day (`SimTeam.next`; the add is reserved meanwhile). IR moves stay immediate, the add out until his day.                                                                      |
 | #131 | **Ruled-out players keep their game** on Today and desktop Matchup ("vs X 7:00 PM · Exp. return Nov 11"); the phone Matchup board shows the game.                                                                                                                                                                                                                   |
 
 **Asked trades (fixed in #128):** until #128 each ask queued a full job (~250 moves plus the Outlook), so League and Players showed loaders and the trade waited ~12 min. Now an ask queues an asked-only job that doesn't replace the full one. Each ask still costs ~5 s of Vercel CPU (`prepareJob`).
@@ -64,16 +65,15 @@ Nov 9 (PRs #118–#131) carried out Jack's six requests and the fixes after he t
    - check the steady state is ≤ ~7 min a day for all projects (Hobby averages 8).
 4. **Draft accuracy:** the card appears once ranked players have 10+ games; record the first numbers in MODEL_CARD.
 5. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥ 60 absences with ESPN return dates have ended.
-6. **Deep checks before the lock:** a job built before the first tip applies a claim from today (the add plays tonight, the drop doesn't). It's at most one game per move; the fix is a roster change on a set day in the simulator (`SimTeam.next`, then `buildWireMoves`). After the tip, jobs start tomorrow and are already exact.
-7. **Opponent activity in the weekly number:** the Moves card's weekly win chance assumes the opponent sets lineups daily; the season simulation uses each manager's observed activity (Nov 9: 41% vs 67% for the same week). Consider showing the simulated weekly chance too.
-8. **Still open:**
+6. **Opponent activity in the weekly number:** the Moves card's weekly win chance assumes the opponent sets lineups daily; the season simulation uses each manager's observed activity (Nov 9: 41% vs 67% for the same week). Consider showing the simulated weekly chance too.
+7. **Still open:**
    - the partner's simulated odds on trades (the worker's result has only Jack's side);
    - the official-statuses forward test (≥ 1,500 rows);
    - the props and DARKO blend tests;
    - win-probability candidate C (Dec 6) and recalibration (week 13);
    - props coverage for free agents;
    - the 1-minute watch once CPU has room.
-9. **Roadmap** (`docs/ROADMAP.md`): own projection models, manager profiles, a playoff-schedule planner, NFL and MLB (NBA + NFL together likely need Pro or Cloud Run's free tier; decide next summer).
+8. **Roadmap** (`docs/ROADMAP.md`): own projection models, manager profiles, a playoff-schedule planner, NFL and MLB (NBA + NFL together likely need Pro or Cloud Run's free tier; decide next summer).
 
 ## Background
 

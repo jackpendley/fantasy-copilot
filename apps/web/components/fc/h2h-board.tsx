@@ -151,8 +151,10 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       <div className={cn("relative h-full min-w-0 flex-1 py-2 sm:hidden", right && "text-right")}>
         <div className={cn(right ? "pl-[34px]" : "pr-[34px]")}>
           {nameLine(true)}
+          {/* A ruled-out player keeps his game (his OUT tag says he won't play); the return
+              date shows only without one, for room. */}
           <FitText className="text-[length:calc(10px*var(--fit,1))] leading-[13px] text-muted-foreground tabular-nums">
-            {c.back ?? <PhoneGame game={c.game} />}
+            {c.back && !c.game ? c.back : <PhoneGame game={c.game} />}
           </FitText>
         </div>
         {stats && (
@@ -175,7 +177,14 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       <div className={cn("hidden min-w-0 flex-1 sm:block", right && "text-right")}>
         {nameLine(false)}
         <div className="truncate text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
-          {c.back ?? <GameText game={c.game} />}
+          {c.back && !c.game ? (
+            c.back
+          ) : (
+            <>
+              <GameText game={c.game} />
+              {c.back && <> · {c.back}</>}
+            </>
+          )}
         </div>
         {stats && (
           <div className="line-clamp-2 text-[11px] leading-[14px] text-foreground/80 tabular-nums">

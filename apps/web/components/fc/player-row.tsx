@@ -152,7 +152,15 @@ export function PlayerRow({
               inProgress && "font-medium text-success",
             )}
           >
-            {row.back ?? <GameLine row={row} live={live} />}
+            {/* A ruled-out player keeps his game, with when he's expected back. */}
+            {row.back && !row.game ? (
+              row.back
+            ) : (
+              <>
+                <GameLine row={row} live={live} />
+                {row.back && <> · {row.back}</>}
+              </>
+            )}
           </FitText>
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.

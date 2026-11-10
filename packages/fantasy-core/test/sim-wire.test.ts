@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { simulateSeason, type SimInput, type SimPlayer, type SimTeam } from "../src/sim";
-import { applyMove, fromWire, runChunk, toWire } from "../src/sim-wire";
+import { applyMove, fromWire, runChunk, toWire, type WireMove } from "../src/sim-wire";
 import type { Position } from "../src/slots";
 
 // Synthetic 8-team league (not real data), as in sim.test.ts.
@@ -111,6 +111,29 @@ describe("simulations over the wire", { timeout: 60_000 }, () => {
     };
     expect(applyMove(w, 2, lean)).toEqual(applyMove(w, 2, legacy));
     expect(runChunk(w, 2, [lean], 2, 40, 2)).toEqual(runChunk(w, 2, [legacy], 2, 40, 2));
+  });
+
+  it("carries a move's later roster change (a claim that clears then) over the wire", () => {
+    const w = toWire(league());
+    const roster = w.teams[1]!.roster;
+    const next = { day: 20, drop: roster[11]!.id, add: { ...w.freeAgents[0]! } };
+    const later: WireMove = {
+      key: "c",
+      teams: [{ id: 2, roster, next }],
+      faOut: [w.freeAgents[0]!.id],
+    };
+    const moved = applyMove(w, 2, later);
+    expect(moved.teams[1]!.next).toEqual(next);
+    expect(moved.teams[1]!.roster).toBe(roster);
+    expect(JSON.parse(JSON.stringify(moved))).toEqual(moved);
+    // A move without one clears it.
+    const plain = applyMove(moved, 2, { key: "p", teams: [{ id: 2, roster }] });
+    expect(plain.teams[1]!).not.toHaveProperty("next");
+    // The chunk differs from the immediate move only from day 20 on, so less than it does.
+    const now = { ...later, teams: [{ id: 2, roster: [...roster.slice(0, 11), next.add] }] };
+    const delta = (mv: WireMove) => runChunk(w, 2, [mv], 1, 40, 1).moves[mv.key]!.wins.sum;
+    expect(delta(later)).toBeGreaterThan(0);
+    expect(delta(later)).toBeLessThan(delta({ ...now, key: "c" }));
   });
 
   it("keeps the pool sorted best first when a move puts players in", () => {

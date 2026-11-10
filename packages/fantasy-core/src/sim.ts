@@ -44,6 +44,14 @@ export interface SimTeam {
    * Without it, or once that player is gone, the lowest-fppg player goes.
    */
   irCut?: number;
+  /**
+   * A roster change on a later day (a waiver claim that clears then). Until `day` the roster
+   * plays as it is; on `day`, before anyone's moves, `drop` leaves for the free-agent pool (the
+   * roster's weakest player if he's already gone) and `add` takes his place, and `irCut`, when
+   * given, becomes whom an IR return cuts. `add` is the team's from the start: no one else picks
+   * him up, and his injuries run their course meanwhile.
+   */
+  next?: { day: number; drop?: number; add: SimPlayer; irCut?: number };
 }
 
 export interface SimMatchup {
@@ -291,6 +299,10 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const n = teams.length;
   const rosters = teams.map((t) => t.roster.map(wrap));
   const inputFAs = input.freeAgents.map(wrap);
+  // Roster changes on a later day (SimTeam.next), by team.
+  const pending = teams.map((t) =>
+    t.next ? { day: Math.max(t.next.day, fromDay), add: wrap(t.next.add) } : null,
+  );
   const NH = idOf.length;
 
   // Greedy by value is optimal on this slot structure (transversal matroid): the same
@@ -474,6 +486,11 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     ready.fill(0);
     readyCount = 0;
     faOwner.fill(-1);
+    pending.forEach((pd, i) => {
+      if (pd) faOwner[pd.add.h] = i;
+    });
+    /** Players a roster change (SimTeam.next) put in the pool: they keep healing there. */
+    const released: P[] = [];
 
     const faList = [...inputFAs];
     const inFaList = new Set(faList);
@@ -517,7 +534,36 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       }
       stamp++;
       day = d;
+      pending.forEach((pd, i) => {
+        if (!pd || pd.day !== d) return;
+        const x = st[i]!;
+        const nx = teams[i]!.next!;
+        let gone: P | undefined;
+        if (nx.drop != null) {
+          gone = x.roster.find((r) => r.src.id === nx.drop);
+          if (!gone) for (const r of x.roster) if (!gone || r.fppg < gone.fppg) gone = r;
+        }
+        const swapped = gone
+          ? x.roster.map((r) => (r === gone ? pd.add : r))
+          : [...x.roster, pd.add];
+        setRoster(x, swapped);
+        if (gone) {
+          faOwner[gone.h] = -1;
+          if (!inFaList.has(gone)) {
+            faList.push(gone);
+            inFaList.add(gone);
+          }
+          if (!released.includes(gone)) released.push(gone);
+        }
+        const cut = nx.irCut != null ? swapped.find((r) => r.src.id === nx.irCut) : undefined;
+        if (x.ir && cut) x.ir = { ...x.ir, fill: cut };
+      });
       for (const f of inputFAs) if (faOwner[f.h] === -1) isHealthy(f);
+      for (const f of released) if (faOwner[f.h] === -1) isHealthy(f);
+      // A player a team gets later keeps healing until he joins.
+      pending.forEach((pd) => {
+        if (pd && d < pd.day) isHealthy(pd.add);
+      });
       // Players in the IR slot keep healing (their injury counts down on their team's games).
       for (const x of st) if (x.ir) isHealthy(x.ir.player);
 

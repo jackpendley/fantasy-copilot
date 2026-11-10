@@ -7,7 +7,13 @@ import { LAST_SCORING_PERIOD } from "./calendar";
 import { SIM_FREE_AGENTS, simFreeAgents, simRoster } from "./outlook";
 import { valueContext } from "./trade";
 import { absences } from "./availability";
-import { shownMoves, waiverAnalysis, type StreamOption, type WaiverInputs } from "./waivers";
+import {
+  shownMoves,
+  waiverAnalysis,
+  waiverCandidates,
+  type StreamOption,
+  type WaiverInputs,
+} from "./waivers";
 
 /** Moves played together on the same chunks of seasons (one base run per chunk). */
 export const GROUP_SIZE = 12;
@@ -97,11 +103,16 @@ export interface MoveBuildArgs {
   regularWeeks: number;
   /** Known absences, including the candidate adds'. */
   injured: Map<number, { outUntil: number }>;
+  /** Each add's first day on the roster (waiverCandidates); absent = `fromDay`. */
+  availableFrom?: Map<number, number>;
 }
 
 /**
  * Each option as a WireMove: Jack's roster with it (and whom an IR return would then cut),
- * and the free agents it takes out of or puts into the base pool.
+ * and the free agents it takes out of or puts into the base pool. A move whose add joins after
+ * the season's first day (a claim before the lock, or one clearing later) keeps the roster as it
+ * is until then and swaps on that day (SimTeam.next): the dropped player still plays meanwhile.
+ * One that moves a player to IR instead stays immediate, the add out until his day.
  */
 export function buildWireMoves(a: MoveBuildArgs, options: StreamOption[]): WireMove[] {
   const ctx = valueContext(
@@ -114,6 +125,7 @@ export function buildWireMoves(a: MoveBuildArgs, options: StreamOption[]): WireM
   );
   const pool = simFreeAgents(a.freeAgents, a.injured);
   const inBase = new Set(a.base.freeAgents.map((p) => p.id));
+  let current: ReturnType<typeof simRoster> | undefined;
   return options.map((o) => {
     const roster = [
       ...a.roster
@@ -121,9 +133,30 @@ export function buildWireMoves(a: MoveBuildArgs, options: StreamOption[]): WireM
         .map((p) => (p.id === o.il?.id ? { ...p, slot: "IR" } : p)),
       { ...o.add.player, slot: "BE" },
     ];
-    const team = simRoster(roster, ctx, a.injured);
-    // The pool without the add and with the dropped player, cut to the best again.
-    const dropped = o.drop ? simFreeAgents([o.drop], a.injured) : [];
+    const from = a.availableFrom?.get(o.add.player.id) ?? a.fromDay;
+    const later = from > a.fromDay;
+    let injured = a.injured;
+    if (later && o.il) {
+      const known = a.injured.get(o.add.player.id)?.outUntil ?? 0;
+      injured = new Map(a.injured).set(o.add.player.id, { outUntil: Math.max(known, from) });
+    }
+    let team: Omit<NonNullable<WireMove["teams"]>[number], "id"> = simRoster(roster, ctx, injured);
+    if (later && !o.il) {
+      current ??= simRoster(a.roster, ctx, a.injured);
+      const add = team.roster.find((p) => p.id === o.add.player.id)!;
+      team = {
+        ...current,
+        next: {
+          day: from,
+          ...(o.drop ? { drop: o.drop.id } : {}),
+          add,
+          ...(team.irCut != null ? { irCut: team.irCut } : {}),
+        },
+      };
+    }
+    // The pool without the add and with the dropped player (from his day, when it's later: the
+    // simulation puts him in then), cut to the best again.
+    const dropped = o.drop && !team.next ? simFreeAgents([o.drop], a.injured) : [];
     const next = [...pool.filter((p) => p.id !== o.add.player.id), ...dropped]
       .sort((x, y) => y.fppg - x.fppg)
       .slice(0, SIM_FREE_AGENTS);
@@ -304,6 +337,7 @@ export function buildSimMoves(i: SimBuildInput): {
   others: number;
 } {
   const analysis = waiverAnalysis(i.waiver);
+  const { availableFrom } = waiverCandidates(i.waiver);
   const { options, leading, top, others } = jobMoveOptions(
     analysis,
     i.extraKeys,
@@ -324,7 +358,7 @@ export function buildSimMoves(i: SimBuildInput): {
     regularWeeks: i.regularWeeks,
     injured,
   };
-  const waiver = buildWireMoves(args, options);
+  const waiver = buildWireMoves({ ...args, availableFrom }, options);
   const withTeams = { ...args, teams: i.teams };
   // Asked-for trades join the top tier, after the waiver moves in it.
   const askedTop = buildTradeMoves(withTeams, i.asked?.top ?? []);

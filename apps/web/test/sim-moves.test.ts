@@ -145,6 +145,54 @@ describe("moves built as patches on the base season", () => {
     // The IR return cuts someone on Jack's roster in every move.
     expect(moves.every((m) => m.teams![0]!.irCut != null)).toBe(true);
   });
+
+  it("swap on the day a claim clears when that's after the season's first day", () => {
+    const base = buildOutlookInput({ ...args, teams, freeAgents, injured });
+    const wire = toWire(base.input);
+    const build = (availableFrom: Map<number, number>, options: StreamOption[]) =>
+      buildWireMoves(
+        {
+          base: wire,
+          teamId: 1,
+          roster: mine,
+          freeAgents,
+          games,
+          slotCounts: SLOTS,
+          fromDay: 1,
+          regularWeeks: 2,
+          injured,
+          availableFrom,
+        },
+        options,
+      );
+    const claim = option(freeAgents[0]!, mine[4]!);
+    const [later] = build(new Map([[901, 2]]), [claim]);
+    const [now] = build(new Map([[901, 1]]), [claim]);
+    const me = (w: ReturnType<typeof applyMove>) => w.teams.find((t) => t.id === 1)!;
+    // Until day 2 Jack's roster is as it is; on day 2 the claim swaps 14 for 901.
+    const moved = applyMove(wire, 1, later!);
+    expect(me(moved).roster).toEqual(me(wire).roster);
+    expect(me(moved).next).toEqual({
+      day: 2,
+      drop: 14,
+      add: me(applyMove(wire, 1, now!)).roster.find((x) => x.id === 901),
+      irCut: me(applyMove(wire, 1, now!)).irCut,
+    });
+    // 901 leaves the pool now; 14 joins it only on day 2 (the simulation puts him in).
+    const pool = (w: ReturnType<typeof applyMove>) => w.freeAgents.map((x) => x.id);
+    expect(pool(moved)).not.toContain(901);
+    expect(pool(moved)).not.toContain(14);
+    expect(pool(applyMove(wire, 1, now!))).toContain(14);
+    // A claim clearing on the first day is the immediate move, as before.
+    expect(me(applyMove(wire, 1, now!))).not.toHaveProperty("next");
+    expect(build(new Map(), [claim])).toEqual([now]);
+    // One that moves a player to IR stays immediate, the add out until his day.
+    const viaIL = option(freeAgents[1]!, null, mine[0]!);
+    const [il] = build(new Map([[902, 4]]), [viaIL]);
+    const ilTeam = me(applyMove(wire, 1, il!));
+    expect(ilTeam).not.toHaveProperty("next");
+    expect(ilTeam.roster.find((x) => x.id === 902)!.outUntil).toBe(4);
+  });
 });
 
 describe("the moves a job checks", () => {

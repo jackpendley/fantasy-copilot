@@ -2,7 +2,13 @@
 // and one "chunk" of a move check, the base roster and each move played on the same seasons.
 // Pure; the worker needs nothing but this package.
 
-import { simulateSeason, type SimInput, type SimPlayer, type SimTeamResult } from "./sim";
+import {
+  simulateSeason,
+  type SimInput,
+  type SimPlayer,
+  type SimTeam,
+  type SimTeamResult,
+} from "./sim";
 
 /** SimInput as JSON: Maps become entry lists, `periodOf` a table by day. */
 export interface WireInput {
@@ -66,7 +72,7 @@ export function fromWire(
  */
 export interface WireMove {
   key: string;
-  teams?: { id: number; roster: SimPlayer[]; irCut?: number }[];
+  teams?: { id: number; roster: SimPlayer[]; irCut?: number; next?: SimTeam["next"] }[];
   faOut?: number[];
   faIn?: SimPlayer[];
   roster?: SimPlayer[];
@@ -84,10 +90,12 @@ export function applyMove(base: WireInput, teamId: number, mv: WireMove): WireIn
     teams: base.teams.map((t) => {
       const c = changed.get(t.id);
       if (!c) return t;
-      const next = { ...t, roster: c.roster };
-      if (c.irCut != null) next.irCut = c.irCut;
-      else delete next.irCut;
-      return next;
+      const team = { ...t, roster: c.roster };
+      if (c.irCut != null) team.irCut = c.irCut;
+      else delete team.irCut;
+      if (c.next) team.next = c.next;
+      else delete team.next;
+      return team;
     }),
     freeAgents:
       mv.freeAgents ??

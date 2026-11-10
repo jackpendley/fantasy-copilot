@@ -529,3 +529,108 @@ describe("roster size", { timeout: 30_000 }, () => {
     }
   });
 });
+
+describe("a roster change on a later day (a claim that clears then)", { timeout: 60_000 }, () => {
+  // Team 1 streams (addsPerWeek 1.5); 109 is its 10th man, 6000 a new player.
+  const add: SimPlayer = { id: 6000, eligible: ["SF"], proTeamId: 3, fppg: 25, gp: 75, sd: 0.12 };
+  const withNext = (input: SimInput, day: number, drop = 109): SimInput => ({
+    ...input,
+    teams: input.teams.map((t) => (t.id === 1 ? { ...t, next: { day, drop, add } } : t)),
+  });
+  const weekPoints = (input: SimInput) => {
+    const out: number[][][] = [];
+    const res = simulateSeason({ ...input, inspect: (_s, o) => out.push(o.points) });
+    return { res, out };
+  };
+
+  it("on the first day plays exactly like the roster already changed", () => {
+    // 109 gets a projection of his own: teams 1 and 7 have twins (same projection and pro team),
+    // and the pool's order then decides which one a streamer picks.
+    const golden = goldenInput();
+    const input: SimInput = {
+      ...golden,
+      teams: golden.teams.map((t) => ({
+        ...t,
+        roster: t.roster.map((r) => (r.id === 109 ? { ...r, fppg: 21.45 } : r)),
+      })),
+    };
+    const t1 = input.teams[0]!;
+    const dropped = t1.roster.find((r) => r.id === 109)!;
+    const patched: SimInput = {
+      ...input,
+      teams: input.teams.map((t) =>
+        t.id === 1 ? { ...t, roster: t1.roster.map((r) => (r.id === 109 ? add : r)) } : t,
+      ),
+      freeAgents: [...input.freeAgents, dropped].sort((x, y) => y.fppg - x.fppg),
+    };
+    expect(weekPoints(withNext(input, input.fromDay))).toEqual(weekPoints(patched));
+    // A day before the start counts as the start.
+    expect(simulateSeason(withNext(input, 1))).toEqual(simulateSeason(patched));
+  });
+
+  it("after the last day changes nothing", () => {
+    const input = goldenInput();
+    expect(weekPoints(withNext(input, input.lastDay + 1))).toEqual(weekPoints(input));
+  });
+
+  it("mid-season leaves the weeks before it exactly as they were", () => {
+    const input = goldenInput();
+    const base = weekPoints(input);
+    const moved = weekPoints(withNext(input, 22)); // the first day of week 4
+    for (const [s, season] of moved.out.entries())
+      for (const [i, pts] of season.entries())
+        expect(pts.slice(0, 4)).toEqual(base.out[s]![i]!.slice(0, 4));
+    expect(moved.out.map((s) => s[0]!.slice(4))).not.toEqual(base.out.map((s) => s[0]!.slice(4)));
+  });
+
+  it("keeps the added player off every other team before the day", () => {
+    // The best free agent by far, and every other team streams often.
+    const input = goldenInput();
+    const star: SimPlayer = { ...add, fppg: 40 };
+    const pool: SimInput = {
+      ...input,
+      teams: input.teams.map((t) => ({ ...t, addsPerWeek: 3 })),
+      freeAgents: [star, ...input.freeAgents],
+    };
+    const holders = (i: SimInput) => {
+      let n = 0;
+      simulateSeason({
+        ...i,
+        inspect: (_s, o) => {
+          n += o.rosters.filter((r) => r.includes(star.id)).length;
+        },
+      });
+      return n;
+    };
+    expect(holders(pool)).toBeGreaterThan(0);
+    const later: SimInput = {
+      ...pool,
+      teams: pool.teams.map((t) =>
+        t.id === 1 ? { ...t, next: { day: pool.lastDay + 1, drop: 109, add: star } } : t,
+      ),
+    };
+    expect(holders(later)).toBe(0);
+  });
+
+  it("cuts the weakest player when the one to drop is already gone, and joins the team", () => {
+    const input = withNext(goldenInput(), 22, 99999);
+    const limit = Object.values(input.slotCounts).reduce((a, n) => a + n, 0);
+    simulateSeason({
+      ...input,
+      seasons: 20,
+      inspect: (_s, o) => {
+        expect(o.rosters[0]!.length).toBeLessThanOrEqual(limit);
+      },
+    });
+    let kept = 0;
+    simulateSeason({
+      ...input,
+      teams: input.teams.map((t) => ({ ...t, addsPerWeek: 0 })),
+      seasons: 20,
+      inspect: (_s, o) => {
+        if (o.rosters[0]!.includes(add.id)) kept++;
+      },
+    });
+    expect(kept).toBe(20);
+  });
+});

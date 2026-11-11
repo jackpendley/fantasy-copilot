@@ -55,7 +55,7 @@ Ended Nov 10 (Jack's OK): Pro has no CPU cap, and the budget alerts cover spendi
 
 1. **After #135 deploys:** the first fantasy-copilot build on the Basic machine should succeed (it was Elastic), and the next morning's usage (Vercel → Usage, Settings' CPU card) should show ~5–9 min a day of Fluid Active CPU, a few cents.
 2. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker). On Pro it saves money, not a cap; Jack adds `DATABASE_URL` as a GitHub Actions secret.
-3. **The 1-minute watch:** Pro's crons run per minute, so the gameday job could move from cron-job.org to a Vercel cron and the ESPN watch to every minute (propose with costs).
+3. **Scheduling stays on cron-job.org** (decided Nov 10): a Vercel cron costs the same, would block deploys on Hobby, and has no call history or failure emails. **The 1-minute watch is parked:** it would only see moves made in the ESPN app ~2–4 min sooner, against a simulation that takes several minutes and other teams' moves that wait up to 30 min anyway (COMPUTE.md §7). Revisit if a race for a player ever turns on minutes.
 4. **Draft accuracy:** the card appears once ranked players have 10+ games; record the first numbers in MODEL_CARD.
 5. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥ 60 absences with ESPN return dates have ended.
 6. **Still open:**

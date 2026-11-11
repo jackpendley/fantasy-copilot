@@ -2,7 +2,9 @@
 
 Written 2026-11-05. It is updated as measurements come in; the measured facts are dated.
 
-**Goal:** stay on Vercel Hobby while the app grows into a serious analytics platform (NBA now, then NFL and MLB). Heavy computation should live where it's free and scalable.
+**Since Nov 10 the team is on Vercel Pro** (§9); the efficiency work below still keeps the bill inside Pro's $20 credit.
+
+**Goal (Nov 5):** stay on Vercel Hobby while the app grows into a serious analytics platform (NBA now, then NFL and MLB). Heavy computation should live where it's free and scalable.
 
 **Decisions (Jack, Nov 5):**
 
@@ -287,7 +289,9 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - per simulation job: duration, moves, and Vercel CPU (`sim_jobs`);
 - the projected 30-day total (daily × 30) against 240 min.
 
-## 9. The CPU saver (Nov 6 to Nov 29) and minimal mode (Nov 9 to Nov 21)
+## 9. The CPU saver and minimal mode (Nov 6 to Nov 10, ended by Pro)
+
+**Ended Nov 10.** The window passed 4 h that morning (4 h 0 m 5 s at 5:50, 4 h 0 m 28 s by 9:17; Vercel's notice: the project pauses in 24 hours), and the days leaving it were ~0–0.3 min each, so it couldn't recover. Jack moved the team to **Pro** the same day. Pro has no CPU-hour cap: usage is billed from the $20 monthly credit (Active CPU $0.128/h in iad1, memory $0.0106/GB-h, invocations $0.60/M, Basic builds $0.007/min). The last 30 days' usage would have cost ~$3; without the cuts, ~$4–6. Both switches in `lib/cpu-saver.ts` now end Nov 10 and stay in the code for a future squeeze. The history below is kept as written.
 
 **Measured Nov 6, 15:35 MST:** 3 h 34 m of 4 h (26 min left).
 
@@ -327,5 +331,5 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 | Trade packages for watched players elsewhere   | searched and simulated in every job | only when Jack asks (permanent, Nov 9)                          |
 
 - **Unchanged:** every page reads ESPN live when opened; Jack's own moves and asked deep checks get full simulations; the nightly job.
-- **Tripwire:** if a morning total is **3 h 56 m or more** before Nov 18, Jack pays for one month of Pro that day (16 h; downgrade before it renews). After a Pro month, Hobby's window still contains that month, so the cuts stay.
+- **Tripwire:** if a morning total is **3 h 56 m or more** before Nov 18, Jack pays for one month of Pro that day. (Corrected Nov 10: Pro has no CPU-hour cap; 16 h was the trial's. A later downgrade to Hobby re-applies the 4 h rolling window, which would then hold Pro-month usage.)
 - **After Nov 29:** the steady state must stay ≤ ~7 min a day for all projects (Hobby averages 8). The worker writing to Neon directly (planned ~Nov 21) is the main lever.

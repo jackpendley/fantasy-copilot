@@ -8,9 +8,12 @@
 // nothing rolling off before Nov 18, until Nov 21 the background work runs every 30 minutes,
 // and simulations run only after Jack's own moves, when he asks, and nightly. Pages still read
 // ESPN live. docs/COMPUTE.md §9 lists what waits and for how long.
+//
+// Both ended Nov 10: the window went over 4 h that morning and Jack moved to Vercel Pro, which
+// has no CPU cap (usage comes out of its monthly credit). The switches stay for a future squeeze.
 
-export const MINIMAL_UNTIL = Date.parse("2026-11-21T00:00:00Z");
-export const SAVER_UNTIL = Date.parse("2026-11-29T00:00:00Z");
+export const MINIMAL_UNTIL = Date.parse("2026-11-10T00:00:00Z");
+export const SAVER_UNTIL = Date.parse("2026-11-10T00:00:00Z");
 
 export const minimalOn = (now = Date.now()) => now < MINIMAL_UNTIL;
 export const saverOn = (now = Date.now()) => now < SAVER_UNTIL;

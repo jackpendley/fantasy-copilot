@@ -12,7 +12,11 @@
 - **Nov 10:** the 30-day total passed 4 h (4 h 0 m 28 s at 9:17; Vercel warned of a pause in 24 h). Jack upgraded to Pro the same day, per the tripwire.
 - **Pro has no CPU-hour cap.** Usage comes out of the $20 monthly credit; the last 30 days would have cost ~$3, ~$4–6 without the cuts.
 - **Minimal mode and the saver ended Nov 10** (`lib/cpu-saver.ts`, PR #135): background work every 5 min in the game window, other teams' moves within 30 min, pages refresh every minute in games. Trade packages stay on request.
-- **Spend management:** the team budget is Vercel's default $200, pause off.
+- **Pro settings (Nov 10, Jack's OK):**
+  - cron-job.org's gameday job back to every 5 minutes;
+  - an on-demand budget of **$10** beyond the $20 credit (alerts at $5, $7.50 and $10; pause off);
+  - every project builds on the **Basic** machine (the team default too);
+  - pokemon-tcgp-db skips builds for its sync bot's data commits (Ignored Build Step on the commit message); its site reads Supabase, so they changed nothing.
 - **MarketScope** is on the same team and plan.
 
 Nov 9–10 (PRs #118–#135) carried out Jack's six requests and the fixes after he tried them (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
@@ -41,20 +45,15 @@ Nov 9–10 (PRs #118–#135) carried out Jack's six requests and the fixes after
   - **Today and Matchup (#131):** a ruled-out player shows his team's game.
   - **Simulate a trade (#128):** League and Players should show no loaders; the trade's numbers should appear within a few minutes.
   - **Features:** the scoreboard details, both charts, Moves, Trades, and the Expected-return labels.
-- **Pro settings (Jack's OK needed):**
-  - cron-job.org's gameday job back to every 5 minutes (it's at 30);
-  - the budget: ~$25–30 with alerts instead of the $200 default;
-  - builds on the Basic machine, if they're on Elastic.
 - **Worker → Neon directly** (approved Nov 9): Jack adds `DATABASE_URL` as a GitHub Actions secret when the PR is ready.
 
-## Daily CPU check (session cron, until ~Nov 20)
+## Daily CPU check
 
-- It was for the Hobby cap. On Pro, propose ending it (the budget alerts replace it) or turning it into a weekly spend check.
-- If kept: renew it around Nov 11; delete it Nov 21. A new session doesn't need to set it up again.
+Ended Nov 10 (Jack's OK): Pro has no CPU cap, and the budget alerts cover spending.
 
 ## Next tasks
 
-1. **After #135 deploys:** the next morning's usage (Vercel → Usage, Settings' CPU card) should show ~5–9 min a day of Fluid Active CPU, a few cents.
+1. **After #135 deploys:** the first fantasy-copilot build on the Basic machine should succeed (it was Elastic), and the next morning's usage (Vercel → Usage, Settings' CPU card) should show ~5–9 min a day of Fluid Active CPU, a few cents.
 2. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker). On Pro it saves money, not a cap; Jack adds `DATABASE_URL` as a GitHub Actions secret.
 3. **The 1-minute watch:** Pro's crons run per minute, so the gameday job could move from cron-job.org to a Vercel cron and the ESPN watch to every minute (propose with costs).
 4. **Draft accuracy:** the card appears once ranked players have 10+ games; record the first numbers in MODEL_CARD.

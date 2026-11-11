@@ -1,25 +1,21 @@
-# Project status (2026-11-09, evening)
+# Project status (2026-11-10)
 
 ## Where things stand
 
-**Live** at **https://fantasycopilot.vercel.app** (Vercel Hobby, Neon Postgres).
+**Live** at **https://fantasycopilot.vercel.app** (Vercel Pro since Nov 10, Neon Postgres).
 
 - **Tabs:** Today, Matchup, Players (Moves, Free agents, Trends, Draft), League (Trades, team pages).
 - **Simulations:** moves and trades run on the GitHub Actions worker (ADR-058/059).
 
-**CPU: minimal mode until Nov 21** (docs/COMPUTE.md §9).
+**CPU: Vercel Pro since Nov 10** (docs/COMPUTE.md §9).
 
-- **Nov 9:** Vercel was at 3 h 51 m of 4 h, with ~8 min leaving the 30-day window before Nov 21. Jack chose minimal mode over paying for Pro.
-- **Tripwire:** a morning check at **≥ 3 h 56 m** means Jack pays for one month of Pro that day.
-- **What minimal mode does:**
-  - background work every 30 min (cron-job.org changed too, Nov 9);
-  - other teams' moves and injury news wait for the nightly job;
-  - open pages refresh every 5 min.
-- **The saver** runs until Nov 29.
-- **MarketScope** keeps running (its site uses ~0.5–0.85 min a day).
-- **No production page checks during the saver.** Jack sees the changes on his phone.
+- **Nov 10:** the 30-day total passed 4 h (4 h 0 m 28 s at 9:17; Vercel warned of a pause in 24 h). Jack upgraded to Pro the same day, per the tripwire.
+- **Pro has no CPU-hour cap.** Usage comes out of the $20 monthly credit; the last 30 days would have cost ~$3, ~$4–6 without the cuts.
+- **Minimal mode and the saver ended Nov 10** (`lib/cpu-saver.ts`, PR #135): background work every 5 min in the game window, other teams' moves within 30 min, pages refresh every minute in games. Trade packages stay on request.
+- **Spend management:** the team budget is Vercel's default $200, pause off.
+- **MarketScope** is on the same team and plan.
 
-Nov 9 (PRs #118–#133) carried out Jack's six requests and the fixes after he tried them (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
+Nov 9–10 (PRs #118–#135) carried out Jack's six requests and the fixes after he tried them (plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`).
 
 | PR   | What                                                                                                                                                                                                                                                                                                                                                                |
 | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,6 +30,7 @@ Nov 9 (PRs #118–#133) carried out Jack's six requests and the fixes after he t
 | #128 | **Asked trades get a small job of their own** (task `sim-asked`, `sim_jobs.asked_only`): only the asked trades, run ahead of the full job without replacing it. The pages (`liveJob()`, outlook-refresh) ignore it; the simulate button reads `liveJob(true)`. A full job still replaces it.                                                                        |
 | #130 | **Claim timing:** a waiver claim (or any move after the lock) keeps the dropped player until it processes; the season part compares both rosters from that day (`waiverAnalysis`). The simulator reports each season's per-week points. `GET /api/moves/sim-input?key=` (session only) returns one move's simulation input, for one-off runs off Vercel.            |
 | #133 | **Deep checks time claims too:** a move whose add joins after the job's first day (a claim before the lock, or one clearing later) plays the current roster until then and swaps that day (`SimTeam.next`; the add is reserved meanwhile). IR moves stay immediate, the add out until his day.                                                                      |
+| #135 | **Pro: minimal mode and the saver end** (both dates set to Nov 10); COMPUTE.md §9 records the overage and the move to Pro.                                                                                                                                                                                                                                          |
 | #131 | **Ruled-out players keep their game** on Today and desktop Matchup ("vs X 7:00 PM · Exp. return Nov 11"); the phone Matchup board shows the game.                                                                                                                                                                                                                   |
 
 **Asked trades (fixed in #128):** until #128 each ask queued a full job (~250 moves plus the Outlook), so League and Players showed loaders and the trade waited ~12 min. Now an ask queues an asked-only job that doesn't replace the full one. Each ask still costs ~5 s of Vercel CPU (`prepareJob`).
@@ -44,38 +41,35 @@ Nov 9 (PRs #118–#133) carried out Jack's six requests and the fixes after he t
   - **Today and Matchup (#131):** a ruled-out player shows his team's game.
   - **Simulate a trade (#128):** League and Players should show no loaders; the trade's numbers should appear within a few minutes.
   - **Features:** the scoreboard details, both charts, Moves, Trades, and the Expected-return labels.
-- **Tripwire:** pay for one Pro month (Vercel → Settings → Billing) only if a morning check reads ≥ 3 h 56 m.
-- **Worker → Neon directly** (after Nov 21, approved Nov 9): Jack adds `DATABASE_URL` as a GitHub Actions secret when the PR is ready.
+- **Pro settings (Jack's OK needed):**
+  - cron-job.org's gameday job back to every 5 minutes (it's at 30);
+  - the budget: ~$25–30 with alerts instead of the $200 default;
+  - builds on the Basic machine, if they're on Elastic.
+- **Worker → Neon directly** (approved Nov 9): Jack adds `DATABASE_URL` as a GitHub Actions secret when the PR is ready.
 
-## Daily CPU check (until ~Nov 20)
+## Daily CPU check (session cron, until ~Nov 20)
 
-- **Schedule:** session cron at 8:47 local. It reads Vercel → Usage (and each project's share) plus Settings' CPU card.
-- **Report:** 2–4 lines; nothing changes without Jack's OK.
-- **Renew it around Nov 11.** At the renewal, also set a one-time reminder for **Nov 21: set cron-job.org's gameday job back to every 5 minutes** (Jack approved the change both ways). Delete the daily job Nov 21. **A new session before Nov 20 should set it up again.**
+- It was for the Hobby cap. On Pro, propose ending it (the budget alerts replace it) or turning it into a weekly spend check.
+- If kept: renew it around Nov 11; delete it Nov 21. A new session doesn't need to set it up again.
 
 ## Next tasks
 
-1. **Watch minimal mode:** tomorrow's total, the per-project bars, and Settings (gameday runs ~48 a day; simulation jobs only after own moves, asks and nightly).
-2. **Nov 21:**
-   - cron-job.org back to every 5 min;
-   - minimal mode ends on its own;
-   - then PR 7: the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker; ~1.5–3 min a day less).
-3. **Nov 29:**
-   - the saver ends;
-   - check the steady state is ≤ ~7 min a day for all projects (Hobby averages 8).
+1. **After #135 deploys:** the next morning's usage (Vercel → Usage, Settings' CPU card) should show ~5–9 min a day of Fluid Active CPU, a few cents.
+2. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker). On Pro it saves money, not a cap; Jack adds `DATABASE_URL` as a GitHub Actions secret.
+3. **The 1-minute watch:** Pro's crons run per minute, so the gameday job could move from cron-job.org to a Vercel cron and the ESPN watch to every minute (propose with costs).
 4. **Draft accuracy:** the card appears once ranked players have 10+ games; record the first numbers in MODEL_CARD.
 5. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥ 60 absences with ESPN return dates have ended.
-6. **Opponent activity in the weekly number:** the Moves card's weekly win chance assumes the opponent sets lineups daily; the season simulation uses each manager's observed activity (Nov 9: 41% vs 67% for the same week). Consider showing the simulated weekly chance too.
-7. **Still open:**
+6. **Still open:**
    - the partner's simulated odds on trades (the worker's result has only Jack's side);
    - the official-statuses forward test (≥ 1,500 rows);
    - the props and DARKO blend tests;
    - win-probability candidate C (Dec 6) and recalibration (week 13);
-   - props coverage for free agents;
-   - the 1-minute watch once CPU has room.
-8. **Roadmap** (`docs/ROADMAP.md`): own projection models, manager profiles, a playoff-schedule planner, NFL and MLB (NBA + NFL together likely need Pro or Cloud Run's free tier; decide next summer).
+   - props coverage for free agents.
+7. **Roadmap** (`docs/ROADMAP.md`): own projection models, manager profiles, a playoff-schedule planner, NFL and MLB (on Pro, NBA + NFL together fit the credit; check next summer).
 
 ## Background
+
+- **Nov 10, decided:** the Moves card's weekly win chance keeps assuming both teams set their best lineup daily (Jack prefers the optimal-lineup number; the season simulation still uses each manager's observed activity).
 
 - **Nov 6** (#106–#116): correctness fixes, UI polish, pull to refresh, protected players and precision tiers (ADR-060), the Interested list, the percentile scale (ADR-061), Trends vs last season, Players → Draft, the season pool fix.
 - **Nov 5** (#79–#103): automatic simulations, builds on the worker, gameday skips.

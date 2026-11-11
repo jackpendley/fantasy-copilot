@@ -119,9 +119,8 @@ describe("trade idea refresh gap", () => {
     expect(refreshDue(new Date(now - TRADE_REFRESH_GAP_MS + 60_000), now)).toBe(false);
     expect(refreshDue(new Date(now - TRADE_REFRESH_GAP_MS), now)).toBe(true);
   });
-  it("in minimal mode, only refreshes when there are no ideas (nightly and own moves force it)", () => {
+  it("uses the 3-hour gap since minimal mode ended Nov 10", () => {
     const now = Date.parse("2026-11-12T20:00:00Z");
-    expect(refreshDue(null, now)).toBe(true);
-    expect(refreshDue(new Date(now - 24 * 3600_000), now)).toBe(false);
+    expect(refreshDue(new Date(now - TRADE_REFRESH_GAP_MS), now)).toBe(true);
   });
 });

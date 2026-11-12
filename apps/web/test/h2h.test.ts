@@ -155,7 +155,6 @@ describe("cells for other days", () => {
       3,
       () => 25,
       () => "ACTIVE",
-      () => null,
       ["PG", "UTIL"],
     );
     // Player 2 has a game but no slot was picked for him (bench); 3 fills the open UTIL; 5

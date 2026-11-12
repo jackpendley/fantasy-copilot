@@ -175,7 +175,7 @@ describe("box score lines", () => {
 });
 
 describe("a ruled-out player today", () => {
-  const out = { ...row(6, "in", 0), playProb: 0, status: "OUT", back: "Exp. return Nov 14" };
+  const out = { ...row(6, "in", 0), playProb: 0, status: "OUT" };
   const [r] = liveRows([out as DayRow], [], [sb(6, "in", 2, "0:00")]);
 
   it("keeps his game and its score, with nothing to score or project", () => {
@@ -183,7 +183,6 @@ describe("a ruled-out player today", () => {
     const { cell } = cellFromLive(r!);
     expect(cell).toMatchObject({
       out: true,
-      back: "Exp. return Nov 14",
       game: { opponent: "BOS", state: "in", score: { us: 60, them: 55 } },
       points: null,
       proj: null,

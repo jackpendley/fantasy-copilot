@@ -45,7 +45,7 @@ import {
 } from "@/lib/nba/h2h";
 import { outOnDays } from "@/lib/nba/past-status";
 import { countsAsStart, liveRows, outToday } from "@/lib/nba/live";
-import { absences, returnLabel } from "@/lib/nba/availability";
+import { absences } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
 import {
   matchupSnapshotsTimed,
@@ -602,12 +602,8 @@ export default async function WeekPage({
     // A later week shows only who's ruled out: today's day-to-day tags don't reach it.
     const statusAhead = (p: Parameters<typeof perGameProjection>[0]) =>
       outThatDay(p) ? "OUT" : out.has(p.id) || mode === "later" ? "ACTIVE" : statusFor(p);
-    const backAhead = (p: { id: number }) => {
-      const a = out.get(p.id);
-      return a && outThatDay(p) ? returnLabel(a, true) : null;
-    };
     const ahead = (roster: typeof data.me.roster, slotOf: Map<number, string> | undefined) =>
-      cellsAhead(roster, slotOf, data.games, day, projAhead, statusAhead, backAhead, slots);
+      cellsAhead(roster, slotOf, data.games, day, projAhead, statusAhead, slots);
     return [
       ahead(data.ahead.me.roster, mine.slotsByDay.get(day)),
       oppAhead && theirs ? ahead(oppAhead.roster, theirs.slotsByDay.get(day)) : [],

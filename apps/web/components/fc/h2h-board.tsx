@@ -24,8 +24,9 @@ const ROW = "h-[58px] sm:h-[76px]";
 /** Statuses that keep a player out today (greyed). */
 const OUT_STATUSES = new Set(["OUT", "INJURY_RESERVE", "SUSPENSION"]);
 
+/** The day's game; nothing without one, so who plays stands out. */
 function GameText({ game }: { game: H2HGame | null }) {
-  if (!game) return <span>No game</span>;
+  if (!game) return null;
   return (
     <span className="inline-flex min-w-0 items-center gap-1 whitespace-nowrap">
       <span>{game.home ? "vs" : "@"}</span>
@@ -153,23 +154,17 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       <div className={cn("relative h-full min-w-0 flex-1 py-2 sm:hidden", right && "text-right")}>
         <div className={cn(right ? "pl-[34px]" : "pr-[34px]")}>
           {nameLine(true)}
-          {/* A ruled-out player keeps his game (his OUT tag says he won't play), with when
-              he's expected back in place of his stats. */}
-          <FitText className="text-[length:calc(10px*var(--fit,1))] leading-[13px] text-muted-foreground tabular-nums">
-            {c.back && !c.game ? c.back : <PhoneGame game={c.game} />}
+          {/* A ruled-out player keeps his game (his OUT tag says he won't play), and nothing
+              under it. */}
+          <FitText className="min-h-[13px] text-[length:calc(10px*var(--fit,1))] leading-[13px] text-muted-foreground tabular-nums">
+            <PhoneGame game={c.game} />
           </FitText>
         </div>
-        {c.out
-          ? c.back && (
-              <FitText className="text-[length:calc(10.5px*var(--fit,1))] leading-[13px] text-muted-foreground">
-                {c.back}
-              </FitText>
-            )
-          : stats && (
-              <FitText className="text-[length:calc(10.5px*var(--fit,1))] leading-[13px] tracking-tight text-foreground/80 tabular-nums">
-                <PhoneStats line={c.line!} />
-              </FitText>
-            )}
+        {stats && !c.out && (
+          <FitText className="text-[length:calc(10.5px*var(--fit,1))] leading-[13px] tracking-tight text-foreground/80 tabular-nums">
+            <PhoneStats line={c.line!} />
+          </FitText>
+        )}
         {(c.game || c.points != null || c.proj != null) && (
           <div className={cn("absolute top-2", right ? "left-0" : "right-0")}>
             <Score c={c} right={right} />
@@ -184,20 +179,14 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       />
       <div className={cn("hidden min-w-0 flex-1 sm:block", right && "text-right")}>
         {nameLine(false)}
-        <div className="truncate text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
-          {c.back && !c.game ? c.back : <GameText game={c.game} />}
+        <div className="min-h-[1lh] truncate text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
+          <GameText game={c.game} />
         </div>
-        {c.out
-          ? c.back && (
-              <div className="truncate text-[11px] leading-[14px] text-muted-foreground">
-                {c.back}
-              </div>
-            )
-          : stats && (
-              <div className="line-clamp-2 text-[11px] leading-[14px] text-foreground/80 tabular-nums">
-                {stats}
-              </div>
-            )}
+        {stats && !c.out && (
+          <div className="line-clamp-2 text-[11px] leading-[14px] text-foreground/80 tabular-nums">
+            {stats}
+          </div>
+        )}
       </div>
       <div className="hidden sm:block">
         <Score c={c} right={right} />
@@ -218,9 +207,9 @@ function PhoneStats({ line }: { line: Record<string, number> }) {
   ));
 }
 
-/** "@ [logo] BOS 82-77 Q4 10:37" for a phone row. */
+/** "@ [logo] BOS 82-77 Q4 10:37" for a phone row; nothing without a game. */
 function PhoneGame({ game }: { game: H2HGame | null }) {
-  if (!game) return <span>No game</span>;
+  if (!game) return null;
   return (
     <>
       <span className="whitespace-nowrap">

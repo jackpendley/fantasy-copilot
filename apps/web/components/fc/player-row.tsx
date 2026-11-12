@@ -18,7 +18,7 @@ import { TeamLogo } from "./team-logo";
  */
 function GameLine({ row, live }: { row: DayRow; live?: LiveRow }) {
   const g = row.game;
-  if (!g) return <>No game</>;
+  if (!g) return null;
   const score = live?.score ? `${live.score.us}-${live.score.them}` : "";
   const when =
     g.state === "pre" ? fmtTip(g.tip) : g.state === "post" ? "Final" : g.detail || "Live";
@@ -148,26 +148,23 @@ export function PlayerRow({
           </div>
           <FitText
             className={cn(
-              "text-[length:calc(12px*var(--fit,1))] text-muted-foreground",
+              "min-h-[1lh] text-[length:calc(12px*var(--fit,1))] text-muted-foreground",
               inProgress && "font-medium text-success",
             )}
           >
-            {/* A ruled-out player keeps his game; when he's expected back goes under it. */}
-            {row.back && !row.game ? row.back : <GameLine row={row} live={live} />}
+            {/* Only with a game (blank without one, so who plays stands out). A ruled-out
+                player keeps his game and has nothing under it. */}
+            <GameLine row={row} live={live} />
           </FitText>
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.
             <div className="line-clamp-2 text-[length:calc(11px*var(--fit,1))] leading-[14px] text-foreground/80 tabular-nums sm:line-clamp-1 sm:text-[length:calc(12px*var(--fit,1))] sm:leading-4">
               {stats}
             </div>
-          ) : out && row.game && row.back ? (
-            // Ruled out with a game: when he's expected back, in place of his stats.
-            <p className="truncate text-[length:calc(11px*var(--fit,1))] leading-[14px] text-muted-foreground sm:text-[length:calc(12px*var(--fit,1))] sm:leading-4">
-              {row.back}
-            </p>
           ) : (
             // A readable size that never shrinks: long notes wrap to two lines and end in "…"
-            // (the player card has the whole note).
+            // (the player card has the whole note). Not for a ruled-out player: his O says it.
+            !out &&
             row.injuryNote && (
               <p className="line-clamp-2 text-xs leading-4 text-muted-foreground">
                 {row.injuryNote}

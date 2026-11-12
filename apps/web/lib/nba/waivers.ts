@@ -10,7 +10,13 @@
 // center is worth only the starts he'd actually get; a guard who fills open days is worth more.
 
 import type { FreeAgent, ProGame, RosterPlayer } from "@fantasy-copilot/espn";
-import { irEligible } from "@fantasy-copilot/fantasy-core";
+import {
+  expandSlots,
+  irEligible,
+  isStartingSlot,
+  slotAccepts,
+  type Position,
+} from "@fantasy-copilot/fantasy-core";
 import { etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
 import { perGameProjection } from "./projection";
 import { teamValue, weighted, type ValueContext } from "./trade";
@@ -45,6 +51,11 @@ export interface WaiverInputs {
    * tomorrow, so the add can't play today and the dropped player still can.
    */
   rosterLocked?: boolean;
+  /**
+   * Today's first tip (ms), while the roster hasn't locked yet: a move can wait for it, so the
+   * dropped player keeps today's game and the add counts from tomorrow.
+   */
+  firstTip?: number | null;
   /** Last day of the league season (rest-of-season horizon). */
   lastDay: number;
   /**
@@ -101,12 +112,19 @@ export interface StreamOption {
   laterWins: number;
   /** The lineup points behind laterWins: after this week, playoff days counted double. */
   laterPts: number;
+  /**
+   * Worth more made just after today's first tip than now: the dropped player keeps today's
+   * game and the add counts from tomorrow (often an extra start).
+   */
+  timing?: "afterTip";
 }
 
 const MAX_CANDIDATES = 45;
 /** Long-term candidates evaluated by lineup fit (best raw rest-of-season values first). */
 const MAX_LONG_TERM = 25;
 const MIN_SEASON_GAIN = 50;
+/** Adds evaluated for the starts they'd add to this week's lineups (open slots first). */
+const MAX_FILLS = 25;
 
 const availability = (p: RosterPlayer) => {
   const proj = p.projection;
@@ -227,6 +245,51 @@ export function waiverAnalysis(a: WaiverInputs): {
     shortlist.set(c.player.id, c);
   for (const c of [...candidates].sort((x, y) => y.ros - x.ros).slice(0, MAX_LONG_TERM))
     shortlist.set(c.player.id, c);
+  // Volume misses a cheap player who'd fill open lineup slots: also the adds worth the most
+  // starts against this week's lineups as they stand (an open slot he fits counts his whole
+  // projection; otherwise what he'd add over the weakest starter he could replace).
+  const starting = expandSlots(week.slotCounts).filter(isStartingSlot);
+  const teamsOn = new Map(
+    week.periods.map((sp) => [
+      sp,
+      new Set(
+        week.games
+          .filter((g) => g.scoringPeriodId === sp)
+          .flatMap((g) => [g.homeProTeamId, g.awayProTeamId]),
+      ),
+    ]),
+  );
+  const asOf = week.asOf ?? week.fromPeriod;
+  const valueOf = new Map(current.map((p) => [p.id, perGameProjection(p, asOf).fppg]));
+  const fills = (c: WaiverCandidate) => {
+    const pos = c.player.positions as Position[];
+    const from = availableFrom.get(c.player.id) ?? week.fromPeriod;
+    let gain = 0;
+    for (const sp of week.periods) {
+      if (sp < from || !teamsOn.get(sp)?.has(c.player.proTeamId)) continue;
+      const used = [...(baseline.slotsByDay.get(sp) ?? new Map<number, string>())];
+      const open = [...starting];
+      for (const [, slot] of used) {
+        const k = open.indexOf(slot);
+        if (k >= 0) open.splice(k, 1);
+      }
+      if (open.some((slot) => slotAccepts(slot, pos))) {
+        gain += c.fppg;
+        continue;
+      }
+      const weakest = Math.min(
+        ...used.filter(([, slot]) => slotAccepts(slot, pos)).map(([id]) => valueOf.get(id) ?? 0),
+      );
+      if (Number.isFinite(weakest)) gain += Math.max(0, c.fppg - weakest);
+    }
+    return gain;
+  };
+  for (const { c } of candidates
+    .map((c) => ({ c, gain: fills(c) }))
+    .filter((x) => x.gain > 0)
+    .sort((x, y) => y.gain - x.gain)
+    .slice(0, MAX_FILLS))
+    shortlist.set(c.player.id, c);
   for (const c of candidates) if (a.watch?.has(c.player.id)) shortlist.set(c.player.id, c);
 
   // Rest of season with each move, by lineup fit (positions, schedule, injuries, IL returns).
@@ -254,6 +317,9 @@ export function waiverAnalysis(a: WaiverInputs): {
   const seasonOf = (
     c: WaiverCandidate,
     d: { p: RosterPlayer | null; ros: number; il: RosterPlayer | null },
+    /** The add's first day, and whether the whole move waits for it. */
+    first = availableFrom.get(c.player.id),
+    waits = delayed(c),
   ) => {
     if (!a.season || !baseSeason) {
       const delta = c.ros - d.ros;
@@ -268,8 +334,8 @@ export function waiverAnalysis(a: WaiverInputs): {
     }
     // A delayed move counts from its day; otherwise the add plays once he can (a game of his
     // already under way today).
-    const from = availableFrom.get(c.player.id) ?? a.season.fromDay;
-    const at = seasonFrom(delayed(c) ? from : a.season.fromDay);
+    const from = first ?? a.season.fromDay;
+    const at = seasonFrom(waits ? from : a.season.fromDay);
     const ctx =
       from > at.ctx.fromDay
         ? {
@@ -302,6 +368,59 @@ export function waiverAnalysis(a: WaiverInputs): {
     };
   };
 
+  // Before today's first tip, a move can also wait for it (this league locks rosters at the
+  // day's first tip): the dropped player keeps today's game and the add counts from tomorrow.
+  // For a drop who plays today that's often worth an extra start, so both timings are valued.
+  const playsToday = teamsOn.get(week.fromPeriod) ?? new Set<number>();
+  const canWait = (c: WaiverCandidate, d: { p: RosterPlayer | null }) =>
+    a.firstTip != null &&
+    !a.rosterLocked &&
+    d.p != null &&
+    playsToday.has(d.p.proTeamId) &&
+    moveDay(c) === week.fromPeriod;
+
+  const evaluate = (
+    c: WaiverCandidate,
+    d: { p: RosterPlayer | null; ros: number; il: RosterPlayer | null },
+    wait: boolean,
+  ): StreamOption => {
+    const first = wait ? week.fromPeriod + 1 : moveDay(c);
+    // The dropped player plays until the move takes effect (a claim processes, or tomorrow
+    // after the lock or the tip it waits for); a free-agent move before the lock is immediate.
+    const waits = wait || delayed(c);
+    const keep = waits && d.p;
+    const roster = [...current.filter((p) => keep || p !== d.p), { ...c.player, slot: "BE" }];
+    const availableUntil = new Map(week.availableUntil ?? []);
+    if (keep) availableUntil.set(d.p!.id, first - 1);
+    const from = wait ? new Map(availableFrom).set(c.player.id, first) : availableFrom;
+    const tw = projectTeamWeek(roster, { ...week, availableFrom: from, availableUntil });
+    const deltaPts = tw.remaining - baseline.remaining;
+    const starts = [...tw.startsByDay.values()].reduce((s, x) => s + x.size, 0);
+    const o: StreamOption = {
+      add: c,
+      drop: d.p,
+      il: d.il,
+      dropRos: d.ros,
+      deltaPts,
+      deltaStarts: starts - baseStarts,
+      deltaWin:
+        a.oppRemaining == null || baseWin == null
+          ? null
+          : winProbability(a.myBanked, a.myRemaining + deltaPts, a.oppBanked, a.oppRemaining) -
+            baseWin,
+      ...seasonOf(c, d, first, waits),
+      netWins: 0,
+      laterWins: 0,
+      laterPts: 0,
+      ...(wait && { timing: "afterTip" as const }),
+    };
+    // Season points include this week's; count those once, through the win chance.
+    o.laterPts = o.seasonScore - o.deltaPts;
+    o.laterWins = winsPerPoint * o.laterPts;
+    o.netWins = (o.deltaWin ?? 0) + o.laterWins;
+    return o;
+  };
+
   const best: StreamOption[] = [];
   const dropOptions = new Map<number, StreamOption[]>();
   const thisWeek: StreamOption[] = [];
@@ -309,37 +428,9 @@ export function waiverAnalysis(a: WaiverInputs): {
   for (const c of shortlist.values()) {
     const options: StreamOption[] = [];
     for (const d of drops) {
-      // The dropped player plays until the move takes effect (a claim processes, or tomorrow
-      // after the lock); a free-agent move before the lock is immediate.
-      const keep = delayed(c) && d.p;
-      const roster = [...current.filter((p) => keep || p !== d.p), { ...c.player, slot: "BE" }];
-      const availableUntil = new Map(week.availableUntil ?? []);
-      if (keep) availableUntil.set(d.p!.id, moveDay(c) - 1);
-      const tw = projectTeamWeek(roster, { ...week, availableFrom, availableUntil });
-      const deltaPts = tw.remaining - baseline.remaining;
-      const starts = [...tw.startsByDay.values()].reduce((s, x) => s + x.size, 0);
-      options.push({
-        add: c,
-        drop: d.p,
-        il: d.il,
-        dropRos: d.ros,
-        deltaPts,
-        deltaStarts: starts - baseStarts,
-        deltaWin:
-          a.oppRemaining == null || baseWin == null
-            ? null
-            : winProbability(a.myBanked, a.myRemaining + deltaPts, a.oppBanked, a.oppRemaining) -
-              baseWin,
-        ...seasonOf(c, d),
-        netWins: 0,
-        laterWins: 0,
-        laterPts: 0,
-      });
-      const o = options.at(-1)!;
-      // Season points include this week's; count those once, through the win chance.
-      o.laterPts = o.seasonScore - o.deltaPts;
-      o.laterWins = winsPerPoint * o.laterPts;
-      o.netWins = (o.deltaWin ?? 0) + o.laterWins;
+      const now = evaluate(c, d, false);
+      const afterTip = canWait(c, d) ? evaluate(c, d, true) : null;
+      options.push(afterTip && afterTip.netWins > now.netWins ? afterTip : now);
     }
     // Ties (bench players who'd start nothing either way): keep the better depth piece.
     const ranked = [...options].sort((x, y) => y.netWins - x.netWins || x.dropRos - y.dropRos);

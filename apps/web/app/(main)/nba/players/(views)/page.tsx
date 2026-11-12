@@ -13,6 +13,7 @@ import { loadWaiverView } from "@/lib/nba/waivers-view";
 import { moveChecks, moveKey, rosterKey, type MoveChecks } from "@/lib/nba/move-checks";
 import type { MoveEffect } from "@/lib/nba/move-sim";
 import { DeepBanner, DeepLive } from "@/components/fc/deep-live";
+import { RefreshAt } from "@/components/refresh-at";
 import { MoveCard, type MoveOption, type MoveSim } from "@/components/fc/move-card";
 import { redirect } from "next/navigation";
 import Link from "next/link";
@@ -137,7 +138,7 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
 }
 
 /** A move as the card shows it, from the analysis' option for one drop. */
-function optionOf(o: StreamOption): MoveOption {
+function optionOf(o: StreamOption, firstTip: number | null): MoveOption {
   return {
     key: moveKey(o),
     dropId: o.drop?.id ?? null,
@@ -155,6 +156,10 @@ function optionOf(o: StreamOption): MoveOption {
     dropCutFor: o.dropCutFor,
     ilCuts: o.ilCuts,
     rosCost: Math.max(0, -o.rosDelta),
+    waitNote:
+      o.timing === "afterTip" && firstTip != null && o.drop
+        ? `Make this after today's first tip (${fmtTip(new Date(firstTip).toISOString())}): ${o.drop.name} still plays today and ${o.add.player.name} starts tomorrow${o.deltaStarts > 0 ? `, +${o.deltaStarts} start${o.deltaStarts > 1 ? "s" : ""} this week` : ""}.`
+        : null,
   };
 }
 
@@ -345,7 +350,9 @@ export default async function MovesPage({
     return checked.sort((a, b) => b.e!.title.d - a.e!.title.d)[0] ?? null;
   };
   const card = (o: StreamOption) => {
-    const options = (analysis.dropOptions.get(o.add.player.id) ?? [o]).map(optionOf);
+    const options = (analysis.dropOptions.get(o.add.player.id) ?? [o]).map((x) =>
+      optionOf(x, v.firstTip),
+    );
     return (
       <MoveCard
         key={o.add.player.id}
@@ -377,6 +384,8 @@ export default async function MovesPage({
   const { streams } = shownNow;
   return (
     <>
+      {/* At today's first tip moves start counting from tomorrow: re-run the analysis then. */}
+      <RefreshAt at={v.firstTip} />
       <p className="px-1 text-sm text-muted-foreground">
         {`Week ${view.mp} · ${addsLeft} of ${addsCap} adds left${
           analysis.baseWin != null ? ` · ${winChanceLabel(analysis.baseWin, false)} to win now` : ""

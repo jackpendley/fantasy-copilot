@@ -137,6 +137,11 @@ async function readWaiverInputs(now = new Date()) {
     data.scoreboard,
     now,
   );
+  // Until it tips, today's first game: a move can wait for it (rosters lock then).
+  const firstTip =
+    !locked && data.settings.rosterLock === "FIRSTGAME_SCORINGPERIOD" && todayGames.length
+      ? Math.min(...todayGames.map((g) => g.date))
+      : null;
   const inputs: WaiverInputs = {
     roster: data.ahead.me.roster,
     leaving: view.myPending.drops,
@@ -153,6 +158,7 @@ async function readWaiverInputs(now = new Date()) {
     rosterLimit,
     irSlots: data.settings.slotCounts.IR ?? 0,
     rosterLocked: locked,
+    firstTip,
     lastDay: LAST_SCORING_PERIOD,
     // Rest-of-season lineup fit (positions, schedule, injuries, IL returns).
     season: valueContext(
@@ -175,6 +181,7 @@ async function readWaiverInputs(now = new Date()) {
     inputs,
     lockedToday,
     rosterLocked: locked,
+    firstTip,
     addsCap,
     addsUsed,
   };

@@ -39,6 +39,8 @@ export interface MoveOption {
   ilCuts: { back: string; drop: string }[];
   /** Rest-of-season points given up, for the confirm dialog. */
   rosCost: number;
+  /** "Make this after today's first tip (4:00 PM): …" when waiting for it is worth more. */
+  waitNote?: string | null;
 }
 
 export interface Delta {
@@ -244,6 +246,7 @@ export function MoveCard({
               addsLeft,
               addsCap,
               rosCost: o.rosCost,
+              waitNote: o.waitNote ?? null,
             }}
           />
         )}
@@ -273,6 +276,8 @@ export function MoveCard({
         </select>
         {o.dropId != null && <ComparePlayers addId={addId} dropId={o.dropId} />}
       </div>
+
+      {o.waitNote && <p className="pl-[50px] text-xs font-medium text-warning">{o.waitNote}</p>}
 
       {o.addStarts != null && o.addGames != null && (
         <p className="pl-[50px] text-xs text-muted-foreground">

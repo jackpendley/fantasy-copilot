@@ -3,6 +3,7 @@ import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import {
   cellFromFinal,
   cellsAhead,
+  dayProjection,
   dayTotal,
   gameOn,
   pairBySlot,
@@ -183,5 +184,32 @@ describe("cells for other days", () => {
       [3, "BE", null],
       [4, "IR", 25],
     ]);
+  });
+});
+
+describe("a day's projection", () => {
+  const game = (state: "pre" | "in" | "post") =>
+    ({ opponent: "BOS", home: true, state, tip: "", detail: "", score: null }) as const;
+  const c = (
+    id: number,
+    state: "pre" | "in" | "post",
+    points: number | null,
+    proj: number | null,
+    pre: number | null,
+    out = false,
+  ): H2HCell => ({ ...cell(id, points, proj), game: game(state), pre, ...(out && { out }) });
+  const rows = [
+    { slot: "PG", mine: c(1, "post", 31, 25, 25), theirs: null },
+    { slot: "SG", mine: c(2, "in", 12, 28, 22), theirs: null },
+    { slot: "SF", mine: c(3, "pre", null, 20, 20), theirs: null },
+    // Ruled out but left in the lineup: nothing expected or projected.
+    { slot: "PF", mine: c(4, "post", null, null, null, true), theirs: null },
+  ];
+  it("pregame: each starter's pregame projection", () => {
+    expect(dayProjection(rows, "mine", "pregame")).toBe(67);
+  });
+  it("live: finals at their points, games on at their live projection, the rest pregame", () => {
+    expect(dayProjection(rows, "mine", "live")).toBe(79);
+    expect(dayProjection(rows, "theirs", "live")).toBe(0);
   });
 });

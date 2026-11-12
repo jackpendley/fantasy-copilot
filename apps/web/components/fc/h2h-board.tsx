@@ -255,6 +255,8 @@ export interface BoardData {
   totals: { mine: number; theirs: number };
   /** A day ahead: totals are projections. */
   ahead: boolean;
+  /** Under the totals: the day's pregame projection, or today's live one while games are on. */
+  proj?: { mine: number; theirs: number } | null;
 }
 
 export function H2HBoard({
@@ -279,6 +281,9 @@ export function H2HBoard({
             {fmtPts(board.totals.mine)}
           </span>
           {board.ahead && " proj"}
+          {board.proj && (
+            <div className="text-[11px] leading-tight">proj {fmtPts(board.proj.mine)}</div>
+          )}
         </div>
         <div className="flex items-center justify-center border-x">Slot</div>
         <div className="px-2 py-2 tabular-nums sm:px-3">
@@ -286,6 +291,9 @@ export function H2HBoard({
             {fmtPts(board.totals.theirs)}
           </span>
           {board.ahead && " proj"}
+          {board.proj && (
+            <div className="text-[11px] leading-tight">proj {fmtPts(board.proj.theirs)}</div>
+          )}
         </div>
       </div>
       <div className="divide-y">

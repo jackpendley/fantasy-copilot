@@ -6,6 +6,8 @@ import {
   dayTotal,
   gameOn,
   pairBySlot,
+  pastOut,
+  withFinalScore,
   startingSlots,
   type H2HCell,
   type Placed,
@@ -116,6 +118,33 @@ describe("cells for other days", () => {
       25,
     );
     expect(idle.cell).toMatchObject({ points: null, proj: null, trend: null });
+  });
+
+  it("shows a ruled-out player's game without his 0 points or empty box score", () => {
+    const e = { playerId: 9, player: null, slot: "SG", points: 0, line: { PTS: 0 } };
+    const { cell } = cellFromFinal(e, undefined, gameOn(games, 1, 3, "post"), 30, pastOut(e, true));
+    expect(cell).toMatchObject({ out: true, status: "OUT", points: null, line: null, proj: null });
+    expect(cell.game).toMatchObject({ opponent: "BOS", state: "post" });
+  });
+
+  it("adds the final score from the team's side", () => {
+    const board = [
+      { state: "post" as const, homeTeamId: 1, awayTeamId: 2, homeScore: 121, awayScore: 113 },
+    ];
+    expect(withFinalScore(gameOn(games, 1, 3, "post"), board, 1)?.score).toEqual({
+      us: 121,
+      them: 113,
+    });
+    expect(withFinalScore(gameOn(games, 2, 3, "post"), board, 2)?.score).toEqual({
+      us: 113,
+      them: 121,
+    });
+    // Not on the scoreboard (or not final): the game stays, without a score.
+    expect(withFinalScore(gameOn(games, 1, 3, "post"), [], 1)).toMatchObject({
+      opponent: "BOS",
+      score: null,
+    });
+    expect(withFinalScore(null, board, 1)).toBeNull();
   });
 
   it("fills starting slots nobody plays in with idle players, as ESPN shows a full lineup", () => {

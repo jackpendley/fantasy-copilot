@@ -28,7 +28,7 @@ describe("compact phone labels", () => {
         state: "post",
         score: { us: 121, them: 113 },
       }),
-    ).toBe("vs PHI Final 121-113");
+    ).toBe("vs PHI 121-113 Final");
     expect(compactGame(null)).toBe("No game");
   });
 

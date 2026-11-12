@@ -8,6 +8,7 @@ import {
   type ProGame,
   type RosterPlayer,
 } from "@fantasy-copilot/espn";
+import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import {
   expandSlots,
   isStartingSlot,
@@ -15,7 +16,7 @@ import {
   type Position,
 } from "@fantasy-copilot/fantasy-core";
 import { slotRank } from "@/lib/display";
-import { trendOf, type LiveRow, type Trend } from "./live";
+import { outToday, trendOf, type LiveRow, type Trend } from "./live";
 
 export interface H2HGame {
   opponent: string;
@@ -35,6 +36,8 @@ export interface H2HCell {
   status: string;
   /** "Exp. return Nov 9" for a ruled-out player. */
   back?: string | null;
+  /** Ruled out with his team playing: his game shows, but no points, projection or stats. */
+  out?: boolean;
   game: H2HGame | null;
   /** Fantasy points scored; null before his game starts. */
   points: number | null;
@@ -93,16 +96,17 @@ export function pairBySlot(slots: string[], mine: Placed[], theirs: Placed[]) {
 
 /** Today: a live row as a cell. */
 export function cellFromLive(r: LiveRow): Placed {
-  // A ruled-out player whose team is playing has nothing to score or project.
-  const out = r.row.playProb === 0 && r.points === 0;
-  const g = out ? null : r.row.game;
-  const started = Boolean(g && g.state !== "pre");
+  // A ruled-out player keeps his game (and its score), with nothing to score or project.
+  const out = outToday(r);
+  const g = r.row.game;
+  const started = Boolean(g && g.state !== "pre") && !out;
   return {
     slot: r.slot,
     cell: {
       player: r.row.player,
       status: r.row.status,
       back: r.row.back,
+      ...(out && g && { out }),
       game: g
         ? {
             opponent: g.opponent,
@@ -114,8 +118,8 @@ export function cellFromLive(r: LiveRow): Placed {
           }
         : null,
       points: started ? r.points : null,
-      proj: !g ? null : g.state === "in" ? r.projected : r.pregame,
-      trend: r.trend,
+      proj: !g || out ? null : g.state === "in" ? r.projected : r.pregame,
+      trend: out ? null : r.trend,
       line: started ? r.line : null,
     },
   };
@@ -144,7 +148,27 @@ export function gameOn(
   };
 }
 
-/** A past day: ESPN's final fantasy points, against the pregame projection for that day. */
+/**
+ * A past game with its final score from that day's ESPN scoreboard (same team ids), from the
+ * team's side. Unchanged when the scoreboard doesn't have it final.
+ */
+export function withFinalScore(
+  game: H2HGame | null,
+  board: Pick<ScoreboardGame, "state" | "homeTeamId" | "awayTeamId" | "homeScore" | "awayScore">[],
+  proTeamId: number,
+): H2HGame | null {
+  if (!game) return null;
+  const g = board.find(
+    (x) => x.state === "post" && (x.homeTeamId === proTeamId || x.awayTeamId === proTeamId),
+  );
+  if (!g || g.homeScore == null || g.awayScore == null) return game;
+  const home = g.homeTeamId === proTeamId;
+  return {
+    ...game,
+    score: home ? { us: g.homeScore, them: g.awayScore } : { us: g.awayScore, them: g.homeScore },
+  };
+}
+
 /**
  * Was he out that past day? In the IR slot, or ruled out in our logged statuses for that game
  * day (ESPN's feed, the official report, NBA.com inactives) without playing: the feed only logs
@@ -155,6 +179,7 @@ export function pastOut(e: Pick<LiveEntry, "slot" | "points" | "line">, loggedOu
   return e.slot === "IR" || (loggedOut && !played);
 }
 
+/** A past day: ESPN's final fantasy points, against the pregame projection for that day. */
 export function cellFromFinal(
   e: LiveEntry,
   player: H2HCell["player"] | undefined,
@@ -173,11 +198,13 @@ export function cellFromFinal(
         positions: [],
       },
       status: out ? "OUT" : "ACTIVE",
+      ...(out && game && { out }),
       game,
-      points: game ? e.points : null,
+      // Ruled out: his game and OUT tag say it; no 0 points or empty box score.
+      points: game && !out ? e.points : null,
       proj: game && !out ? pregame : null,
       trend: game && !out ? trendOf(pregame, e.points) : null,
-      line: game ? e.line : null,
+      line: game && !out ? e.line : null,
     },
   };
 }

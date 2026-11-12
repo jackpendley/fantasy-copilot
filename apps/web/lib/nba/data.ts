@@ -33,7 +33,7 @@ import { readFile } from "node:fs/promises";
 import { espnConfig } from "../env";
 import { memoAsync, memoFetch } from "../fetch-memo";
 import { leagueTeamTotal } from "./league-total";
-import { LAST_SCORING_PERIOD } from "./calendar";
+import { LAST_SCORING_PERIOD, dateForScoringPeriod } from "./calendar";
 import { defenseTable } from "./defense-table";
 
 /** How long each read is reused: rosters and matchups, live scores, slower feeds. */
@@ -214,6 +214,12 @@ export async function loadLiveRosters(
     fetchImpl: settled ? SETTLED_FETCH : LIVE_FETCH,
   });
   return parseLiveRosters(raw, matchupPeriod);
+}
+
+/** A past day's NBA scoreboard, for its final scores (settled, so kept for hours). */
+export async function loadFinalScoreboard(scoringPeriodId: number) {
+  const yyyymmdd = dateForScoringPeriod(scoringPeriodId).replace(/-/g, "");
+  return fetchScoreboard(yyyymmdd, SETTLED_FETCH).catch(() => []);
 }
 
 // The draft doesn't change: keep it for the life of the server instance.

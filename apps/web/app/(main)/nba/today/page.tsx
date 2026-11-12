@@ -108,6 +108,13 @@ export default async function TodayPage({
     (a, r) => a + (r.locked ? (live.get(r.player.id)?.projected ?? 0) : r.value),
     0,
   );
+  // Once every game is over, the day's pregame projection goes under the score instead (the
+  // live projection is the score by then): each counting player's pregame number.
+  const dayOver = anyStarted && board.rows.every((r) => !r.game || r.game.state === "post");
+  const pregameTotal = counting.reduce(
+    (a, r) => a + (r.locked ? (live.get(r.player.id)?.pregame ?? 0) : r.value),
+    0,
+  );
   const gamesLive = board.rows.some((r) => r.game?.state === "in");
   const order = (a: DayRow, b: DayRow) =>
     slotRank(a.recommendedSlot) - slotRank(b.recommendedSlot) || b.value - a.value;
@@ -157,9 +164,12 @@ export default async function TodayPage({
                   <span className="text-4xl font-semibold tracking-tight tabular-nums">
                     {fmtPts(scored)}
                   </span>
-                  <span className="text-sm text-muted-foreground">
-                    pts · proj {fmtPts(projectedFinal)}
-                  </span>
+                  <span className="text-sm text-muted-foreground">pts</span>
+                </div>
+                <div className="text-sm text-muted-foreground tabular-nums">
+                  {dayOver
+                    ? `Pregame proj ${fmtPts(pregameTotal)}`
+                    : `Proj ${fmtPts(projectedFinal)}`}
                 </div>
               </>
             ) : (

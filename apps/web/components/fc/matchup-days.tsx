@@ -6,15 +6,19 @@
 
 import { useState } from "react";
 import { fmtPts } from "@/lib/display";
+import type { Trend } from "@/lib/nba/live";
 import { cn } from "@/lib/utils";
 import { FitGroup } from "./fit-text";
 import { H2HBoard, type BoardData } from "./h2h-board";
+import { TrendMark } from "./trend-mark";
 
 export interface MatchupDay {
   sp: number;
   label: string;
   today: boolean;
   score: { mine: number; theirs: number };
+  /** ▲/▼ against the day's pregame projection, once its games have started. */
+  trend?: { mine: Trend; theirs: Trend } | null;
   board: BoardData;
   note: string;
 }
@@ -72,8 +76,14 @@ export function MatchupDays({
               {d.label}
             </div>
             <div className="text-[11px] leading-tight tabular-nums">
-              <div className="font-medium">{fmtPts(d.score.mine)}</div>
-              <div className="text-muted-foreground">{fmtPts(d.score.theirs)}</div>
+              <div className="flex items-center justify-center gap-px font-medium">
+                {fmtPts(d.score.mine)}
+                <TrendMark trend={d.trend?.mine ?? null} className="size-2" />
+              </div>
+              <div className="flex items-center justify-center gap-px text-muted-foreground">
+                {fmtPts(d.score.theirs)}
+                <TrendMark trend={d.trend?.theirs ?? null} className="size-2" />
+              </div>
             </div>
           </button>
         ))}

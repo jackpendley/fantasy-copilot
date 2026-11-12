@@ -44,6 +44,8 @@ export interface H2HCell {
    * points so far plus the unplayed share while live. Null with no game.
    */
   proj: number | null;
+  /** His pregame projection for the day (0 or null when ruled out or without a game). */
+  pre?: number | null;
   trend: Trend;
   line: Record<string, number> | null;
   /** While his game is on: on the court (true) or on the bench (false); unknown otherwise. */
@@ -116,6 +118,7 @@ export function cellFromLive(r: LiveRow): Placed {
         : null,
       points: started ? r.points : null,
       proj: !g || out ? null : g.state === "in" ? r.projected : r.pregame,
+      pre: !g || out ? null : r.pregame,
       trend: out ? null : r.trend,
       line: started ? r.line : null,
     },
@@ -200,6 +203,7 @@ export function cellFromFinal(
       // Ruled out: his game and OUT tag say it; no 0 points or empty box score.
       points: game && !out ? e.points : null,
       proj: game && !out ? pregame : null,
+      pre: game && !out ? pregame : null,
       trend: game && !out ? trendOf(pregame, e.points) : null,
       line: game && !out ? e.line : null,
     },
@@ -250,6 +254,25 @@ export function cellsAhead(
     }
   }
   return placed;
+}
+
+/**
+ * A side's projected points for a day over its starting slots. "pregame": how the day was
+ * expected to go, each starter's pregame projection (a ruled-out starter counts 0). "live": the
+ * same day as it stands, finals at their points, games on at points so far plus the rest of
+ * the projection, games to come at their pregame projection.
+ */
+export function dayProjection(
+  rows: H2HRow[],
+  side: "mine" | "theirs",
+  kind: "pregame" | "live",
+): number {
+  return rows.reduce((a, r) => {
+    const c = r[side];
+    if (!c?.game || c.out) return a;
+    if (kind === "pregame" || c.game.state === "pre") return a + (c.pre ?? 0);
+    return a + (c.game.state === "post" ? (c.points ?? 0) : (c.proj ?? 0));
+  }, 0);
 }
 
 /** Points that count for a side on a day: starters' points (live) or projections (ahead). */

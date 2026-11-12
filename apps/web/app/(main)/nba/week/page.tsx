@@ -36,6 +36,7 @@ import {
   pastOut,
   cellFromLive,
   cellsAhead,
+  dayProjection,
   dayTotal,
   gameOn,
   withFinalScore,
@@ -44,7 +45,7 @@ import {
   type Placed,
 } from "@/lib/nba/h2h";
 import { outOnDays } from "@/lib/nba/past-status";
-import { countsAsStart, liveRows, outToday } from "@/lib/nba/live";
+import { countsAsStart, liveRows, outToday, trendOf } from "@/lib/nba/live";
 import { absences } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
 import {
@@ -617,6 +618,18 @@ export default async function WeekPage({
       mine: dayTotal(b.rows, "mine", ahead),
       theirs: dayTotal(b.rows, "theirs", ahead),
     };
+    // Under each total: how the day was projected before tip (past days, and today once every
+    // game is over) or, while today's games are on, the live projection.
+    const starters = b.rows.flatMap((r) => [r.mine, r.theirs]).filter((c) => c?.game);
+    const tipped = starters.some((c) => c!.game!.state !== "pre");
+    const over = tipped && starters.every((c) => c!.game!.state === "post");
+    const kind = d.sp < sp || over ? "pregame" : "live";
+    const proj = ahead
+      ? null
+      : {
+          mine: dayProjection(b.rows, "mine", kind),
+          theirs: dayProjection(b.rows, "theirs", kind),
+        };
     // Tab scores: ESPN's per-day totals for past days, live today, projected ahead.
     const by = (home: boolean) =>
       (home ? matchup?.homeByPeriod : matchup?.awayByPeriod)?.[d.sp] ?? 0;
@@ -627,14 +640,27 @@ export default async function WeekPage({
             theirs: theirs?.projectedByDay.get(d.sp) ?? 0,
           }
         : d.sp === sp
-          ? totals
+          ? tipped
+            ? totals
+            : proj! // before tip: the day's projection, as later days show theirs
           : { mine: by(iAmHome), theirs: by(!iAmHome) };
+    // ▲/▼ on a tab once its games have started: well above or below the pregame projection, by
+    // the same bar as a player's (5+ points and 20%+).
+    const pregame = (side: "mine" | "theirs") => dayProjection(b.rows, side, "pregame");
+    const trend =
+      d.sp < sp || (d.sp === sp && tipped)
+        ? {
+            mine: trendOf(pregame("mine"), d.sp < sp || over ? score.mine : proj!.mine),
+            theirs: trendOf(pregame("theirs"), d.sp < sp || over ? score.theirs : proj!.theirs),
+          }
+        : null;
     return {
       sp: d.sp,
       label: d.sp === sp ? "Today" : shortDay(d.date).split(" ")[0]!,
       today: d.sp === sp,
       score,
-      board: { ...b, totals, ahead },
+      trend,
+      board: { ...b, totals, ahead, proj },
       note:
         d.sp < sp
           ? "Final ESPN fantasy points in each slot. Under the points: his pregame projection, with ▲/▼ when he finished well above or below it."

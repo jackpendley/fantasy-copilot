@@ -26,6 +26,8 @@ export interface AddDropMove {
   addsCap: number;
   /** Rest-of-season points given up (negative rosDelta), for the warning line. */
   rosCost: number;
+  /** Worth more made just after today's first tip: what waiting keeps. */
+  waitNote?: string | null;
 }
 
 export function AddDropButton({
@@ -112,6 +114,7 @@ export function AddDropButton({
               ? (move.claimNote ?? "Claims process when waivers clear.")
               : `Uses 1 of your ${move.addsCap} adds this week (${move.addsLeft - 1} left after).`}
           </li>
+          {move.waitNote && <li className="text-warning">{move.waitNote}</li>}
           {move.rosCost > 20 && (
             <li className="text-warning">
               Costs about {Math.round(move.rosCost)} rest-of-season points: a short-term stream.

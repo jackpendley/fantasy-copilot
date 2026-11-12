@@ -23,7 +23,7 @@ import { refreshSeasonBaselines } from "./nba/season-baselines";
 import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
-import { rosterWatch, simRosterCheck, workerEnabled } from "./nba/outlook-refresh";
+import { queueLockJob, rosterWatch, simRosterCheck, workerEnabled } from "./nba/outlook-refresh";
 import { statusEventsFrom, type StatusEvent } from "./nba/news";
 import { logOfficialReport } from "./nba/official-report";
 import {
@@ -81,6 +81,8 @@ async function step<T>(
 
 /** Games tipping within this window get their props captured as the closing line. */
 const CLOSE_WINDOW_MS = 90 * 60_000;
+/** The lock job is queued by the first gameday run within this long after the first tip. */
+const LOCK_JOB_WINDOW_MS = 60 * 60_000;
 
 /**
  * Every 5 minutes: re-run the outlook if a roster move landed, then log status changes and
@@ -259,6 +261,22 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     };
   }
 
+  // The first tip locks rosters: from then on a move counts from tomorrow, so the deep checks
+  // (built before it, from today) run again once.
+  const first = Math.min(...tips);
+  const lockJob =
+    workerEnabled() &&
+    data.settings.rosterLock === "FIRSTGAME_SCORINGPERIOD" &&
+    t >= first &&
+    t < first + LOCK_JOB_WINDOW_MS
+      ? await m.step("lock-job", () =>
+          queueLockJob(first).catch(async (e: Error) => {
+            await log("lock-job", "error", errorText(e)).catch(() => {});
+            return null;
+          }),
+        )
+      : null;
+
   const { events, newEvents } = await m.step("status", () => logStatusEvents(data, date));
   const trades = newEvents + morningNews ? await refreshTrades() : null;
 
@@ -304,6 +322,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     ...watch,
     leagueChanged,
     simRoster,
+    lockJob,
     darko,
     timeline,
     closingProps: market?.props ?? 0,

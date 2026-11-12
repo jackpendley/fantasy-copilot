@@ -362,3 +362,97 @@ describe("the waiver analysis as a worker task", () => {
     expect(strip(waiverAnalysis(decodeWire(wire)))).toEqual(strip(waiverAnalysis(inputs)));
   });
 });
+
+describe("streams around today's first tip (rosters lock then)", () => {
+  // Synthetic: slots PG, C + 1 bench; day 1 is today. Team 90 plays days 1, 3, 5; team 89 days
+  // 2, 3, 4; team 88 days 1-4; team 99 every day.
+  const slots = { PG: 1, C: 1, BE: 1 };
+  const days = (team: number, list: number[]): ProGame[] =>
+    list.map((d) => ({
+      gameId: team * 100 + d,
+      scoringPeriodId: d,
+      date: Date.parse(`2026-10-${19 + d}T23:00:00Z`),
+      homeProTeamId: team,
+      awayProTeamId: 70,
+    }));
+  const games = [
+    ...days(90, [1, 3, 5]),
+    ...days(89, [2, 3, 4]),
+    ...days(88, [1, 2, 3, 4]),
+    ...days(99, [1, 2, 3, 4, 5, 6]),
+  ];
+  const guy = (id: number, team: number, pos: string, fppg: number): RosterPlayer => ({
+    ...fa(id, `P${id}`, team, fppg, [pos]).player,
+    slot: "BE",
+  });
+  const gillespie = { ...guy(1, 90, "PG", 20), name: "Gillespie" };
+  const roster = [gillespie, guy(2, 99, "C", 30), guy(3, 99, "C", 28)];
+  const run = (free: FreeAgent[], extra: Partial<Parameters<typeof waiverAnalysis>[0]> = {}) =>
+    waiverAnalysis({
+      ...base,
+      roster,
+      freeAgents: free,
+      week: { periods: [1, 2, 3, 4, 5, 6], fromPeriod: 1, games, slotCounts: slots, injuries: [] },
+      rosterLimit: 3,
+      lastDay: 6,
+      season: valueContext(games, slots, 1, 6, 1),
+      // Only Gillespie can go (the centers are kept), as in Jack's example.
+      noDrop: new Set([2, 3]),
+      ...extra,
+    });
+  const tip = Date.parse("2026-10-20T23:00:00Z");
+  const forGillespie = (r: ReturnType<typeof run>, add: number) =>
+    r.dropOptions.get(add)!.find((o) => o.drop?.id === 1)!;
+
+  it("before the tip, waits for it when that keeps the drop's game today: an extra start", () => {
+    const add = fa(10, "Tomorrow Guard", 89, 20, ["PG"]); // plays days 2, 3, 4
+    const now = forGillespie(run([add]), 10); // no tip known: the move counts as immediate
+    const wait = forGillespie(run([add], { firstTip: tip }), 10);
+    expect(now.timing).toBeUndefined();
+    expect(now.deltaStarts).toBe(0); // loses Gillespie's day 1, gains day 2
+    expect(wait.timing).toBe("afterTip");
+    expect(wait.deltaStarts).toBe(1); // Gillespie plays today, the add from tomorrow
+    expect(wait.deltaPts).toBeGreaterThan(now.deltaPts);
+    expect(run([add], { firstTip: tip }).thisWeek[0]!.timing).toBe("afterTip");
+  });
+
+  it("after the tip, the same move keeps the drop today and adds from tomorrow", () => {
+    const add = fa(10, "Tomorrow Guard", 89, 20, ["PG"]);
+    const before = forGillespie(run([add], { firstTip: tip }), 10);
+    const after = forGillespie(run([add], { rosterLocked: true }), 10);
+    expect(after.deltaStarts).toBe(1);
+    expect(after.deltaPts).toBeCloseTo(before.deltaPts, 6);
+  });
+
+  it("doesn't wait when the add's own game today is worth more now", () => {
+    const add = fa(11, "Today Guard", 88, 25, ["PG"]); // plays days 1-4, better than Gillespie
+    expect(forGillespie(run([add], { firstTip: tip }), 11).timing).toBeUndefined();
+  });
+
+  it("evaluates a cheap player who'd fill open lineup slots, whatever his volume", () => {
+    // A UTIL slot stays open on days 2-6. Sixty centers who play only today (when nothing is
+    // open) outrank him by fppg x games; he still gets evaluated, and streams.
+    const open = { PG: 1, C: 1, UTIL: 1, BE: 1 };
+    const crowd = Array.from({ length: 60 }, (_, i) =>
+      fa(200 + i, `C${i}`, 87, 60 - i * 0.5, ["C"]),
+    );
+    const cheap = fa(12, "Cheap Forward", 99, 10, ["SF"]);
+    const strong = { ...guy(4, 86, "C", 70), name: "Today Big" }; // fills UTIL today only
+    const r = waiverAnalysis({
+      ...base,
+      roster: [gillespie, guy(2, 99, "C", 65), strong, guy(5, 85, "C", 5)],
+      freeAgents: [...crowd, cheap],
+      week: {
+        periods: [1, 2, 3, 4, 5, 6],
+        fromPeriod: 1,
+        games: [...games, ...days(87, [1]), ...days(86, [1])],
+        slotCounts: open,
+        injuries: [],
+      },
+      rosterLimit: 4,
+      lastDay: 6,
+    });
+    expect(r.dropOptions.has(12)).toBe(true);
+    expect(r.thisWeek.some((o) => o.add.player.id === 12 && o.deltaStarts > 0)).toBe(true);
+  });
+});

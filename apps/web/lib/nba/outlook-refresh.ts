@@ -248,6 +248,24 @@ const SAVER_NEWS_GAP = "60 minutes";
  * His adds and drops are queued by the roster watch; this catches what the transaction log
  * doesn't. A job for news queued in the last 5 minutes waits for the next run.
  */
+/**
+ * Once a day, right after the first tip (when rosters lock and moves start counting from
+ * tomorrow): a simulation job, so the deep checks time every move from tomorrow too. Skipped
+ * when a job has been queued since the tip anyway.
+ */
+export async function queueLockJob(firstTip: number): Promise<"queued" | "current"> {
+  const since = new Date(firstTip);
+  const [seen] = await db()`
+    select 1 from sim_jobs where created_at >= ${since} and not asked_only
+    union all
+    select 1 from worker_tasks where kind = 'sim-build' and created_at >= ${since}
+    limit 1
+  `;
+  if (seen) return "current";
+  await enqueueSimJob("Today's first game tipped: moves now count from tomorrow");
+  return "queued";
+}
+
 export async function simRosterCheck(
   roster: Parameters<typeof rosterKeyOf>[0],
   injuries: Parameters<typeof rosterKeyOf>[1],

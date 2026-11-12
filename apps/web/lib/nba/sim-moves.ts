@@ -133,7 +133,11 @@ export function buildWireMoves(a: MoveBuildArgs, options: StreamOption[]): WireM
         .map((p) => (p.id === o.il?.id ? { ...p, slot: "IR" } : p)),
       { ...o.add.player, slot: "BE" },
     ];
-    const from = a.availableFrom?.get(o.add.player.id) ?? a.fromDay;
+    // A move worth more made just after today's first tip swaps tomorrow.
+    const from = Math.max(
+      a.availableFrom?.get(o.add.player.id) ?? a.fromDay,
+      o.timing === "afterTip" ? a.fromDay + 1 : a.fromDay,
+    );
     const later = from > a.fromDay;
     let injured = a.injured;
     if (later && o.il) {

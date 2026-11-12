@@ -183,6 +183,9 @@ describe("moves built as patches on the base season", () => {
     expect(pool(moved)).not.toContain(901);
     expect(pool(moved)).not.toContain(14);
     expect(pool(applyMove(wire, 1, now!))).toContain(14);
+    // A move worth more made after today's first tip swaps tomorrow, like a claim for then.
+    const [waits] = build(new Map([[901, 1]]), [{ ...claim, timing: "afterTip" }]);
+    expect(waits).toEqual(later);
     // A claim clearing on the first day is the immediate move, as before.
     expect(me(applyMove(wire, 1, now!))).not.toHaveProperty("next");
     expect(build(new Map(), [claim])).toEqual([now]);

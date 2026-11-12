@@ -134,7 +134,9 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       id={c.player.id}
       className={cn(
         ROW,
-        "flex items-center px-0.5 hover:bg-muted/40 sm:gap-2 sm:px-3",
+        // Phones: 8 px on both sides, as above and below, so the on-court edge (3 px) never
+        // covers his text.
+        "flex items-center px-2 hover:bg-muted/40 sm:gap-2 sm:px-3",
         right && "flex-row-reverse",
         inactive && "opacity-55",
         onCourt &&

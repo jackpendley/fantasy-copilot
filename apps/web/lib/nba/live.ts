@@ -18,6 +18,13 @@ export function gameElapsed(g: Pick<ScoreboardGame, "state" | "period" | "clock"
 
 export const isStarting = (slot: string) => slot !== "BE" && slot !== "IR";
 
+/**
+ * A start, as the scoreboard counts them: in a starting slot on a day his team plays, and not
+ * ruled out. A healthy starter who never gets in still counts (Jack's rule, Nov 12).
+ */
+export const countsAsStart = (slot: string, hasGame: boolean, out: boolean) =>
+  isStarting(slot) && hasGame && !out;
+
 export type Trend = "up" | "down" | null;
 
 /**
@@ -49,6 +56,10 @@ export interface LiveRow {
   score: { us: number; them: number } | null;
   elapsed: number;
 }
+
+/** Ruled out with his team playing today: nothing to score, project or count as a start. */
+export const outToday = (r: Pick<LiveRow, "row" | "points">) =>
+  r.row.playProb === 0 && r.points === 0;
 
 export function liveRows(
   board: DayRow[],

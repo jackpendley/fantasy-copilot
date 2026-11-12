@@ -23,7 +23,13 @@ import {
   gameDate,
   nowMs,
 } from "@/lib/nba/calendar";
-import { loadLeague, loadLiveRosters, loadOnCourt, loadPlayersById } from "@/lib/nba/data";
+import {
+  loadFinalScoreboard,
+  loadLeague,
+  loadLiveRosters,
+  loadOnCourt,
+  loadPlayersById,
+} from "@/lib/nba/data";
 import { dbConfigured } from "@/lib/db";
 import {
   cellFromFinal,
@@ -32,12 +38,13 @@ import {
   cellsAhead,
   dayTotal,
   gameOn,
+  withFinalScore,
   pairBySlot,
   startingSlots,
   type Placed,
 } from "@/lib/nba/h2h";
 import { outOnDays } from "@/lib/nba/past-status";
-import { isStarting, liveRows } from "@/lib/nba/live";
+import { countsAsStart, liveRows, outToday } from "@/lib/nba/live";
 import { absences, returnLabel } from "@/lib/nba/availability";
 import { perGameProjection } from "@/lib/nba/projection";
 import {
@@ -505,6 +512,12 @@ export default async function WeekPage({
         .map(async (d) => [d, await loadLiveRosters(d, mp, true).catch(() => null)] as const),
     ),
   );
+  // Past days' final scores, for each game line.
+  const pastBoards = new Map(
+    await Promise.all(
+      periods.filter((d) => d < sp).map(async (d) => [d, await loadFinalScoreboard(d)] as const),
+    ),
+  );
   const notRostered = [
     ...new Set(
       [...pastFinals.values()]
@@ -570,7 +583,13 @@ export default async function WeekPage({
           return cellFromFinal(
             e,
             p,
-            p ? gameOn(data.games, p.proTeamId, day, "post") : null,
+            p
+              ? withFinalScore(
+                  gameOn(data.games, p.proTeamId, day, "post"),
+                  pastBoards.get(day) ?? [],
+                  p.proTeamId,
+                )
+              : null,
             p ? perGameProjection(p, day).fppg : 0,
             pastOut(e, outPast.has(`${e.playerId}|${dateForScoringPeriod(day)}`)),
           );
@@ -648,7 +667,8 @@ export default async function WeekPage({
         const p = people.get(e.playerId) ?? dropped.get(e.playerId) ?? e.player ?? undefined;
         if (!p) continue;
         rows.set(p.id, p);
-        if (isStarting(e.slot) && opponentOf(p.proTeamId, day)) started.add(p.id);
+        const wasOut = pastOut(e, outPast.has(`${e.playerId}|${dateForScoringPeriod(day)}`));
+        if (countsAsStart(e.slot, opponentOf(p.proTeamId, day) != null, wasOut)) started.add(p.id);
       }
       startsByDay.set(day, started);
     }
@@ -700,7 +720,10 @@ export default async function WeekPage({
         actual,
       ),
       todayStarted: isNow
-        ? (today ?? []).filter((r) => r.starting && r.row.game && r.row.game.state !== "pre").length
+        ? (today ?? []).filter(
+            (r) =>
+              r.row.game?.state !== "pre" && countsAsStart(r.slot, r.row.game != null, outToday(r)),
+          ).length
         : 0,
       todayLeft: isNow
         ? [...(week?.startsByDay.get(sp) ?? [])].filter((id) => state.get(id) === "pre").length

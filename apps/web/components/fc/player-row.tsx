@@ -13,8 +13,8 @@ import { Pill, StatusPill } from "./status-pill";
 import { TeamLogo } from "./team-logo";
 
 /**
- * "vs [logo] PHI 4:00 PM", "@ [logo] DET Final 113-121"; live, "vs [logo] BOS Q3 5:12 60-55" on
- * desktop and the compact "vs [logo] BOS 60-55 Q3 5:12" on phones.
+ * "vs [logo] PHI 4:00 PM", "@ [logo] DET 113-121 Final"; live, "vs [logo] BOS 60-55 Q3 5:12" on
+ * desktop and the compact "vs [logo] BOS 60-55 Q3 5:12" on phones. The score comes first.
  */
 function GameLine({ row, live }: { row: DayRow; live?: LiveRow }) {
   const g = row.game;
@@ -33,11 +33,11 @@ function GameLine({ row, live }: { row: DayRow; live?: LiveRow }) {
             {score} {compactClock(g.detail || "Live")}
           </span>
           <span className="hidden sm:inline">
-            {when} {score}
+            {score} {when}
           </span>
         </>
       ) : (
-        `${when} ${score}`
+        `${score} ${when}`.trim()
       )}
     </>
   );
@@ -152,21 +152,19 @@ export function PlayerRow({
               inProgress && "font-medium text-success",
             )}
           >
-            {/* A ruled-out player keeps his game, with when he's expected back. */}
-            {row.back && !row.game ? (
-              row.back
-            ) : (
-              <>
-                <GameLine row={row} live={live} />
-                {row.back && <> · {row.back}</>}
-              </>
-            )}
+            {/* A ruled-out player keeps his game; when he's expected back goes under it. */}
+            {row.back && !row.game ? row.back : <GameLine row={row} live={live} />}
           </FitText>
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.
             <div className="line-clamp-2 text-[length:calc(11px*var(--fit,1))] leading-[14px] text-foreground/80 tabular-nums sm:line-clamp-1 sm:text-[length:calc(12px*var(--fit,1))] sm:leading-4">
               {stats}
             </div>
+          ) : out && row.game && row.back ? (
+            // Ruled out with a game: when he's expected back, in place of his stats.
+            <p className="truncate text-[length:calc(11px*var(--fit,1))] leading-[14px] text-muted-foreground sm:text-[length:calc(12px*var(--fit,1))] sm:leading-4">
+              {row.back}
+            </p>
           ) : (
             // A readable size that never shrinks: long notes wrap to two lines and end in "…"
             // (the player card has the whole note).

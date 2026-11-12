@@ -48,11 +48,11 @@ interface GameLike {
 export function compactStatus(g: GameLike): string {
   const score = g.score ? `${g.score.us}-${g.score.them}` : "";
   if (g.state === "pre") return compactClock(g.when ?? g.detail);
-  if (g.state === "post") return score ? `Final ${score}` : "Final";
+  if (g.state === "post") return score ? `${score} Final` : "Final";
   return `${score} ${compactClock(g.detail || g.when || "")}`.replace(/\s+/g, " ").trim();
 }
 
-/** One short line: "@ BOS 7:00 PM", "@ BOS 82-77 Q4 10:37", "vs PHI Final 121-113". */
+/** One short line: "@ BOS 7:00 PM", "@ BOS 82-77 Q4 10:37", "vs PHI 121-113 Final". */
 export function compactGame(g: GameLike | null): string {
   if (!g) return "No game";
   return `${g.home ? "vs" : "@"} ${g.opponent} ${compactStatus(g)}`;

@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import type { DayRow } from "@/lib/nba/day";
-import { gameElapsed, liveRows, sortLive, statSummary, trendOf } from "@/lib/nba/live";
+import { cellFromLive } from "@/lib/nba/h2h";
+import {
+  countsAsStart,
+  gameElapsed,
+  liveRows,
+  outToday,
+  sortLive,
+  statSummary,
+  trendOf,
+} from "@/lib/nba/live";
 
 describe("gameElapsed", () => {
   const g = (state: ScoreboardGame["state"], period: number, clock: string) => ({
@@ -162,5 +171,37 @@ describe("box score lines", () => {
     expect(statSummary({ ...line, "3PM": 2, BLK: 3 })).toBe("22 PTS 9 REB 1 AST 1 STL 3 BLK 2 3PM");
     expect(statSummary({ MIN: 3 })).toBe("0 PTS");
     expect(statSummary(null)).toBeNull();
+  });
+});
+
+describe("a ruled-out player today", () => {
+  const out = { ...row(6, "in", 0), playProb: 0, status: "OUT", back: "Exp. return Nov 14" };
+  const [r] = liveRows([out as DayRow], [], [sb(6, "in", 2, "0:00")]);
+
+  it("keeps his game and its score, with nothing to score or project", () => {
+    expect(outToday(r!)).toBe(true);
+    const { cell } = cellFromLive(r!);
+    expect(cell).toMatchObject({
+      out: true,
+      back: "Exp. return Nov 14",
+      game: { opponent: "BOS", state: "in", score: { us: 60, them: 55 } },
+      points: null,
+      proj: null,
+      trend: null,
+      line: null,
+    });
+  });
+  it("isn't out once he's scored", () => {
+    expect(outToday({ ...r!, points: 4 })).toBe(false);
+  });
+});
+
+describe("what counts as a start", () => {
+  it("a starter whose team plays, unless he's ruled out", () => {
+    expect(countsAsStart("PG", true, false)).toBe(true);
+    expect(countsAsStart("SG", true, true)).toBe(false); // ruled out but left in the lineup
+    expect(countsAsStart("BE", true, false)).toBe(false); // active on the bench
+    expect(countsAsStart("IR", true, false)).toBe(false);
+    expect(countsAsStart("UTIL", false, false)).toBe(false); // no game
   });
 });

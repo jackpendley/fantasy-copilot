@@ -9,7 +9,7 @@ import {
   type RosterPlayer,
 } from "@fantasy-copilot/espn";
 import { valueContext } from "@/lib/nba/trade";
-import { waiverAnalysis } from "@/lib/nba/waivers";
+import { shownMoves, waiverAnalysis, type StreamOption } from "@/lib/nba/waivers";
 
 // Anonymized league fixture (team 13's roster); free agents and games are synthetic.
 const league = JSON.parse(
@@ -407,18 +407,18 @@ describe("streams around today's first tip (rosters lock then)", () => {
   it("before the tip, waits for it when that keeps the drop's game today: an extra start", () => {
     const add = fa(10, "Tomorrow Guard", 89, 20, ["PG"]); // plays days 2, 3, 4
     const now = forGillespie(run([add]), 10); // no tip known: the move counts as immediate
-    const wait = forGillespie(run([add], { firstTip: tip }), 10);
+    const wait = forGillespie(run([add], { tips: new Map([[1, tip]]) }), 10);
     expect(now.timing).toBeUndefined();
     expect(now.deltaStarts).toBe(0); // loses Gillespie's day 1, gains day 2
     expect(wait.timing).toBe("afterTip");
     expect(wait.deltaStarts).toBe(1); // Gillespie plays today, the add from tomorrow
     expect(wait.deltaPts).toBeGreaterThan(now.deltaPts);
-    expect(run([add], { firstTip: tip }).thisWeek[0]!.timing).toBe("afterTip");
+    expect(run([add], { tips: new Map([[1, tip]]) }).thisWeek[0]!.timing).toBe("afterTip");
   });
 
   it("after the tip, the same move keeps the drop today and adds from tomorrow", () => {
     const add = fa(10, "Tomorrow Guard", 89, 20, ["PG"]);
-    const before = forGillespie(run([add], { firstTip: tip }), 10);
+    const before = forGillespie(run([add], { tips: new Map([[1, tip]]) }), 10);
     const after = forGillespie(run([add], { rosterLocked: true }), 10);
     expect(after.deltaStarts).toBe(1);
     expect(after.deltaPts).toBeCloseTo(before.deltaPts, 6);
@@ -426,7 +426,50 @@ describe("streams around today's first tip (rosters lock then)", () => {
 
   it("doesn't wait when the add's own game today is worth more now", () => {
     const add = fa(11, "Today Guard", 88, 25, ["PG"]); // plays days 1-4, better than Gillespie
-    expect(forGillespie(run([add], { firstTip: tip }), 11).timing).toBeUndefined();
+    expect(forGillespie(run([add], { tips: new Map([[1, tip]]) }), 11).timing).toBeUndefined();
+  });
+
+  describe("after the lock, waiting for tomorrow's first tip", () => {
+    // D plays days 1-4 (team 88); a move made now counts from day 2.
+    const later = days(84, [3, 4, 5, 6]);
+    const tomorrowTip = Date.parse("2026-10-21T23:00:00Z");
+    const d = { ...guy(1, 88, "PG", 20), name: "Drop" };
+    const after = (add: FreeAgent) =>
+      waiverAnalysis({
+        ...base,
+        roster: [d, guy(2, 99, "C", 30), guy(3, 99, "C", 28)],
+        freeAgents: [add],
+        week: {
+          periods: [1, 2, 3, 4, 5, 6],
+          fromPeriod: 1,
+          games: [...games, ...later],
+          slotCounts: slots,
+          injuries: [],
+        },
+        rosterLimit: 3,
+        lastDay: 6,
+        season: valueContext([...games, ...later], slots, 1, 6, 1),
+        noDrop: new Set([2, 3]),
+        rosterLocked: true,
+        tips: new Map([[2, tomorrowTip]]),
+      }).dropOptions.get(add.player.id)![0]!;
+
+    it("waits when that keeps the drop's game tomorrow: an extra start", () => {
+      const o = after(fa(20, "Later Guard", 84, 20, ["PG"])); // plays days 3-6, not tomorrow
+      expect(o.timing).toBe("afterTip");
+      expect(o.waitDay).toBe(2);
+      expect(o.deltaStarts).toBe(2); // D keeps day 2; the add starts days 3-6 for D's 3-4
+    });
+
+    it("doesn't wait when the add's game tomorrow is worth more", () => {
+      const o = after(fa(21, "Daily Guard", 99, 25, ["PG"])); // plays every day, better than D
+      expect(o.timing).toBeUndefined();
+    });
+
+    it("never waits on a waiver claim", () => {
+      const o = after(fa(22, "Claim Guard", 84, 20, ["PG"], "WAIVERS"));
+      expect(o.timing).toBeUndefined();
+    });
   });
 
   it("evaluates a cheap player who'd fill open lineup slots, whatever his volume", () => {
@@ -454,5 +497,18 @@ describe("streams around today's first tip (rosters lock then)", () => {
     });
     expect(r.dropOptions.has(12)).toBe(true);
     expect(r.thisWeek.some((o) => o.add.player.id === 12 && o.deltaStarts > 0)).toBe(true);
+  });
+});
+
+describe("the streams the Moves page shows", () => {
+  const o = (id: number, deltaWin: number) =>
+    ({ add: { player: { id } }, drop: null, il: null, deltaWin }) as unknown as StreamOption;
+
+  it("shows the top 5 by this week's win chance and the rest behind Show more", () => {
+    const thisWeek = [o(1, 0.08), o(2, 0.07), o(3, 0.06), o(4, 0.05), o(5, 0.04), o(6, 0.03)];
+    thisWeek.push(o(7, 0.02), o(8, 0.004)); // 8 barely moves it: left out
+    const r = shownMoves({ best: [o(2, 0.07)], thisWeek });
+    expect(r.streams.map((x) => x.add.player.id)).toEqual([1, 3, 4, 5, 6]);
+    expect(r.moreStreams.map((x) => x.add.player.id)).toEqual([7]);
   });
 });

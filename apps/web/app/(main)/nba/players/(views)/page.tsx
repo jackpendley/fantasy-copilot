@@ -9,6 +9,7 @@ import { TeamLogo } from "@/components/fc/team-logo";
 import { ErrorNotice, SetupNotice } from "@/components/setup-notice";
 import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
+import { dateForScoringPeriod } from "@/lib/nba/calendar";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
 import { moveChecks, moveKey, rosterKey, type MoveChecks } from "@/lib/nba/move-checks";
 import type { MoveEffect } from "@/lib/nba/move-sim";
@@ -34,7 +35,7 @@ import { shownMoves, type StreamOption, type WaiverCandidate } from "@/lib/nba/w
 const clearsAt = (ms: number) =>
   `${new Date(ms).toLocaleDateString("en-US", { weekday: "short", timeZone: process.env.DISPLAY_TZ || "America/Phoenix" })} ${fmtTip(new Date(ms).toISOString())}`;
 
-function Who({ c }: { c: WaiverCandidate }) {
+function Who({ c, interested = false }: { c: WaiverCandidate; interested?: boolean }) {
   return (
     <PlayerCardButton id={c.player.id} className="flex min-w-0 items-center gap-2.5 rounded-md">
       <PlayerAvatar id={c.player.id} name={c.player.name} size={40} />
@@ -43,6 +44,7 @@ function Who({ c }: { c: WaiverCandidate }) {
           <span className="min-w-0 font-medium break-words">{c.player.name}</span>
           <StatusPill status={c.player.injuryStatus ?? "ACTIVE"} />
           {c.status === "WAIVERS" && <Pill tone="info">Waivers</Pill>}
+          {interested && <Pill tone="info">Interested</Pill>}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
           <TeamLogo abbr={c.player.proTeam} size={14} />
@@ -137,8 +139,30 @@ function HowToRead({ winsPerPoint }: { winsPerPoint: number }) {
   );
 }
 
+/** "today", "tomorrow" or the weekday ("Saturday") of a day this week, from today's. */
+const dayWord = (day: number, today: number) =>
+  day === today
+    ? "today"
+    : day === today + 1
+      ? "tomorrow"
+      : new Date(`${dateForScoringPeriod(day)}T12:00:00Z`).toLocaleDateString("en-US", {
+          weekday: "long",
+          timeZone: "UTC",
+        });
+
+/** "Make this after tomorrow's first tip (4:00 PM): …" for a move worth more made then. */
+function waitNote(o: StreamOption, tips: Map<number, number> | undefined, today: number) {
+  const tip = o.waitDay != null ? tips?.get(o.waitDay) : undefined;
+  if (o.timing !== "afterTip" || tip == null || !o.drop) return null;
+  const on = dayWord(o.waitDay!, today);
+  const next = dayWord(o.waitDay! + 1, today);
+  const starts =
+    o.deltaStarts > 0 ? `, +${o.deltaStarts} start${o.deltaStarts > 1 ? "s" : ""} this week` : "";
+  return `Make this after ${on}'s first tip (${fmtTip(new Date(tip).toISOString())}): ${o.drop.name} still plays ${on === "today" || on === "tomorrow" ? on : `on ${on}`} and ${o.add.player.name} starts ${next === "tomorrow" ? next : `on ${next}`}${starts}.`;
+}
+
 /** A move as the card shows it, from the analysis' option for one drop. */
-function optionOf(o: StreamOption, firstTip: number | null): MoveOption {
+function optionOf(o: StreamOption, note: string | null): MoveOption {
   return {
     key: moveKey(o),
     dropId: o.drop?.id ?? null,
@@ -156,10 +180,7 @@ function optionOf(o: StreamOption, firstTip: number | null): MoveOption {
     dropCutFor: o.dropCutFor,
     ilCuts: o.ilCuts,
     rosCost: Math.max(0, -o.rosDelta),
-    waitNote:
-      o.timing === "afterTip" && firstTip != null && o.drop
-        ? `Make this after today's first tip (${fmtTip(new Date(firstTip).toISOString())}): ${o.drop.name} still plays today and ${o.add.player.name} starts tomorrow${o.deltaStarts > 0 ? `, +${o.deltaStarts} start${o.deltaStarts > 1 ? "s" : ""} this week` : ""}.`
-        : null,
+    waitNote: note,
   };
 }
 
@@ -307,7 +328,12 @@ export default async function MovesPage({
     .sort((a, b) => a - b)[0];
   const worker = workerEnabled();
   const shownNow = shownMoves(analysis);
-  const shownAdds = [...shownNow.best, ...shownNow.streams, ...analysis.watched];
+  const shownAdds = [
+    ...shownNow.best,
+    ...shownNow.streams,
+    ...shownNow.moreStreams,
+    ...analysis.watched,
+  ];
   // Every drop of every add on the page: the worker checks them all (ADR-058).
   const keys = shownAdds.flatMap((o) =>
     (analysis.dropOptions.get(o.add.player.id) ?? [o]).map(moveKey),
@@ -349,14 +375,19 @@ export default async function MovesPage({
       .filter((y) => y.e && y.e.seasons > 0);
     return checked.sort((a, b) => b.e!.title.d - a.e!.title.d)[0] ?? null;
   };
-  const card = (o: StreamOption) => {
+  const watch = v.inputs.watch;
+  /**
+   * A move's card. It opens on its best-simulated drop, but a stream opens on the drop that
+   * made it a stream (this week's win chance), so the card shows what put it in that list.
+   */
+  const card = (o: StreamOption, stream = false) => {
     const options = (analysis.dropOptions.get(o.add.player.id) ?? [o]).map((x) =>
-      optionOf(x, v.firstTip),
+      optionOf(x, waitNote(x, v.inputs.tips, v.sp)),
     );
     return (
       <MoveCard
         key={o.add.player.id}
-        who={<Who c={o.add} />}
+        who={<Who c={o.add} interested={stream && Boolean(watch?.has(o.add.player.id))} />}
         addId={o.add.player.id}
         addName={o.add.player.name}
         claim={o.add.status === "WAIVERS"}
@@ -364,7 +395,7 @@ export default async function MovesPage({
         addsLeft={addsLeft}
         addsCap={addsCap}
         options={options}
-        initialKey={moveKey(deepBest(o)?.x ?? o)}
+        initialKey={moveKey(stream ? o : (deepBest(o)?.x ?? o))}
         sims={quick}
         outlook={outlook}
         weekWin={analysis.baseWin}
@@ -381,7 +412,8 @@ export default async function MovesPage({
     return Number(!!ey) - Number(!!ex);
   });
   // This week's streams: the adds that raise this week's win chance most (not already above).
-  const { streams } = shownNow;
+  const { streams, moreStreams } = shownNow;
+  const streamCard = (o: StreamOption) => card(o, true);
   return (
     <>
       {/* At today's first tip moves start counting from tomorrow: re-run the analysis then. */}
@@ -422,7 +454,7 @@ export default async function MovesPage({
           <DeepBanner />
           {best.length ? (
             <div className="divide-y overflow-hidden rounded-xl border bg-card">
-              {best.map(card)}
+              {best.map((o) => card(o))}
             </div>
           ) : (
             <Callout tone="info">
@@ -442,8 +474,21 @@ export default async function MovesPage({
                 later: each card shows the season simulation.
               </p>
               <div className="divide-y overflow-hidden rounded-xl border bg-card">
-                {streams.map(card)}
+                {streams.map(streamCard)}
               </div>
+              {moreStreams.length > 0 && (
+                <details className="group">
+                  <summary className="cursor-pointer list-none px-1 py-1 text-sm font-medium text-primary [&::-webkit-details-marker]:hidden">
+                    Show {moreStreams.length} more stream{moreStreams.length > 1 ? "s" : ""}
+                    <span className="ml-1 inline-block transition-transform group-open:rotate-180">
+                      ▾
+                    </span>
+                  </summary>
+                  <div className="mt-1.5 divide-y overflow-hidden rounded-xl border bg-card">
+                    {moreStreams.map(streamCard)}
+                  </div>
+                </details>
+              )}
             </section>
           )}
 
@@ -454,7 +499,7 @@ export default async function MovesPage({
               <SectionTitle aside="Your ESPN watch list">Interested</SectionTitle>
               {analysis.watched.length > 0 && (
                 <div className="divide-y overflow-hidden rounded-xl border bg-card">
-                  {analysis.watched.map(card)}
+                  {analysis.watched.map((o) => card(o))}
                 </div>
               )}
               <Suspense

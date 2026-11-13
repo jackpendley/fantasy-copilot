@@ -137,11 +137,17 @@ async function readWaiverInputs(now = new Date()) {
     data.scoreboard,
     now,
   );
-  // Until it tips, today's first game: a move can wait for it (rosters lock then).
-  const firstTip =
-    !locked && data.settings.rosterLock === "FIRSTGAME_SCORINGPERIOD" && todayGames.length
-      ? Math.min(...todayGames.map((g) => g.date))
-      : null;
+  // Each coming day's first tip this week (rosters lock then): a move can wait for it.
+  const tips = new Map<number, number>();
+  if (data.settings.rosterLock === "FIRSTGAME_SCORINGPERIOD") {
+    for (const g of data.games) {
+      if (!view.weekInputs.periods.includes(g.scoringPeriodId)) continue;
+      tips.set(g.scoringPeriodId, Math.min(g.date, tips.get(g.scoringPeriodId) ?? Infinity));
+    }
+    for (const day of tips.keys()) if (day < sp || (day === sp && locked)) tips.delete(day);
+  }
+  // Until it tips, today's first game (the Players page refreshes then).
+  const firstTip = !locked && todayGames.length ? (tips.get(sp) ?? null) : null;
   const inputs: WaiverInputs = {
     roster: data.ahead.me.roster,
     leaving: view.myPending.drops,
@@ -158,7 +164,7 @@ async function readWaiverInputs(now = new Date()) {
     rosterLimit,
     irSlots: data.settings.slotCounts.IR ?? 0,
     rosterLocked: locked,
-    firstTip,
+    tips,
     lastDay: LAST_SCORING_PERIOD,
     // Rest-of-season lineup fit (positions, schedule, injuries, IL returns).
     season: valueContext(

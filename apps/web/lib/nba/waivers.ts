@@ -52,10 +52,11 @@ export interface WaiverInputs {
    */
   rosterLocked?: boolean;
   /**
-   * Today's first tip (ms), while the roster hasn't locked yet: a move can wait for it, so the
-   * dropped player keeps today's game and the add counts from tomorrow.
+   * Each coming day's first tip (ms) this week, in a league that locks rosters then: a move can
+   * wait for the tip of the day it would first count, so the dropped player keeps that day's
+   * game and the add counts from the next day.
    */
-  firstTip?: number | null;
+  tips?: Map<number, number>;
   /** Last day of the league season (rest-of-season horizon). */
   lastDay: number;
   /**
@@ -113,10 +114,12 @@ export interface StreamOption {
   /** The lineup points behind laterWins: after this week, playoff days counted double. */
   laterPts: number;
   /**
-   * Worth more made just after today's first tip than now: the dropped player keeps today's
-   * game and the add counts from tomorrow (often an extra start).
+   * Worth more made just after the first tip of `waitDay` (the day it would count from if made
+   * now): the dropped player keeps that day's game and the add counts from the next day (often
+   * an extra start).
    */
   timing?: "afterTip";
+  waitDay?: number;
 }
 
 const MAX_CANDIDATES = 45;
@@ -368,25 +371,24 @@ export function waiverAnalysis(a: WaiverInputs): {
     };
   };
 
-  // Before today's first tip, a move can also wait for it (this league locks rosters at the
-  // day's first tip): the dropped player keeps today's game and the add counts from tomorrow.
-  // For a drop who plays today that's often worth an extra start, so both timings are valued.
-  const playsToday = teamsOn.get(week.fromPeriod) ?? new Set<number>();
+  // A free-agent move can also wait for the first tip of the day it would count from (this
+  // league locks rosters then): the dropped player keeps that day's game and the add counts from
+  // the next. Before today's tip that's today; after it, tomorrow. For a drop who plays that day
+  // it's often worth an extra start, so both timings are valued.
   const canWait = (c: WaiverCandidate, d: { p: RosterPlayer | null }) =>
-    a.firstTip != null &&
-    !a.rosterLocked &&
     d.p != null &&
-    playsToday.has(d.p.proTeamId) &&
-    moveDay(c) === week.fromPeriod;
+    c.status !== "WAIVERS" &&
+    Boolean(a.tips?.has(moveDay(c))) &&
+    Boolean(teamsOn.get(moveDay(c))?.has(d.p.proTeamId));
 
   const evaluate = (
     c: WaiverCandidate,
     d: { p: RosterPlayer | null; ros: number; il: RosterPlayer | null },
     wait: boolean,
   ): StreamOption => {
-    const first = wait ? week.fromPeriod + 1 : moveDay(c);
-    // The dropped player plays until the move takes effect (a claim processes, or tomorrow
-    // after the lock or the tip it waits for); a free-agent move before the lock is immediate.
+    const first = wait ? moveDay(c) + 1 : moveDay(c);
+    // The dropped player plays until the move takes effect (a claim processes, or the day after
+    // the lock or the tip it waits for); a free-agent move before the lock is immediate.
     const waits = wait || delayed(c);
     const keep = waits && d.p;
     const roster = [...current.filter((p) => keep || p !== d.p), { ...c.player, slot: "BE" }];
@@ -412,7 +414,7 @@ export function waiverAnalysis(a: WaiverInputs): {
       netWins: 0,
       laterWins: 0,
       laterPts: 0,
-      ...(wait && { timing: "afterTip" as const }),
+      ...(wait && { timing: "afterTip" as const, waitDay: first - 1 }),
     };
     // Season points include this week's; count those once, through the win chance.
     o.laterPts = o.seasonScore - o.deltaPts;
@@ -506,15 +508,17 @@ export function pointsToWins(week: number): number {
   );
 }
 
-/** The adds the Moves page shows: the 8 best moves, then up to 5 this-week-only streams. */
+/**
+ * The adds the Moves page shows: the 8 best moves, then up to 5 this-week-only streams, and
+ * behind "Show more" every other add that raises this week's win chance (best first).
+ */
 export function shownMoves(a: Pick<ReturnType<typeof waiverAnalysis>, "best" | "thisWeek">): {
   best: StreamOption[];
   streams: StreamOption[];
+  moreStreams: StreamOption[];
 } {
   const best = a.best.slice(0, 8);
   const shown = new Set(best.map((o) => o.add.player.id));
-  const streams = a.thisWeek
-    .filter((o) => !shown.has(o.add.player.id) && (o.deltaWin ?? 0) > 0.005)
-    .slice(0, 5);
-  return { best, streams };
+  const all = a.thisWeek.filter((o) => !shown.has(o.add.player.id) && (o.deltaWin ?? 0) > 0.005);
+  return { best, streams: all.slice(0, 5), moreStreams: all.slice(5) };
 }

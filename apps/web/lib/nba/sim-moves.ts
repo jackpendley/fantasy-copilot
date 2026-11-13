@@ -27,8 +27,8 @@ export const moveKey = (o: Pick<StreamOption, "add" | "drop" | "il">) =>
 
 /**
  * Every move worth a deep check, in the order they get seasons:
- * 1. each Moves card's opening drop (the Interested list's too), and the best by the points
- *    estimate;
+ * 1. each Moves card's opening drop (the Interested list's too; the streams behind "Show
+ *    more" to the rest tier), and the best by the points estimate;
  * 2. every other drop of the adds on Moves;
  * 3. for the other evaluated adds (the Free agents tab), their best few drops.
  * `first`: moves asked for by key, ahead of all of these. `leading`: how many are in 1;
@@ -45,9 +45,11 @@ export function jobMoveOptions(
 ): { options: StreamOption[]; leading: number; top: number; others: number } {
   const all = [...a.dropOptions.values()].flat();
   const byKey = new Map(all.map((o) => [moveKey(o), o]));
-  const { best, streams } = shownMoves(a);
+  const { best, streams, moreStreams } = shownMoves(a);
   const shown = [...best, ...streams, ...(a.watched ?? [])];
-  const shownIds = new Set(shown.map((o) => o.add.player.id));
+  // The streams behind "Show more": checked to the rest tier, after the cards always shown.
+  const onPage = [...shown, ...moreStreams];
+  const shownIds = new Set(onPage.map((o) => o.add.player.id));
   const seen = new Set<string>();
   const unique = (list: StreamOption[]) =>
     list.filter((o) => {
@@ -63,9 +65,10 @@ export function jobMoveOptions(
   const opening = [
     ...top,
     ...unique(streamsTop ? [] : streams),
+    ...unique(moreStreams),
     ...unique([...all].sort((x, y) => y.netWins - x.netWins).slice(0, TOP_MOVES)),
   ];
-  const rest = unique(shown.flatMap((o) => a.dropOptions.get(o.add.player.id) ?? []));
+  const rest = unique(onPage.flatMap((o) => a.dropOptions.get(o.add.player.id) ?? []));
   const others = unique(
     [...a.dropOptions]
       .filter(([id]) => !shownIds.has(id))
@@ -133,10 +136,10 @@ export function buildWireMoves(a: MoveBuildArgs, options: StreamOption[]): WireM
         .map((p) => (p.id === o.il?.id ? { ...p, slot: "IR" } : p)),
       { ...o.add.player, slot: "BE" },
     ];
-    // A move worth more made just after today's first tip swaps tomorrow.
+    // A move worth more made just after a day's first tip swaps the day after.
     const from = Math.max(
       a.availableFrom?.get(o.add.player.id) ?? a.fromDay,
-      o.timing === "afterTip" ? a.fromDay + 1 : a.fromDay,
+      o.timing === "afterTip" ? (o.waitDay ?? a.fromDay) + 1 : a.fromDay,
     );
     const later = from > a.fromDay;
     let injured = a.injured;

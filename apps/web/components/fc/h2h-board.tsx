@@ -53,7 +53,7 @@ const projTitle = (c: H2HCell) =>
 
 /**
  * Points (or "–" before tip), and under them the projection, unlabeled, with ▲/▼. On phones the
- * two sit level with the name and game lines beside them. Empty for a ruled-out player.
+ * score has its own column, centered top to bottom. Empty for a ruled-out player.
  */
 function Score({ c, right }: { c: H2HCell; right: boolean }) {
   const live = c.game?.state === "in";
@@ -120,7 +120,7 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
           <span className="hidden md:inline">{c.player.name}</span>
         </span>
       )}
-      <span className="shrink-0 text-[length:calc(9px*var(--fit,1))] text-muted-foreground sm:text-[10px] md:text-[11px]">
+      <span className="shrink-0 text-[length:calc(8px*var(--fit,1))] text-muted-foreground sm:text-[10px] md:text-[11px]">
         {c.player.positions.join("/")}
       </span>
       <StatusPill
@@ -149,15 +149,16 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       {onCourt && <span className="sr-only">On the court.</span>}
       {/* Phones in portrait: the Today row without the photo. Up to three single lines in a
           fixed height, centered top to bottom; when one is too wide, all the board's text
-          shrinks together (FitGroup in matchup-days.tsx). The score is centered beside the name
-          and game lines, so the stats line gets the cell's full width. */}
+          shrinks together (FitGroup in matchup-days.tsx). The score has its own column (empty
+          without one, so every square's lines end at the same place), centered top to bottom:
+          no line ever runs under it. */}
       <div
         className={cn(
-          "flex h-full min-w-0 flex-1 flex-col justify-center py-2 sm:hidden",
-          right && "text-right",
+          "flex h-full min-w-0 flex-1 items-center gap-0.5 py-2 sm:hidden",
+          right && "flex-row-reverse text-right",
         )}
       >
-        <div className={cn("relative", right ? "pl-[34px]" : "pr-[34px]")}>
+        <div className="flex min-w-0 flex-1 flex-col justify-center">
           {nameLine(true)}
           {/* A ruled-out player keeps his game (his OUT tag says he won't play), and nothing
               under it. */}
@@ -166,19 +167,13 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
               <PhoneGame game={c.game} />
             </FitText>
           )}
-          {(c.game || c.points != null || c.proj != null) && (
-            <div
-              className={cn("absolute inset-y-0 flex items-center", right ? "left-0" : "right-0")}
-            >
-              <Score c={c} right={right} />
-            </div>
+          {stats && !c.out && (
+            <FitText className="text-[length:calc(10.5px*var(--fit,1))] leading-[13px] tracking-tight text-foreground/80 tabular-nums">
+              <PhoneStats line={c.line!} />
+            </FitText>
           )}
         </div>
-        {stats && !c.out && (
-          <FitText className="text-[length:calc(10.5px*var(--fit,1))] leading-[13px] tracking-tight text-foreground/80 tabular-nums">
-            <PhoneStats line={c.line!} />
-          </FitText>
-        )}
+        <Score c={c} right={right} />
       </div>
       <PlayerAvatar
         id={c.player.id}
@@ -188,9 +183,11 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       />
       <div className={cn("hidden min-w-0 flex-1 sm:block", right && "text-right")}>
         {nameLine(false)}
-        <div className="min-h-[1lh] truncate text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
-          <GameText game={c.game} />
-        </div>
+        {c.game && (
+          <div className="truncate text-[11px] whitespace-nowrap text-muted-foreground tabular-nums">
+            <GameText game={c.game} />
+          </div>
+        )}
         {stats && !c.out && (
           <div className="line-clamp-2 text-[11px] leading-[14px] text-foreground/80 tabular-nums">
             {stats}

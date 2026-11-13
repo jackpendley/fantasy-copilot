@@ -854,3 +854,21 @@
   - Every ink passes ≥4.5:1, on its fill and on the card.
   - Adjacent fills are ≥8 ΔE (OKLab ×100) apart for normal vision.
   - The weakest steps are dark mode's reds under protanopia (3–6). They're legal because the ordinal is always shown.
+
+## ADR-062: phone Matchup squares give the score its own column (2026-11-13)
+
+- **Why:** Jack wants each square's score and projection centered top to bottom, and never touching the name, game or stats lines.
+  - Until now, the score sat beside the name and game lines, and the stats line ran under it.
+  - With a stats line, the score sat high.
+- **Layout** (`components/fc/h2h-board.tsx`, phones only):
+  - **Two columns:** the text lines, and a 34 px score column that is empty without a score. Both are centered top to bottom.
+  - Everything else is as before: one text scale for the board (ADR-043), 58 px rows, one-line stats in the full format.
+  - The phone position labels are smaller: 8 px base instead of 9.
+- **Trade-off Jack accepted:** stats lines no longer borrow the space under the score.
+  - When a stats line, not a name, is the board's longest line, every line shrinks more than before. In a week without a long name, a mockup came out at 72% instead of 91%.
+  - When a long name sets the scale (Nov 13: N. Alexander-Walker, 63%), nothing changes.
+- **Rejected** after mockups on real boards:
+  - shorter stat labels;
+  - taller squares or two-line stats;
+  - lines cut with "…", or one line shrinking on its own;
+  - layouts that spread the name and stats above and below a centered score.

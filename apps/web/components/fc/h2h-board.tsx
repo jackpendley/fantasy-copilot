@@ -149,8 +149,8 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       {onCourt && <span className="sr-only">On the court.</span>}
       {/* Phones in portrait: the Today row without the photo. Up to three single lines in a
           fixed height, centered top to bottom; when one is too wide, all the board's text
-          shrinks together (FitGroup in matchup-days.tsx). The score sits beside the name and
-          game (as tall as those two lines), so the stats line gets the cell's full width. */}
+          shrinks together (FitGroup in matchup-days.tsx). The score is centered beside the name
+          and game lines, so the stats line gets the cell's full width. */}
       <div
         className={cn(
           "flex h-full min-w-0 flex-1 flex-col justify-center py-2 sm:hidden",
@@ -167,7 +167,9 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
             </FitText>
           )}
           {(c.game || c.points != null || c.proj != null) && (
-            <div className={cn("absolute top-0", right ? "left-0" : "right-0")}>
+            <div
+              className={cn("absolute inset-y-0 flex items-center", right ? "left-0" : "right-0")}
+            >
               <Score c={c} right={right} />
             </div>
           )}

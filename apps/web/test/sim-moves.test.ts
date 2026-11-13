@@ -186,6 +186,9 @@ describe("moves built as patches on the base season", () => {
     // A move worth more made after today's first tip swaps tomorrow, like a claim for then.
     const [waits] = build(new Map([[901, 1]]), [{ ...claim, timing: "afterTip" }]);
     expect(waits).toEqual(later);
+    // Waiting for tomorrow's tip (after today's lock) swaps the day after.
+    const [dayAfter] = build(new Map([[901, 2]]), [{ ...claim, timing: "afterTip", waitDay: 2 }]);
+    expect(dayAfter).toEqual(build(new Map([[901, 3]]), [claim])[0]);
     // A claim clearing on the first day is the immediate move, as before.
     expect(me(applyMove(wire, 1, now!))).not.toHaveProperty("next");
     expect(build(new Map(), [claim])).toEqual([now]);
@@ -246,6 +249,20 @@ describe("the moves a job checks", () => {
     const keys = options.map(moveKey);
     expect(keys.slice(0, top)).toContain("509:1:");
     for (const d of [2, 3, 4]) expect(keys).toContain(`509:${d}:`);
+  });
+
+  it("checks the streams behind Show more after the top tier, with all their drops", () => {
+    const streamOpts = new Map(
+      Array.from({ length: 7 }, (_, i) => [600 + i, opts(600 + i, [1, 2], 0.01)]),
+    );
+    const thisWeek = [...streamOpts.values()].map(
+      (o, i) => ({ ...o[0]!, deltaWin: 0.07 - i * 0.005 }) as StreamOption,
+    );
+    const r = jobMoveOptions({ best: [], thisWeek, dropOptions: streamOpts });
+    const keys = r.options.map(moveKey);
+    expect(keys.slice(0, r.top)).toEqual(thisWeek.slice(0, 5).map(moveKey));
+    expect(keys.slice(r.top, r.leading)).toEqual(expect.arrayContaining(["605:1:", "606:1:"]));
+    expect(keys).toContain("606:2:");
   });
 
   it("checks streams' opening moves to the rest tier under the CPU saver", () => {

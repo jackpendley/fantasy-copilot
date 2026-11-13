@@ -146,16 +146,18 @@ export function PlayerRow({
               />
             )}
           </div>
-          <FitText
-            className={cn(
-              "min-h-[1lh] text-[length:calc(12px*var(--fit,1))] text-muted-foreground",
-              inProgress && "font-medium text-success",
-            )}
-          >
-            {/* Only with a game (blank without one, so who plays stands out). A ruled-out
-                player keeps his game and has nothing under it. */}
-            <GameLine row={row} live={live} />
-          </FitText>
+          {/* Only with a game, so a player without one has just his name, centered. A ruled-out
+              player keeps his game and has nothing under it. */}
+          {row.game && (
+            <FitText
+              className={cn(
+                "text-[length:calc(12px*var(--fit,1))] text-muted-foreground",
+                inProgress && "font-medium text-success",
+              )}
+            >
+              <GameLine row={row} live={live} />
+            </FitText>
+          )}
           {stats ? (
             // Wraps to a second line on phones rather than being cut off.
             <div className="line-clamp-2 text-[length:calc(11px*var(--fit,1))] leading-[14px] text-foreground/80 tabular-nums sm:line-clamp-1 sm:text-[length:calc(12px*var(--fit,1))] sm:leading-4">

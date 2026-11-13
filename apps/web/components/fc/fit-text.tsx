@@ -141,11 +141,14 @@ export function FitWidth({
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // The table's real width: scrollWidth rounds, and a fraction of a pixel over still scrolls.
+    const wide = () =>
+      Math.max(el.scrollWidth, ...Array.from(el.children, (c) => c.getBoundingClientRect().width));
     const fit = () => {
       el.style.fontSize = "";
-      for (let i = 0; i < 4 && el.scrollWidth > el.clientWidth; i++) {
+      for (let i = 0; i < 4 && wide() > el.clientWidth; i++) {
         const size = parseFloat(getComputedStyle(el).fontSize);
-        const next = Math.max(min, (size * el.clientWidth * 0.99) / el.scrollWidth);
+        const next = Math.max(min, (size * el.clientWidth * 0.99) / wide());
         if (next >= size) break;
         el.style.fontSize = `${next}px`;
       }

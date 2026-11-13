@@ -147,28 +147,35 @@ function Cell({ c, side }: { c: H2HCell | null; side: "mine" | "theirs" }) {
       )}
     >
       {onCourt && <span className="sr-only">On the court.</span>}
-      {/* Phones in portrait: the Today row without the photo. Three single lines in a fixed
-          height; when one is too wide, all the board's text shrinks together (FitGroup in
-          matchup-days.tsx). The score sits in the corner beside the name and game, so the
-          stats line gets the cell's full width. */}
-      <div className={cn("relative h-full min-w-0 flex-1 py-2 sm:hidden", right && "text-right")}>
-        <div className={cn(right ? "pl-[34px]" : "pr-[34px]")}>
+      {/* Phones in portrait: the Today row without the photo. Up to three single lines in a
+          fixed height, centered top to bottom; when one is too wide, all the board's text
+          shrinks together (FitGroup in matchup-days.tsx). The score sits beside the name and
+          game (as tall as those two lines), so the stats line gets the cell's full width. */}
+      <div
+        className={cn(
+          "flex h-full min-w-0 flex-1 flex-col justify-center py-2 sm:hidden",
+          right && "text-right",
+        )}
+      >
+        <div className={cn("relative", right ? "pl-[34px]" : "pr-[34px]")}>
           {nameLine(true)}
           {/* A ruled-out player keeps his game (his OUT tag says he won't play), and nothing
               under it. */}
-          <FitText className="min-h-[13px] text-[length:calc(10px*var(--fit,1))] leading-[13px] text-muted-foreground tabular-nums">
-            <PhoneGame game={c.game} />
-          </FitText>
+          {c.game && (
+            <FitText className="text-[length:calc(10px*var(--fit,1))] leading-[13px] text-muted-foreground tabular-nums">
+              <PhoneGame game={c.game} />
+            </FitText>
+          )}
+          {(c.game || c.points != null || c.proj != null) && (
+            <div className={cn("absolute top-0", right ? "left-0" : "right-0")}>
+              <Score c={c} right={right} />
+            </div>
+          )}
         </div>
         {stats && !c.out && (
           <FitText className="text-[length:calc(10.5px*var(--fit,1))] leading-[13px] tracking-tight text-foreground/80 tabular-nums">
             <PhoneStats line={c.line!} />
           </FitText>
-        )}
-        {(c.game || c.points != null || c.proj != null) && (
-          <div className={cn("absolute top-2", right ? "left-0" : "right-0")}>
-            <Score c={c} right={right} />
-          </div>
         )}
       </div>
       <PlayerAvatar

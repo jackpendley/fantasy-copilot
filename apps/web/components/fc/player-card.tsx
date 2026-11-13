@@ -350,7 +350,7 @@ function LiveTab({ g, card }: { g: LiveGame; card: PlayerCardData }) {
               <thead>
                 <tr className="text-muted-foreground">
                   {[...BOX, "FG", "FT"].map((h) => (
-                    <th key={h} className="px-[0.3em] py-1 text-right font-medium">
+                    <th key={h} className="px-[0.33em] py-1 text-right font-medium">
                       {h}
                     </th>
                   ))}
@@ -359,14 +359,14 @@ function LiveTab({ g, card }: { g: LiveGame; card: PlayerCardData }) {
               <tbody>
                 <tr className="border-t font-medium">
                   {BOX.map((k) => (
-                    <td key={k} className="px-[0.3em] py-1 text-right">
+                    <td key={k} className="px-[0.33em] py-1 text-right">
                       {l[k] ?? 0}
                     </td>
                   ))}
-                  <td className="px-[0.3em] py-1 text-right whitespace-nowrap">
+                  <td className="px-[0.33em] py-1 text-right whitespace-nowrap">
                     {l.FGM ?? 0}-{l.FGA ?? 0}
                   </td>
-                  <td className="px-[0.3em] py-1 text-right whitespace-nowrap">
+                  <td className="px-[0.33em] py-1 text-right whitespace-nowrap">
                     {l.FTM ?? 0}-{l.FTA ?? 0}
                   </td>
                 </tr>
@@ -624,7 +624,7 @@ export function SeasonNumbers({ s }: { s: SeasonBlock }) {
                 <tr className="text-muted-foreground">
                   {["MIN", "PTS", "REB", "AST", "STL", "BLK", "3PM", "TO", "FG%", "FT%"].map(
                     (h) => (
-                      <th key={h} className="px-[0.3em] py-1 text-right font-medium">
+                      <th key={h} className="px-[0.33em] py-1 text-right font-medium">
                         {h}
                       </th>
                     ),
@@ -634,14 +634,14 @@ export function SeasonNumbers({ s }: { s: SeasonBlock }) {
               <tbody>
                 <tr className="border-t">
                   {["MIN", "PTS", "REB", "AST", "STL", "BLK", "3PM", "TO"].map((k) => (
-                    <td key={k} className="px-[0.3em] py-1 text-right">
+                    <td key={k} className="px-[0.33em] py-1 text-right">
                       {sp.box[k]!.toFixed(1)}
                     </td>
                   ))}
-                  <td className="px-[0.3em] py-1 text-right">
+                  <td className="px-[0.33em] py-1 text-right">
                     {(sp.box["FG%"]! * 100).toFixed(1)}
                   </td>
-                  <td className="px-[0.3em] py-1 text-right">
+                  <td className="px-[0.33em] py-1 text-right">
                     {(sp.box["FT%"]! * 100).toFixed(1)}
                   </td>
                 </tr>
@@ -790,7 +790,7 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
                       <th
                         key={h}
                         className={cn(
-                          "px-[0.3em] py-1 font-medium",
+                          "px-[0.33em] py-1 font-medium",
                           h === "Date" || h === "Opp" ? "text-left" : "text-right",
                         )}
                       >
@@ -802,25 +802,25 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
                 <tbody>
                   {card.recent.map((g, i) => (
                     <tr key={i} className="border-t">
-                      <td className="px-[0.3em] py-1">{g.date}</td>
-                      <td className="px-[0.3em] py-1 whitespace-nowrap">
+                      <td className="px-[0.33em] py-1">{g.date}</td>
+                      <td className="px-[0.33em] py-1 whitespace-nowrap">
                         {g.home ? "" : "@"}
                         {g.opponent}
                       </td>
                       {["MIN", "PTS", "REB", "AST", "STL", "BLK", "3PM", "TO"].map((k) => (
-                        <td key={k} className="px-[0.3em] py-1 text-right">
+                        <td key={k} className="px-[0.33em] py-1 text-right">
                           {g.line[k]}
                         </td>
                       ))}
-                      <td className="px-[0.3em] py-1 text-right whitespace-nowrap">
+                      <td className="px-[0.33em] py-1 text-right whitespace-nowrap">
                         {g.line.FGM}-{g.line.FGA}
                       </td>
-                      <td className="px-[0.3em] py-1 text-right whitespace-nowrap">
+                      <td className="px-[0.33em] py-1 text-right whitespace-nowrap">
                         {g.line.FTM}-{g.line.FTA}
                       </td>
                       <td
                         className={cn(
-                          "px-[0.3em] py-1 text-right font-semibold",
+                          "px-[0.33em] py-1 text-right font-semibold",
                           toneText(fpTone(g.fp, card.form.fppg, g.line.MIN)),
                         )}
                       >

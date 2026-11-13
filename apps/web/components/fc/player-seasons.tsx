@@ -8,6 +8,7 @@ import { useState } from "react";
 import { SectionTitle } from "@/components/fc/bits";
 import { ContributionBars, SeasonNumbers } from "@/components/fc/player-card";
 import { TeamLogo } from "@/components/fc/team-logo";
+import { FitWidth } from "@/components/fc/fit-text";
 import { FpChart } from "@/components/fp-chart";
 import { fmtPts, fpTone, toneText } from "@/lib/display";
 import type { LogGame, PlayerCardData } from "@/lib/nba/player-card";
@@ -103,29 +104,36 @@ export function PlayerSeasons({
 
           <section className="space-y-1.5">
             <SectionTitle aside="League scoring">Game log</SectionTitle>
-            <div className="overflow-x-auto rounded-xl border bg-card">
-              <table className="w-full text-sm tabular-nums">
+            <FitWidth className="rounded-xl border bg-card text-sm">
+              <table className="w-full tabular-nums">
                 <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-card px-3 py-2.5 text-left font-medium">
+                  <tr className="border-b text-[0.86em] text-muted-foreground">
+                    <th className="sticky left-0 z-10 bg-card pr-[0.3em] pl-[0.6em] sm:px-[0.75em] py-2.5 text-left font-medium">
                       Game
                     </th>
-                    <th className="px-2 py-2.5 text-right font-medium">FP</th>
+                    <th className="px-[0.3em] sm:px-[0.5em] py-2.5 text-right font-medium">FP</th>
                     {COLS.map((c) => (
-                      <th key={c} className="px-2 py-2.5 text-right font-medium">
+                      <th
+                        key={c}
+                        className="px-[0.3em] sm:px-[0.5em] py-2.5 text-right font-medium"
+                      >
                         {c}
                       </th>
                     ))}
-                    <th className="px-2 py-2.5 text-right font-medium">FG</th>
-                    <th className="px-3 py-2.5 text-right font-medium">FT</th>
+                    <th className="px-[0.3em] sm:px-[0.5em] py-2.5 text-right font-medium">FG</th>
+                    <th className="pr-[0.6em] pl-[0.3em] sm:px-[0.75em] py-2.5 text-right font-medium">
+                      FT
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {[...logs[which]].reverse().map((g) => (
                     <tr key={g.gameId}>
-                      <td className="sticky left-0 z-10 bg-card px-3 py-2">
-                        <div className="flex items-center gap-1.5 whitespace-nowrap">
-                          <span className="w-9 text-muted-foreground">{shortDate(g.date)}</span>
+                      <td className="sticky left-0 z-10 bg-card pr-[0.3em] pl-[0.6em] sm:px-[0.75em] py-2">
+                        <div className="flex items-center gap-[0.4em] whitespace-nowrap">
+                          <span className="w-[2.6em] text-muted-foreground">
+                            {shortDate(g.date)}
+                          </span>
                           <span className="text-muted-foreground">{g.home ? "vs" : "@"}</span>
                           <TeamLogo abbr={g.opponent} size={14} />
                           <span className="font-medium">{g.opponent}</span>
@@ -136,28 +144,28 @@ export function PlayerSeasons({
                       </td>
                       <td
                         className={cn(
-                          "px-2 py-2 text-right font-semibold",
+                          "px-[0.3em] sm:px-[0.5em] py-2 text-right font-semibold",
                           toneText(fpTone(g.fp, avg, g.line.MIN)),
                         )}
                       >
                         {fmtPts(g.fp)}
                       </td>
                       {COLS.map((c) => (
-                        <td key={c} className="px-2 py-2 text-right">
+                        <td key={c} className="px-[0.3em] sm:px-[0.5em] py-2 text-right">
                           {g.line[c] ?? 0}
                         </td>
                       ))}
-                      <td className="px-2 py-2 text-right text-muted-foreground">
+                      <td className="px-[0.3em] sm:px-[0.5em] py-2 text-right text-muted-foreground">
                         {g.line.FGM ?? 0}-{g.line.FGA ?? 0}
                       </td>
-                      <td className="px-3 py-2 text-right text-muted-foreground">
+                      <td className="pr-[0.6em] pl-[0.3em] sm:px-[0.75em] py-2 text-right text-muted-foreground">
                         {g.line.FTM ?? 0}-{g.line.FTA ?? 0}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
+            </FitWidth>
             <p className="px-1 text-xs text-muted-foreground">
               Every game, newest first. Green: 25%+ above his average; red: 40%+ below; a game he
               didn&apos;t play is neither.

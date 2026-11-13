@@ -122,3 +122,43 @@ export function FitText({
     </span>
   );
 }
+
+/**
+ * A table that fits its width on phones: its text shrinks until no column is cut, never below
+ * `min` px (past that it scrolls sideways). Inside, sizes and padding are in em, so they shrink
+ * with it.
+ */
+export function FitWidth({
+  children,
+  className,
+  min = 9,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  min?: number;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      el.style.fontSize = "";
+      for (let i = 0; i < 4 && el.scrollWidth > el.clientWidth; i++) {
+        const size = parseFloat(getComputedStyle(el).fontSize);
+        const next = Math.max(min, (size * el.clientWidth * 0.99) / el.scrollWidth);
+        if (next >= size) break;
+        el.style.fontSize = `${next}px`;
+      }
+    };
+    fit();
+    // Watch the space it lives in (its own height changes as it fits).
+    const observer = new ResizeObserver(fit);
+    observer.observe(el.parentElement ?? el);
+    return () => observer.disconnect();
+  }, [min, children]);
+  return (
+    <div ref={ref} className={cn("overflow-x-auto", className)}>
+      {children}
+    </div>
+  );
+}

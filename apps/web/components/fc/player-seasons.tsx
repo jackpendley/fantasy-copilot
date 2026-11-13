@@ -108,20 +108,20 @@ export function PlayerSeasons({
               <table className="w-full tabular-nums">
                 <thead>
                   <tr className="border-b text-[0.86em] text-muted-foreground">
-                    <th className="sticky left-0 z-10 bg-card pr-[0.3em] pl-[0.6em] sm:px-[0.75em] py-2.5 text-left font-medium">
+                    <th className="sticky left-0 z-10 bg-card pr-[0.35em] pl-[0.7em] sm:px-[1em] py-2.5 text-left font-medium">
                       Game
                     </th>
-                    <th className="px-[0.3em] sm:px-[0.5em] py-2.5 text-right font-medium">FP</th>
+                    <th className="px-[0.35em] sm:px-[0.66em] py-2.5 text-right font-medium">FP</th>
                     {COLS.map((c) => (
                       <th
                         key={c}
-                        className="px-[0.3em] sm:px-[0.5em] py-2.5 text-right font-medium"
+                        className="px-[0.35em] sm:px-[0.66em] py-2.5 text-right font-medium"
                       >
                         {c}
                       </th>
                     ))}
-                    <th className="px-[0.3em] sm:px-[0.5em] py-2.5 text-right font-medium">FG</th>
-                    <th className="pr-[0.6em] pl-[0.3em] sm:px-[0.75em] py-2.5 text-right font-medium">
+                    <th className="px-[0.35em] sm:px-[0.66em] py-2.5 text-right font-medium">FG</th>
+                    <th className="pr-[0.7em] pl-[0.35em] sm:px-[1em] py-2.5 text-right font-medium">
                       FT
                     </th>
                   </tr>
@@ -129,7 +129,7 @@ export function PlayerSeasons({
                 <tbody className="divide-y">
                   {[...logs[which]].reverse().map((g) => (
                     <tr key={g.gameId}>
-                      <td className="sticky left-0 z-10 bg-card pr-[0.3em] pl-[0.6em] sm:px-[0.75em] py-2">
+                      <td className="sticky left-0 z-10 bg-card pr-[0.3em] pl-[0.6em] sm:px-[0.86em] py-2">
                         <div className="flex items-center gap-[0.4em] whitespace-nowrap">
                           <span className="w-[2.6em] text-muted-foreground">
                             {shortDate(g.date)}
@@ -144,21 +144,21 @@ export function PlayerSeasons({
                       </td>
                       <td
                         className={cn(
-                          "px-[0.3em] sm:px-[0.5em] py-2 text-right font-semibold",
+                          "px-[0.3em] sm:px-[0.57em] py-2 text-right font-semibold",
                           toneText(fpTone(g.fp, avg, g.line.MIN)),
                         )}
                       >
                         {fmtPts(g.fp)}
                       </td>
                       {COLS.map((c) => (
-                        <td key={c} className="px-[0.3em] sm:px-[0.5em] py-2 text-right">
+                        <td key={c} className="px-[0.3em] sm:px-[0.57em] py-2 text-right">
                           {g.line[c] ?? 0}
                         </td>
                       ))}
-                      <td className="px-[0.3em] sm:px-[0.5em] py-2 text-right text-muted-foreground">
+                      <td className="px-[0.3em] sm:px-[0.57em] py-2 text-right text-muted-foreground">
                         {g.line.FGM ?? 0}-{g.line.FGA ?? 0}
                       </td>
-                      <td className="pr-[0.6em] pl-[0.3em] sm:px-[0.75em] py-2 text-right text-muted-foreground">
+                      <td className="pr-[0.6em] pl-[0.3em] sm:px-[0.86em] py-2 text-right text-muted-foreground">
                         {g.line.FTM ?? 0}-{g.line.FTA ?? 0}
                       </td>
                     </tr>

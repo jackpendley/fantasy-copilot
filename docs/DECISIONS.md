@@ -908,3 +908,13 @@
 
 - **Cost:** to be measured on the first jobs (docs/COMPUTE.md). Budget: 12 min per job (about 6.6 before) and 2 s of Vercel CPU (0.8 before). Over budget, the decision tier's cap drops to 72,000 seasons (±0.15).
 - **Note:** the ± is simulation noise only. The model's own error (projections, the sim's assumptions) is larger, and no number of seasons removes it.
+- **Addendum (Nov 16, after the first production job):**
+  - **The first racing job** (built 11:20 AM MT) took 19 min and 948 chunks; earlier jobs were about 6.6 min and ~190 chunks. Promoted groups hold only a few moves, so their chunks are cheaper.
+  - **Half the runners left at minute 5:** they asked for work while none was ready. The promotions then ran on 8 runners. **#159:** runners wait, rather than leave, while a running job has chunks out.
+  - **Result:** the Paul Reed card settled on Naz Reid +0.4±0.1 and Kris Dunn +0.3±0.1, both at 160,000 seasons. The deeper groups also extend the base run, so the Outlook now reads 160,000 seasons.
+  - **Still to measure:** the next full job's time with every runner kept.
+- **Roster fit on the cards (#157, #160):**
+  - `teamValue` counts the lineup's **room** each day for the rest of the season: how many more guards, forwards or centers would still start (`greedyLineup`, by augmenting paths from the finished lineup, where an open UTIL counts for every kind).
+  - Each card shows the kinds the move changes by 2 or more days, and both players' games in the playoff weeks.
+  - **Why room and not "empty slots by kind" (#157's first version):** a swingman decides which slot is "the" empty one, so a center add read "guard 136 → 130".
+- **Not shipped:** position-aware streaming in the season sim. It failed its pre-registered checks (MODEL_CARD, Nov 16). The sim's in-season streams stay raw-value, while its lineups are position-aware.

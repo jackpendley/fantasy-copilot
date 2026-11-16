@@ -779,6 +779,33 @@ One evaluation. The code is kept on the unmerged branch `experiment/fit-streams`
 - **Reported (4,000 seasons, noisy):** Jack's title odds with Reed for Naz Reid: raw +0.2, fit +0.6. With Reed for Kris Dunn: raw +0.8, fit +0.9. Production's racing deep check that day settled at Reid +0.4±0.1 and Dunn +0.3±0.1 (160,000 seasons).
 - **Note on check 3:** CVs were pooled over seasons and weeks (about 0.29, which includes between-season spread), not the within-season ~0.13 of the calibration. Both rules were measured the same way.
 
+## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
+
+**Question:** a player who filled in while a regular teammate was out keeps his inflated numbers in every rest-of-season value: trades, Moves, the season simulator. Example, Nov 16: Paul Reed played all 12 of his games without Jalen Duren (out since Oct 23). Ours projects 27.1 FP/G, ESPN preseason 17.6, for all 60 games left, though Duren's estimated return is Nov 24. Does projecting from the games the teammate **played** predict the player better once the teammate is back?
+
+**How this differs from ADR-031/ADR-036 (failed):** those boosted the **next game** for minutes vacated by absent teammates, and the minutes trend already catches a role change within a few games. This one is about the games **after a known return**, judged as of the return day, before the trend can see anything. That's what rest-of-season values need, since they're decided days or weeks ahead.
+
+**Today's rule (baseline):** `perGameProjection` as shipped: minutes × per-minute rate blended with the prior, plus the minutes trend. Its inputs are the player's games so far this season.
+
+**Candidate:** the same function with the same prior, given only his games this season in which the teammate also played. With few or none (Reed), it falls back toward the prior through the existing blend.
+
+**Data:** the cached public ESPN game logs (`apps/web/data/local/backtest/`, ~420 players a season).
+
+- **Seasons:** 2025-26 (prior 2024-25) and 2024-25 (prior 2023-24). The prior stands in for ESPN's preseason projection, as in `scripts/backtest-projection.ts`.
+- **Team games:** a team's games are its players' (game id, side). A player's team is the team of his latest game.
+- **Event:** a regular teammate T (20+ minutes a game over his last 10) misses ≥ 5 straight team games, then plays again for the same team (game R).
+- **Affected player P:** on that team at R, with ≥ 3 games during the absence and ≥ 10 games before R this season.
+- **As of:** R's day (only games before R count).
+- **Target:** P's mean FP over his next 10 games from R. An event needs at least 5.
+
+**Metric:** absolute error per (P, event), candidate minus baseline. Mean with a 95% bootstrap interval (2,000 resamples, clustered by player). Both seasons pooled; each also reported, along with the subset where P's minutes moved ≥ 4 during the absence.
+
+**Ships only if** the pooled interval is entirely below 0. Then rest-of-season values switch at each injured teammate's estimated return (the simulator, `teamValue`, the week projection, trades), with an ADR. Otherwise the cards only note when a player's games overlap a teammate's absence (facts, not a model).
+
+**When:** one evaluation, run once the harness exists (`scripts/backtest-teammate-return.ts`). There's nothing to tune.
+
+**Not part of this test:** a teammate newly out long-term (the mirror case). There are no "without him" games to project from at that point; that needs a minutes-share model.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

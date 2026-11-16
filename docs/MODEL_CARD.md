@@ -802,6 +802,22 @@ One evaluation. The code is kept on the unmerged branch `experiment/fit-streams`
 
 **Ships only if** all five pass (then `fitStreams` becomes the default, with an ADR). Otherwise the result is written here and the raw rule stays.
 
+### Result (2026-11-16): failed check 5 (cost), not shipped
+
+One evaluation (pre-registration on main at f038550; code on the unmerged branch `experiment/fit-streams-2`, 1768146). Setup: day 28 (week 5), 4,000 seasons per rule.
+
+| Check                       | Result                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| 1. First choice (synthetic) | Pass: the guard was the first pickup in 1.000 of seasons (n = 200; raw rule 0.070). |
+| 2. Add volume               | Pass for all 11 teams; the largest change was −0.09 a week.                         |
+| 3. Weekly scoring spread    | Pass for all 9 active teams; every CV moved by 0.003 or less.                       |
+| 4. League points            | Pass: 847.3 → 861.2 a week (+1.6%).                                                 |
+| 5. Cost                     | **Fail:** 3.7 → 7.7 ms per season (+108%; the bar was +20%).                        |
+
+- **Reading:** the rule does what it should: it picks the player the lineup is missing, and it keeps the sim's calibration. But it doubles the simulation's cost even with the week's lineups cached, so every job would take about twice as long.
+- **Before an attempt 3:** profile where the time goes. One candidate is roster changes clearing the lineup caches, and the per-check scoring. Any new attempt needs its own pre-registration.
+- **Reported (4,000 seasons, noisy):** Reed for Naz Reid: raw −1.0, fit +0.3. Reed for Kris Dunn: raw +0.4, fit +1.3.
+
 ## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
 
 **Question:** a player who filled in while a regular teammate was out keeps his inflated numbers in every rest-of-season value: trades, Moves, the season simulator. Example, Nov 16: Paul Reed played all 12 of his games without Jalen Duren (out since Oct 23). Ours projects 27.1 FP/G, ESPN preseason 17.6, for all 60 games left, though Duren's estimated return is Nov 24. Does projecting from the games the teammate **played** predict the player better once the teammate is back?

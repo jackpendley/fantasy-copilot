@@ -731,6 +731,37 @@ The pre-registration above was committed (6ce7d6b) before the harness existed (`
 
 **Not part of this test:** how long day-to-day players sit (the day-to-day test, 2026-11-02).
 
+## Pre-registration: position-aware streaming in the season simulator (2026-11-16, before any run)
+
+**Question:** in the season simulator (`packages/fantasy-core/src/sim.ts`), every manager streams and makes IR pickups by raw value: the roster player with the lowest `fppg x games left this week + 3 x fppg` goes for the free agent with the highest. Position isn't considered, so a simulated team can stream its third guard away for a sixth center. Jack asked for the simulation to respect roster construction. Does a position-aware rule keep the simulator's calibration, and does it stream to fit?
+
+**Today's rule (baseline):** the raw value above.
+
+**Candidate:** the same rule, but each value counts lineup points:
+
+- **This week:** what the player adds to the team's lineups on its remaining days. A free agent counts his points where an open slot takes him, otherwise his gain over the weakest starter whose slot he fits. A roster player counts what the lineup loses without him: his points minus the best bench player who could fill his slot.
+- **Later:** `3 x fppg`, scaled by the share of this week's games he'd start (1 with none left).
+- Lineups use each day's healthy players as of today.
+- Only the 5 best free agents by today's raw value are scored.
+- The same threshold applies (+8), with the same add budget.
+- IR pickups use the same value.
+
+**Data:** the league as it stands on the run day (ESPN reads only; nothing is written). Both rules run 4,000 seasons with the same seed (common random numbers), plus one synthetic roster.
+
+**Checks (all must pass):**
+
+1. **Fit (synthetic):** a team with two guards for three guard-only slots (PG, SG, G) and six centers, and one free agent of each kind at equal points. The candidate streams the guard in at least 90% of its streams; the baseline is reported alongside.
+2. **Add volume:** for every team with `addsPerWeek >= 0.25`, the candidate's simulated adds per week are within ±15% (or ±0.15 adds, whichever is larger) of the baseline's. The baseline is calibrated to managers' real add counts, and the candidate must not undo that.
+3. **Weekly scoring spread:** for every team with `act >= 0.7`, the coefficient of variation of weekly points is within ±0.01 of the baseline's (calibrated to ~0.13).
+4. **Points:** the league's mean weekly points under the candidate are at least the baseline's minus 0.5%. A smarter streamer shouldn't score less.
+5. **Cost:** CPU per simulated season is at most 20% above the baseline's, on the same machine.
+
+**Reported, not pass/fail:** each team's title odds before and after, and the Nov 16 Paul Reed moves (dropping Naz Reid or Kris Dunn).
+
+**Ships only if** all five checks pass. Then the candidate becomes the default, with an ADR; otherwise the rule stays and the result is written here.
+
+**When:** one evaluation, run once the candidate is implemented (`apps/web/scripts/experiment-fit-streams.ts`), with no tuning between runs. A failed check isn't re-run with changed thresholds.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

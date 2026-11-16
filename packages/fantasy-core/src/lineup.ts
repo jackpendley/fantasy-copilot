@@ -97,6 +97,20 @@ export function greedyStarters<T>(
   eligible: (p: T) => readonly Position[],
   openSlots: readonly string[],
 ): T[] {
+  return greedyLineup(players, value, eligible, openSlots).starters;
+}
+
+/**
+ * greedyStarters, plus the slots left empty. Players take the first slot that fits in
+ * `openSlots` order (ESPN's: PG, SG, SF, PF, C, G, F, UTIL), so the empty ones are those no one
+ * available could fill: a missing guard leaves G empty, not a UTIL.
+ */
+export function greedyLineup<T>(
+  players: readonly T[],
+  value: (p: T) => number,
+  eligible: (p: T) => readonly Position[],
+  openSlots: readonly string[],
+): { starters: T[]; empty: string[] } {
   const owner = new Array<number>(openSlots.length).fill(-1);
   const sorted = [...players].sort((a, b) => value(b) - value(a));
   const seated: T[] = [];
@@ -116,5 +130,5 @@ export function greedyStarters<T>(
     if (tryPlace(i, new Array<boolean>(openSlots.length).fill(false))) seated.push(sorted[i]!);
     else owner.splice(0, owner.length, ...snap);
   }
-  return seated;
+  return { starters: seated, empty: openSlots.filter((_, s) => owner[s] === -1) };
 }

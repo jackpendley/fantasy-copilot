@@ -12,6 +12,7 @@ import { useDeepView } from "@/components/fc/deep-live";
 import { ComparePlayers } from "@/components/fc/player-compare";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Holes } from "@/lib/nba/trade";
 import { cn } from "@/lib/utils";
 
 export interface MoveOption {
@@ -41,6 +42,58 @@ export interface MoveOption {
   rosCost: number;
   /** "Make this after today's first tip (4:00 PM): …" when waiting for it is worth more. */
   waitNote?: string | null;
+  /** Roster fit (lib/nba/waivers.ts StreamOption.fit). */
+  fit?: {
+    before: Holes;
+    after: Holes;
+    playoffGames: { add: number; drop: number | null };
+  } | null;
+}
+
+const HOLE_KINDS: [keyof Holes, string][] = [
+  ["guard", "guard"],
+  ["forward", "forward"],
+  ["center", "center"],
+  ["any", "any-position"],
+];
+
+/**
+ * Roster fit: the empty lineup slot-days the move changes by 2 or more (rest of season), and
+ * the add's and dropped player's games in the playoff weeks.
+ */
+function FitLine({
+  fit,
+  addName,
+  dropName,
+}: {
+  fit: NonNullable<MoveOption["fit"]>;
+  addName: string;
+  dropName: string | null;
+}) {
+  const last = (name: string) => name.split(" ").at(-1);
+  const changed = HOLE_KINDS.filter(([k]) => Math.abs(fit.after[k] - fit.before[k]) >= 2);
+  const { add, drop } = fit.playoffGames;
+  return (
+    <p className="pl-[50px] text-xs text-muted-foreground tabular-nums">
+      {changed.length > 0 && (
+        <>
+          Empty lineup slots, rest of season:{" "}
+          {changed.map(([k, label], i) => (
+            <span key={k}>
+              {i > 0 && ", "}
+              {label}{" "}
+              <span className={cn(fit.after[k] > fit.before[k] ? "text-danger" : "text-success")}>
+                {fit.before[k]} → {fit.after[k]} days
+              </span>
+            </span>
+          ))}
+          {" · "}
+        </>
+      )}
+      Playoff weeks: {last(addName)} {add} games
+      {dropName && drop != null && `, ${last(dropName)} ${drop}`}
+    </p>
+  );
 }
 
 export interface Delta {
@@ -297,6 +350,8 @@ export function MoveCard({
           ))}
         </p>
       )}
+
+      {o.fit && <FitLine fit={o.fit} addName={addName} dropName={o.dropName} />}
 
       <div className="ml-[50px] overflow-hidden rounded-lg border">
         <table className="w-full text-xs">

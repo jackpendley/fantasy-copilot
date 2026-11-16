@@ -285,6 +285,10 @@ describe("waiverAnalysis by lineup fit", () => {
     // "Later" shows the same playoff-weighted points its wins come from.
     expect(top.laterWins).toBeCloseTo(res.winsPerPoint * top.laterPts, 10);
     expect(top.laterPts).toBeCloseTo(top.seasonScore - top.deltaPts, 10);
+    // Roster fit: same holes before and after (the 8-point guard never filled one), and both
+    // players' games in the playoff weeks (weeks 3+ here: days 14-20).
+    expect(top.fit!.after).toEqual(top.fit!.before);
+    expect(top.fit!.playoffGames).toEqual({ add: 7, drop: 7 });
   });
 
   it("a claim changes nothing before it processes: the dropped player plays until then", () => {

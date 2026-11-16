@@ -65,6 +65,32 @@ describe("teamValue", () => {
   });
 });
 
+describe("teamValue's empty lineup slots (roster fit)", () => {
+  // Guard-only slots (PG, SG, G), a C and a UTIL; every team plays days 1-10.
+  const fitCtx = valueContext(games, { PG: 1, SG: 1, G: 1, C: 1, UTIL: 1, BE: 3 }, 1, 10, 1);
+  const guard = (id: number, fppg: number) => ({ ...p(id, "PG", fppg), positions: ["PG", "SG"] });
+  const guards = [guard(1, 20), guard(3, 18), guard(5, 16)];
+  const bigs = [p(7, "C", 30), p(9, "C", 25), p(11, "C", 22)];
+
+  it("counts a guard slot left empty every day once the third guard goes", () => {
+    expect(teamValue([...guards, ...bigs], fitCtx).holes).toEqual({
+      guard: 0,
+      forward: 0,
+      center: 0,
+      any: 0,
+    });
+    const thin = teamValue([...guards.slice(0, 2), ...bigs, p(13, "C", 21)], fitCtx);
+    expect(thin.holes.guard).toBe(10);
+    expect(thin.holes.any).toBe(0);
+  });
+
+  it("an extra center only competes for C and UTIL: no hole filled, none opened", () => {
+    const more = teamValue([...guards, ...bigs, p(13, "C", 21)], fitCtx);
+    expect(more.holes).toEqual({ guard: 0, forward: 0, center: 0, any: 0 });
+    expect(more.usage.get(13)!.starts).toBe(0);
+  });
+});
+
 describe("teamValue with injuries", () => {
   it("counts an injured player only from his estimated return", () => {
     const hurt = valueContext(games, SLOTS, 1, 10, 1, new Map([[1, { outUntil: 3 }]]));

@@ -3,6 +3,7 @@ import type { FantasyTeam, Matchup, ProGame, RosterPlayer } from "@fantasy-copil
 import { applyMove, toWire } from "@fantasy-copilot/fantasy-core";
 import { buildOutlookInput } from "@/lib/nba/outlook";
 import { applyTrade, valueContext } from "@/lib/nba/trade";
+import { DECISION_TIER, REST_TIER, TOP_TIER } from "@/lib/nba/deep-check";
 import {
   buildAskedMoves,
   buildTradeMoves,
@@ -11,6 +12,7 @@ import {
   jobMoveOptions,
   moveKey,
   pickGroup,
+  promoteGroups,
   tradeKey,
   type SimGroup,
 } from "@/lib/nba/sim-moves";
@@ -414,5 +416,56 @@ describe("trade ideas built as patches on the base season", () => {
       tradeKey(3, b.give, b.get),
     ]);
     expect(built).toMatchObject({ top: 1, leading: 2, others: 2 });
+  });
+});
+
+describe("racing moves into deeper groups (ADR-063)", () => {
+  const groups = [
+    { grp: 0, keys: ["a", "b"], active: ["a"], next_chunk: 80, max_seasons: 40_000 },
+    { grp: 1, keys: ["c", "d", "e"], active: ["d"], next_chunk: 12, max_seasons: 6_000 },
+    { grp: 2, keys: ["f"], active: ["f"], next_chunk: 20, max_seasons: 6_000 },
+  ];
+
+  it("moves promoted moves to new groups whose chunks continue, one tier per group", () => {
+    const { update, add } = promoteGroups(
+      groups,
+      new Map([
+        ["c", TOP_TIER],
+        ["f", TOP_TIER],
+        ["a", DECISION_TIER],
+      ]),
+    );
+    expect(update).toEqual([
+      { grp: 0, keys: ["b"], active: [] },
+      { grp: 1, keys: ["d", "e"], active: ["d"] },
+      { grp: 2, keys: [], active: [] },
+    ]);
+    const top = add.find((g) => g.max_seasons === TOP_TIER.maxSeasons)!;
+    const deep = add.find((g) => g.max_seasons === DECISION_TIER.maxSeasons)!;
+    // c's group was at chunk 12 and f's at 20: the new group starts after both.
+    expect(top).toMatchObject({ keys: ["c", "f"], active: ["c", "f"], next_chunk: 20, posted: 20 });
+    expect(top.target_2se).toBe(TOP_TIER.target2se);
+    expect(deep).toMatchObject({ keys: ["a"], next_chunk: 80, posted: 80, prio: 1 });
+    expect(add.map((g) => g.grp).sort()).toEqual([3, 4]);
+    // No move is lost or doubled.
+    const all = [
+      ...groups.filter((g) => !update.some((u) => u.grp === g.grp)).flatMap((g) => g.keys),
+      ...update.flatMap((g) => g.keys),
+      ...add.flatMap((g) => g.keys),
+    ].sort();
+    expect(all).toEqual(["a", "b", "c", "d", "e", "f"]);
+  });
+
+  it("leaves a move already that deep (another refresh moved it first)", () => {
+    const { update, add } = promoteGroups(
+      groups,
+      new Map([
+        ["b", TOP_TIER],
+        ["d", REST_TIER],
+        ["zz", TOP_TIER],
+      ]),
+    );
+    expect(update).toEqual([]);
+    expect(add).toEqual([]);
   });
 });

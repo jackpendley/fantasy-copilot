@@ -268,7 +268,7 @@ export function MoveCard({
               {(() => {
                 const xs = simOf(x.key);
                 return xs
-                  ? ` · title ${signed(xs.title.d * 100)}`
+                  ? ` · title ${signed(xs.title.d * 100)} ±${(2 * xs.title.se * 100).toFixed(1)}`
                   : ` · ≈${signed(x.netWins, 2)} wins`;
               })()}
             </option>

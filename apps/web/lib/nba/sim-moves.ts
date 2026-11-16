@@ -4,6 +4,7 @@
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import type { SimPlayer, WireInput, WireMove } from "@fantasy-copilot/fantasy-core";
 import { LAST_SCORING_PERIOD } from "./calendar";
+import type { Tier } from "./deep-check";
 import { SIM_FREE_AGENTS, simFreeAgents, simRoster } from "./outlook";
 import { valueContext } from "./trade";
 import { absences } from "./availability";
@@ -194,6 +195,78 @@ export interface SimGroup {
 /** Can this group take more chunks? Group 0 also carries the base run to its minimum. */
 export const hasChunksLeft = (g: SimGroup, minBaseChunks: number) =>
   g.next_chunk < g.max_chunks && (g.n_active > 0 || (g.grp === 0 && g.next_chunk < minBaseChunks));
+
+/** A group as racing reads it (sim_groups). */
+export interface GroupKeys {
+  grp: number;
+  keys: string[];
+  active: string[];
+  next_chunk: number;
+  max_seasons: number;
+}
+
+/** A new group's row (without its job). */
+export interface NewGroup {
+  grp: number;
+  prio: number;
+  keys: string[];
+  active: string[];
+  next_chunk: number;
+  posted: number;
+  target_2se: number;
+  min_seasons: number;
+  max_seasons: number;
+}
+
+/**
+ * Racing (ADR-063): moves promoted to a deeper tier leave their groups for new ones at that
+ * tier (up to GROUP_SIZE moves each, one tier per group, after Jack's asked-for moves). A new
+ * group's chunks start after the latest of its moves' old groups, so no move gets a chunk
+ * number twice and every move stays paired with the base and the others. A move already in a
+ * group at least that deep stays (another refresh promoted it first).
+ */
+export function promoteGroups(
+  groups: GroupKeys[],
+  promo: Map<string, Tier>,
+): { update: { grp: number; keys: string[]; active: string[] }[]; add: NewGroup[] } {
+  const home = new Map(groups.flatMap((g) => g.keys.map((k) => [k, g])));
+  const moving = [...promo].filter(([k, t]) => {
+    const g = home.get(k);
+    return g != null && g.max_seasons < t.maxSeasons;
+  });
+  const gone = new Set(moving.map(([k]) => k));
+  const update = groups
+    .filter((g) => g.keys.some((k) => gone.has(k)))
+    .map((g) => ({
+      grp: g.grp,
+      keys: g.keys.filter((k) => !gone.has(k)),
+      active: g.active.filter((k) => !gone.has(k)),
+    }));
+  const byTier = new Map<number, [string, Tier][]>();
+  for (const m of moving) byTier.set(m[1].maxSeasons, [...(byTier.get(m[1].maxSeasons) ?? []), m]);
+  let grp = Math.max(-1, ...groups.map((g) => g.grp)) + 1;
+  const add: NewGroup[] = [];
+  for (const list of byTier.values())
+    for (let i = 0; i < list.length; i += GROUP_SIZE) {
+      const part = list.slice(i, i + GROUP_SIZE);
+      const tier = part[0]![1];
+      const keys = part.map(([k]) => k);
+      const start = Math.max(...keys.map((k) => home.get(k)!.next_chunk));
+      add.push({
+        grp: grp++,
+        prio: 1,
+        keys,
+        active: keys,
+        next_chunk: start,
+        // Counted from chunk 0, as every group's is: the chunks before its start are "back".
+        posted: start,
+        target_2se: tier.target2se,
+        min_seasons: tier.minSeasons,
+        max_seasons: tier.maxSeasons,
+      });
+    }
+  return { update, add };
+}
 
 /** Chunks other groups may have out before their first results come back. */
 const AHEAD_OTHER = 6;

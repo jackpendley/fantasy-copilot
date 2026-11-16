@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { ChunkResult } from "@fantasy-copilot/fantasy-core";
+import type { DeepEffect } from "@/lib/nba/deep-check";
 import {
   combine,
   combineOutlook,
   contendersOf,
+  markPicks,
   needsMore,
+  pairedDiff,
+  pickDrop,
+  promotions,
+  DECISION_TIER,
   EARLY_SEASONS,
   REST_TIER,
   TOP_TIER,
@@ -68,13 +74,24 @@ describe("deep move checks", () => {
     const d = (x: number, se: number) => ({ d: x, se });
     const top = TOP_TIER;
     expect(needsMore({ seasons: 1000, title: d(0, 0.001), wins: d(0, 0.01) }).more).toBe(true); // too few
-    // Top tier: ±0.35 title points.
+    // Top tier: ±0.2 title points.
     expect(
-      needsMore({ seasons: top.minSeasons, title: d(0.01, 0.002), wins: d(0, 0.01) }).more,
-    ).toBe(true); // ±0.4
+      needsMore({ seasons: top.minSeasons, title: d(0.01, 0.0011), wins: d(0, 0.01) }).more,
+    ).toBe(true); // ±0.22
     expect(
-      needsMore({ seasons: top.minSeasons, title: d(0.01, 0.0017), wins: d(0, 0.01) }).more,
-    ).toBe(false); // ±0.34
+      needsMore({ seasons: top.minSeasons, title: d(0.01, 0.0009), wins: d(0, 0.01) }).more,
+    ).toBe(false); // ±0.18
+    // Decision tier: ±0.1, up to 160,000 seasons.
+    const decision = DECISION_TIER;
+    expect(
+      needsMore({ seasons: 40_000, title: d(0.01, 0.0009), wins: d(0, 0.01) }, decision).more,
+    ).toBe(true); // ±0.18
+    expect(
+      needsMore({ seasons: 40_000, title: d(0.01, 0.00045), wins: d(0, 0.01) }, decision).more,
+    ).toBe(false); // ±0.09
+    expect(
+      needsMore({ seasons: 160_000, title: d(0, 0.001), wins: d(0, 0.01) }, decision).more,
+    ).toBe(false);
     expect(needsMore({ seasons: top.maxSeasons, title: d(0, 0.01), wins: d(0, 0.1) }).more).toBe(
       false,
     );
@@ -147,8 +164,132 @@ describe("deep move checks", () => {
     expect(effects[0]!.pBest! + effects[1]!.pBest!).toBeCloseTo(1, 9);
   });
 
+  it("compares two moves head to head over the chunks they share", () => {
+    const means = new Map([
+      ["a", new Map([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((c) => [c, { title: c, wins: 0 }]))],
+      // b trails a by 1 or 3 in alternate chunks, and is missing chunk 9.
+      [
+        "b",
+        new Map(
+          [0, 1, 2, 3, 4, 5, 6, 7, 8].map((c) => [c, { title: c - (c % 2 ? 3 : 1), wins: 0 }]),
+        ),
+      ],
+    ]);
+    const p = pairedDiff("a", "b", means)!;
+    // Diffs 1,3,1,3,1,3,1,3,1 over 9 shared chunks: mean 17/9.
+    expect(p.d).toBeCloseTo(17 / 9, 12);
+    const v = [1, 3, 1, 3, 1, 3, 1, 3, 1].reduce((s, x) => s + (x - 17 / 9) ** 2, 0) / 8;
+    expect(p.se).toBeCloseTo(Math.sqrt(v / 9), 12);
+    // Too few chunks in common: no head-to-head number.
+    expect(
+      pairedDiff("a", "b", new Map([...means].map(([k, m]) => [k, new Map([...m].slice(0, 5))]))),
+    ).toBeNull();
+  });
   it("averages the Outlook over chunks by seasons", () => {
     const out = combineOutlook([chunk(0, {}, 100), chunk(1, {}, 300)]);
     expect(out[0]!.champ).toBeCloseTo(0.1, 9);
+  });
+});
+
+const fx = (
+  key: string,
+  title: number,
+  se: number,
+  wins = 0,
+  extra: Partial<DeepEffect> = {},
+): DeepEffect => ({
+  key,
+  seasons: 6000,
+  title: { d: title, se },
+  playoffs: { d: 0, se: 0 },
+  seed1: { d: 0, se: 0 },
+  bye: { d: 0, se: 0 },
+  wins: { d: wins, se: 0.01 },
+  pBetter: 0.5,
+  pBest: null,
+  active: false,
+  dropped: false,
+  ...extra,
+});
+
+/** Ten shared chunks whose title means sit at `title` (± a wobble every move shares). */
+const meansOf = (moves: Record<string, number>) =>
+  new Map(
+    Object.entries(moves).map(([k, t]) => [
+      k,
+      new Map(Array.from({ length: 10 }, (_, c) => [c, { title: t + (c % 3) * 0.01, wins: 0 }])),
+    ]),
+  );
+
+describe("racing and each card's pick (ADR-063)", () => {
+  it("opens on the more title odds, but breaks a tie within the noise by expected wins", () => {
+    // The Paul Reed card on Nov 16: Reid's drop (40,000 seasons) and Dunn's (6,000) both +0.5.
+    const reid = fx("1:reid:", 0.005, 0.001, 0.17);
+    const dunn = fx("1:dunn:", 0.0052, 0.0025, 0.14);
+    expect(pickDrop([dunn, reid])!.key).toBe("1:reid:");
+    // A clear title leader wins even with fewer expected wins.
+    const clear = fx("1:x:", 0.012, 0.001, 0.1);
+    expect(pickDrop([reid, clear])!.key).toBe("1:x:");
+    // Tied on wins too: the better win chance this week.
+    const a = fx("1:a:", 0.005, 0.002, 0.15);
+    const b = fx("1:b:", 0.005, 0.002, 0.15);
+    const week = new Map([
+      ["1:a:", 0.05],
+      ["1:b:", 0.09],
+    ]);
+    expect(pickDrop([a, b], undefined, (o) => week.get(o.key)!)!.key).toBe("1:b:");
+  });
+
+  it("head to head, a small but steady edge decides", () => {
+    // Margins overlap on their own, but b trails a in every shared chunk by 0.001.
+    const a = fx("1:a:", 0.006, 0.002, 0.1);
+    const b = fx("1:b:", 0.005, 0.002, 0.2);
+    const means = meansOf({ "1:a:": 0.006, "1:b:": 0.005 });
+    means.get("1:b:")!.set(0, { title: 0.004, wins: 0 }); // not quite steady
+    expect(pickDrop([a, b])!.key).toBe("1:b:"); // without head to head: a tie, b has more wins
+    expect(pickDrop([a, b], means)!.key).toBe("1:a:");
+  });
+
+  it("promotes a card's rivals to the top tier and the best move's to the decision tier", () => {
+    const opening = fx("1:reid:", 0.005, 0.001, 0.17);
+    const rival = fx("1:dunn:", 0.0052, 0.0025, 0.14);
+    const far = fx("1:allen:", -0.01, 0.001, -0.1);
+    const gone = fx("1:tatum:", -0.03, 0.002, -0.5, { dropped: true });
+    const other = fx("2:green:", -0.004, 0.001); // another add whose card isn't top tier
+    const tiers = new Map([["1:reid:", TOP_TIER]]);
+    const promo = promotions(
+      [opening, rival, far, gone, other],
+      (k) => tiers.get(k) ?? REST_TIER,
+      meansOf({ "1:reid:": 0.005, "1:allen:": -0.01 }),
+    );
+    // Reid's and Dunn's drops race for Jack's best move (both gain title odds).
+    expect(promo.get("1:reid:")).toBe(DECISION_TIER);
+    expect(promo.get("1:dunn:")).toBe(DECISION_TIER);
+    expect(promo.has("1:allen:")).toBe(false); // clearly behind, head to head
+    expect(promo.has("1:tatum:")).toBe(false);
+    expect(promo.has("2:green:")).toBe(false);
+  });
+
+  it("only raises a tier, and never races trades", () => {
+    const a = fx("1:a:", -0.002, 0.001);
+    const b = fx("1:b:", -0.0025, 0.002);
+    const t = fx("trade:9:1:2", 0.02, 0.001);
+    const tiers = new Map([
+      ["1:a:", TOP_TIER],
+      ["1:b:", DECISION_TIER],
+    ]);
+    const promo = promotions([a, b, t], (k) => tiers.get(k) ?? REST_TIER);
+    expect([...promo]).toEqual([]);
+  });
+
+  it("marks one pick per add", () => {
+    const effects = markPicks([
+      fx("1:reid:", 0.005, 0.001, 0.17),
+      fx("1:dunn:", 0.0052, 0.0025, 0.14),
+      fx("2:a:", -0.004, 0.001),
+      fx("2:b:", -0.002, 0.001),
+      fx("trade:9:1:2", 0.02, 0.001),
+    ]);
+    expect(effects.filter((e) => e.pick).map((e) => e.key)).toEqual(["1:reid:", "2:b:"]);
   });
 });

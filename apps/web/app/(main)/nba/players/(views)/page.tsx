@@ -32,6 +32,7 @@ import { interestTargets, tradeForPackages, tradeHref } from "@/lib/nba/trade-vi
 import type { TradeIdea } from "@/lib/nba/trade";
 import { latestOutlook } from "@/lib/nba/outlook-run";
 import { deepView } from "@/lib/nba/move-shown";
+import { pickDrop } from "@/lib/nba/deep-check";
 import { simRosterCheck, workerEnabled } from "@/lib/nba/outlook-refresh";
 import { deepChecksFor, liveJob, settledResults } from "@/lib/nba/sim-jobs";
 import { dbConfigured } from "@/lib/db";
@@ -387,12 +388,17 @@ export default async function MovesPage({
       },
     ]),
   );
-  // Each add opens on its best-simulated drop.
+  // Each add opens on its pick: the drop the deep check chose head to head (the most title odds;
+  // among drops within the simulation's noise of it, the most expected wins, then this week's
+  // win chance), or else the same rule on the numbers shown.
   const deepBest = (o: StreamOption) => {
-    const checked = (analysis.dropOptions.get(o.add.player.id) ?? [])
-      .map((x) => ({ x, e: deep.sims[moveKey(x)] }))
-      .filter((y) => y.e && y.e.seasons > 0);
-    return checked.sort((a, b) => b.e!.title.d - a.e!.title.d)[0] ?? null;
+    const checked = (analysis.dropOptions.get(o.add.player.id) ?? []).flatMap((x) => {
+      const e = deep.sims[moveKey(x)];
+      return e && e.seasons > 0 ? [{ x, e, key: moveKey(x), title: e.title, wins: e.wins }] : [];
+    });
+    const picked = checked.filter((y) => y.e.pick);
+    if (picked.length === 1) return picked[0]!;
+    return pickDrop(checked, undefined, (y) => y.x.deltaWin ?? 0);
   };
   const watch = v.inputs.watch;
   /**

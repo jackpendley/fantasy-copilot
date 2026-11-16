@@ -71,6 +71,8 @@ export interface ShownSim {
   /** Still getting seasons. */
   refining: boolean;
   dropped: boolean;
+  /** The drop its add's card opens on (lib/nba/deep-check.ts pickDrop, head to head). */
+  pick: boolean;
 }
 
 /** The worker job as the page's banner shows it. */
@@ -117,6 +119,7 @@ export function deepView(
       pBest: e.pBest,
       refining: s.state === "refining",
       dropped: e.dropped,
+      pick: e.pick ?? false,
     };
   }
   return {

@@ -53,12 +53,12 @@ Written 2026-11-05. It is updated as measurements come in; the measured facts ar
 
 ## 2. How work flows today
 
-| Scheduler                     | What it calls                    | How often                                           |
-| ----------------------------- | -------------------------------- | --------------------------------------------------- |
-| cron-job.org (job 8752774)    | `/api/cron/gameday`              | every 5 min, all day                                |
-| Vercel cron                   | `/api/cron/nightly`              | 11:00 UTC                                           |
-| Vercel cron                   | `/api/cron/pregame`              | 22:00 UTC                                           |
-| GitHub Actions `simulate.yml` | `/api/worker/{peek,next,result}` | on dispatch (a roster move), plus a `*/15` fallback |
+| Scheduler                     | What it calls                    | How often                                                   |
+| ----------------------------- | -------------------------------- | ----------------------------------------------------------- |
+| cron-job.org (job 8752774)    | `/api/cron/gameday`              | every 5 min, all day                                        |
+| Vercel cron                   | `/api/cron/nightly`              | 11:00 UTC                                                   |
+| Vercel cron                   | `/api/cron/pregame`              | 22:00 UTC                                                   |
+| GitHub Actions `simulate.yml` | `/api/worker/{next,result,task}` | on dispatch (a roster move); no schedule since Nov 16 (§10) |
 
 **The gameday job, every 5 minutes** (`lib/jobs.ts gamedayRun`):
 
@@ -358,3 +358,27 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - Aggregate in SQL; don't fetch per-chunk rows.
 - Polls skip unchanged data.
 - Check the Neon usage panel weekly.
+
+### Budget and the Nov 16 cuts
+
+**Neon's console, Nov 16** (period from Nov 1): transfer **5.03 GB** (Free: 5), compute **51.97 CU-hours** (Free: 100) at a fixed **0.25 CU**, so the database was awake about **13 hours a day**. Jack moved to Launch the same day (pay-as-you-go: $0.106 per CU-hour, 500 GB of transfer included); the goal is to fit back under Free.
+
+| Per month | Neon Free | Budget  |
+| --------- | --------- | ------- |
+| Transfer  | 5 GB      | 2 GB    |
+| Compute   | 100 CU-h  | 60 CU-h |
+
+- **Measured, not guessed:** Settings → "Database this month" reads Neon's API (`NEON_API_KEY`, a project-scoped key, Production only; `lib/neon-usage.ts`): transfer, CU-hours, hours awake and the month's pace. The nightly and pregame jobs push an alert at 60% and 85% of Free, and when the month is on pace past the budget (once each per period).
+- **Which reads:** `DB_TRAFFIC_LOG=1` logs each query's result size by its SQL, once a minute (`[db-traffic]` in Vercel's runtime logs). On for a day at a time only: it costs CPU.
+- **Compute is awake time.** Neon suspends after 5 idle minutes, so any query every few minutes keeps it up. Cuts (Nov 16):
+  - **No `*/15` schedule** for the worker: its peek woke Neon 96 times a day. A missed dispatch is caught by `ensureWorker` in the gameday job (only when that run touched the database anyway), the nightly job, and the Moves poll while a job is live.
+  - **Gameday runs skip writes they already made:** status events (`insertStatusEvents`) and official-report statuses (`logOfficialReport`) are remembered per instance, and an unchanged report needs no query. The data logged is the same; only repeat queries are skipped.
+  - **The run's own logs** (`gameday` in refresh_log, its cpu_log row) are written only when the run queried the database anyway (`dbUse.queries`).
+  - **Closing lines** are captured inside 20 minutes of tip, not 90. Each capture overwrote the last, so only the final one ever counted.
+  - **The lock job's check** runs once per first tip per instance, not every 5 minutes for an hour.
+
+**Rules from here (adding to the ones above):**
+
+- Every new scheduled step says how often it queries the database; a run with nothing new sends no query.
+- Fallbacks run inside work that already has the database awake, never on a timer of their own.
+- Check Settings' "Database this month" line weekly; the alerts cover the rest.

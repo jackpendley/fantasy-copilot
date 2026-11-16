@@ -577,6 +577,8 @@ A3 beats B0 but not B1, so it fails the gate.
 - **In the window,** every 15-minute report is still read, and the pre-tip cutoff is unchanged.
 - **Before the window,** about half the official reports are not read. The midday row then uses the latest report read before its cutoff (up to 30 minutes older), and ESPN's observation can be up to 30 minutes old. Both sides lose freshness. Rows from these days are kept and evaluated with the rest, as registered.
 
+**Note (2026-11-16, no rows evaluated yet):** to let Neon sleep (docs/COMPUTE.md §10), the 5-minute job remembers per server instance which statuses it has stored and skips the query when nothing changed. Cadence and the rows logged are unchanged: a status that's new to the table is still inserted at the run that first sees it. (Saver and minimal mode ended Nov 10; the cadence is back to every 10 minutes before the window and every 5 in it.)
+
 ## Pre-registration: day-to-day players on later days (2026-11-02, before any run)
 
 **Question:** how likely is a player listed day-to-day today to play his team's games on the next few days?

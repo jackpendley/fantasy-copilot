@@ -203,6 +203,8 @@ export interface GroupKeys {
   active: string[];
   next_chunk: number;
   max_seasons: number;
+  /** A racing group (made by a promotion). */
+  promoted: boolean;
 }
 
 /** A new group's row (without its job). */
@@ -216,18 +218,22 @@ export interface NewGroup {
   target_2se: number;
   min_seasons: number;
   max_seasons: number;
+  promoted: true;
 }
 
 /**
- * Racing (ADR-063): moves promoted to a deeper tier leave their groups for new ones at that
- * tier (up to GROUP_SIZE moves each, one tier per group, after Jack's asked-for moves). A new
- * group's chunks start after the latest of its moves' old groups, so no move gets a chunk
- * number twice and every move stays paired with the base and the others. A move already in a
- * group at least that deep stays (another refresh promoted it first).
+ * Racing (ADR-063): moves promoted to a deeper tier leave their groups. Each joins a racing
+ * group of that tier with room (fewer than GROUP_SIZE moves, chunks left, and not behind his old
+ * group's chunks), or else a new one (up to GROUP_SIZE moves, starting after the latest of their
+ * old groups' chunks). Either way no move gets a chunk number twice and every move stays paired
+ * with the base and the others; pooling them saves re-simulating the base for a group of one
+ * (Nov 16: one group per refresh made a job of 2,152 chunks). A move already in a group at least
+ * that deep stays (another refresh promoted it first).
  */
 export function promoteGroups(
   groups: GroupKeys[],
   promo: Map<string, Tier>,
+  chunkSeasons: number,
 ): { update: { grp: number; keys: string[]; active: string[] }[]; add: NewGroup[] } {
   const home = new Map(groups.flatMap((g) => g.keys.map((k) => [k, g])));
   const moving = [...promo].filter(([k, t]) => {
@@ -235,15 +241,30 @@ export function promoteGroups(
     return g != null && g.max_seasons < t.maxSeasons;
   });
   const gone = new Set(moving.map(([k]) => k));
+  const joined = new Map<number, string[]>();
+  const fresh: [string, Tier][] = [];
+  for (const [k, t] of moving) {
+    const from = home.get(k)!;
+    const into = groups.find(
+      (g) =>
+        g.promoted &&
+        g.max_seasons === t.maxSeasons &&
+        g.keys.filter((x) => !gone.has(x)).length + (joined.get(g.grp)?.length ?? 0) < GROUP_SIZE &&
+        g.next_chunk >= from.next_chunk &&
+        g.next_chunk < g.max_seasons / chunkSeasons,
+    );
+    if (into) joined.set(into.grp, [...(joined.get(into.grp) ?? []), k]);
+    else fresh.push([k, t]);
+  }
   const update = groups
-    .filter((g) => g.keys.some((k) => gone.has(k)))
+    .filter((g) => g.keys.some((k) => gone.has(k)) || joined.has(g.grp))
     .map((g) => ({
       grp: g.grp,
-      keys: g.keys.filter((k) => !gone.has(k)),
-      active: g.active.filter((k) => !gone.has(k)),
+      keys: [...g.keys.filter((k) => !gone.has(k)), ...(joined.get(g.grp) ?? [])],
+      active: [...g.active.filter((k) => !gone.has(k)), ...(joined.get(g.grp) ?? [])],
     }));
   const byTier = new Map<number, [string, Tier][]>();
-  for (const m of moving) byTier.set(m[1].maxSeasons, [...(byTier.get(m[1].maxSeasons) ?? []), m]);
+  for (const m of fresh) byTier.set(m[1].maxSeasons, [...(byTier.get(m[1].maxSeasons) ?? []), m]);
   let grp = Math.max(-1, ...groups.map((g) => g.grp)) + 1;
   const add: NewGroup[] = [];
   for (const list of byTier.values())
@@ -263,6 +284,7 @@ export function promoteGroups(
         target_2se: tier.target2se,
         min_seasons: tier.minSeasons,
         max_seasons: tier.maxSeasons,
+        promoted: true,
       });
     }
   return { update, add };

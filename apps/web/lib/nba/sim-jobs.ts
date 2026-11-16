@@ -489,11 +489,25 @@ export async function assignOrWait(
     await addJobCpu(a.jobId, cpu0);
     return a;
   }
-  if (!(await hasTasks())) return "leave";
+  if (!(await hasTasks()) && !(await chunksOut())) return "leave";
   // Waiting runners count as busy, so the job they wait for doesn't start another run. Short,
   // so a runner that leaves doesn't hold it long (waiting runners ask every 20 s).
   await heartbeat(SIM_LOCK, 30);
   return "wait";
+}
+
+/**
+ * A running job still has chunks out. Racing (ADR-063) can promote moves when they come back,
+ * so runners wait for them rather than leave (Nov 16: half the runners left a job minutes
+ * before its promotions, and the rest took twice as long).
+ */
+async function chunksOut(): Promise<boolean> {
+  const rows = await db()`
+    select 1 from sim_jobs j join sim_groups g on g.job_id = j.id
+    where j.status = 'running' and g.posted < least(g.next_chunk, g.max_seasons / j.chunk_seasons)
+    limit 1
+  `;
+  return rows.length > 0;
 }
 
 /** The group a chunk is for, when a runner from before groups doesn't say. */

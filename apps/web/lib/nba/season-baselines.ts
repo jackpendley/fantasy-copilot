@@ -5,7 +5,8 @@ import "server-only";
 
 import { fetchSeasonPool } from "@fantasy-copilot/espn";
 import { dbConfigured } from "@/lib/db";
-import { readView, writeView } from "@/lib/view-cache";
+import { memoAsync } from "@/lib/fetch-memo";
+import { readView, viewStamp, writeView } from "@/lib/view-cache";
 import { parseSeasonTotals, type SeasonLine } from "./vs-last-season";
 
 const KEY = "season-baselines";
@@ -20,7 +21,7 @@ type Stored = Record<string, SeasonLine[]>;
 /** Fetch and store the prior seasons unless they're already stored. True when it fetched. */
 export async function refreshSeasonBaselines(current: number): Promise<boolean> {
   const seasons = priorSeasons(current);
-  const row = await readView<Stored>(KEY).catch(() => null);
+  const row = await viewStamp(KEY).catch(() => null);
   if (row?.fingerprint === fingerprintFor(seasons)) return false;
   const t0 = performance.now();
   const value: Stored = {};
@@ -30,14 +31,20 @@ export async function refreshSeasonBaselines(current: number): Promise<boolean> 
   return true;
 }
 
-/** The stored prior seasons, newest first (empty until the nightly job has stored them). */
-export async function seasonBaselines(
-  current: number,
-): Promise<{ season: number; lines: Map<number, SeasonLine> }[]> {
-  if (!dbConfigured()) return [];
-  const row = await readView<Stored>(KEY).catch(() => null);
-  if (!row) return [];
-  return priorSeasons(current)
-    .filter((s) => row.value[s])
-    .map((season) => ({ season, lines: new Map(row.value[season]!.map((l) => [l.id, l])) }));
-}
+/**
+ * The stored prior seasons, newest first (empty until the nightly job has stored them). Six
+ * hours per instance: they're fixed once stored, and the row is large (database transfer).
+ */
+export const seasonBaselines = memoAsync(
+  6 * 3600_000,
+  String,
+  async (current: number): Promise<{ season: number; lines: Map<number, SeasonLine> }[]> => {
+    if (!dbConfigured()) return [];
+    // An error isn't remembered (callers fall back to none); a missing row is, for six hours.
+    const row = await readView<Stored>(KEY);
+    if (!row) return [];
+    return priorSeasons(current)
+      .filter((s) => row.value[s])
+      .map((season) => ({ season, lines: new Map(row.value[season]!.map((l) => [l.id, l])) }));
+  },
+);

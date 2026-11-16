@@ -72,18 +72,23 @@ export const syncTransactions = memoAsync(
   },
 );
 
-async function storedMoves(): Promise<StoredMove[]> {
-  const rows = await db()<
-    { team_id: number; type: StoredMove["type"]; at: Date; adds: number[]; drops: number[] }[]
-  >`select team_id, type, at, adds, drops from league_transactions order by at`;
-  return rows.map((r) => ({
-    teamId: r.team_id,
-    type: r.type,
-    at: r.at.getTime(),
-    adds: r.adds,
-    drops: r.drops,
-  }));
-}
+/** Every stored league move, oldest first (a minute per instance: the League page reloads). */
+const storedMoves = memoAsync(
+  60_000,
+  () => "all",
+  async (): Promise<StoredMove[]> => {
+    const rows = await db()<
+      { team_id: number; type: StoredMove["type"]; at: Date; adds: number[]; drops: number[] }[]
+    >`select team_id, type, at, adds, drops from league_transactions order by at`;
+    return rows.map((r) => ({
+      teamId: r.team_id,
+      type: r.type,
+      at: r.at.getTime(),
+      adds: r.adds,
+      drops: r.drops,
+    }));
+  },
+);
 
 /** Every final Outlook run's odds, oldest first (5 minutes per instance). */
 const outlookOdds = memoAsync(

@@ -25,6 +25,26 @@ export async function readView<T>(key: string): Promise<StoredView<T> | null> {
   return r ? { fingerprint: r.fingerprint, value: r.value, computedAt: r.computed_at } : null;
 }
 
+/** Only a view's fingerprint and time (a freshness check needn't download the value). */
+export async function viewStamp(
+  key: string,
+): Promise<{ fingerprint: string; computedAt: Date } | null> {
+  const [r] = await db()<{ fingerprint: string; computed_at: Date }[]>`
+    select fingerprint, computed_at from view_cache where key = ${key}
+  `;
+  return r ? { fingerprint: r.fingerprint, computedAt: r.computed_at } : null;
+}
+
+/** The first `n` items of a view whose value is an array, cut in the database. */
+export async function readViewHead<T>(key: string, n: number): Promise<T[]> {
+  const [r] = await db()<{ head: T[] | null }[]>`
+    select (select jsonb_agg(x order by i) from jsonb_array_elements(value) with ordinality a(x, i)
+      where i <= ${n}) as head
+    from view_cache where key = ${key}
+  `;
+  return r?.head ?? [];
+}
+
 export async function writeView(key: string, fingerprint: string, value: unknown, ms: number) {
   await db()`
     insert into view_cache (key, fingerprint, value, computed_at, compute_ms)

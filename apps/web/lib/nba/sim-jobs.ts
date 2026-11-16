@@ -18,7 +18,7 @@ import {
   type WireMove,
 } from "@fantasy-copilot/fantasy-core";
 import { db, dbConfigured } from "@/lib/db";
-import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
+import { fingerprintOf, readView, readViewHead, writeView } from "@/lib/view-cache";
 import {
   DECISION_TIER,
   MIN_BASE_SEASONS,
@@ -223,10 +223,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     seasons: 0,
   });
   // The best stored trade ideas too, checked after the Moves page's drops.
-  const ideas = ((await readView<StoredIdea[]>(TRADE_VIEW).catch(() => null))?.value ?? []).slice(
-    0,
-    TRADE_MOVES,
-  );
+  const ideas = await readViewHead<StoredIdea>(TRADE_VIEW, TRADE_MOVES).catch(() => []);
   // Trades Jack asked to check, until each has a result.
   const pending = await pendingAskedTrades().catch(() => []);
   const asked = {
@@ -632,7 +629,14 @@ export async function postChunks(
 }
 
 /** Every move's summed differences so far (summed in the database: one row per move). */
-async function moveSums(jobId: number): Promise<Map<string, MoveSums>> {
+/**
+ * Sums of moves this instance saw settled, per job (Neon transfer, Nov 16): later refreshes read
+ * only the rest. A chunk still in flight may add to a settled move, so a job's last refresh reads
+ * everything again.
+ */
+const settledSums: { jobId: number; sums: Map<string, MoveSums> } = { jobId: 0, sums: new Map() };
+
+async function moveSums(jobId: number, skip: string[] = []): Promise<Map<string, MoveSums>> {
   const rows = await db()<
     {
       key: string;
@@ -655,7 +659,7 @@ async function moveSums(jobId: number): Promise<Map<string, MoveSums>> {
       sum(seed1_s) as seed1_s, sum(seed1_q) as seed1_q,
       sum(bye_s) as bye_s, sum(bye_q) as bye_q,
       sum(wins_s) as wins_s, sum(wins_q) as wins_q
-    from sim_move_sums where job_id = ${jobId} group by key
+    from sim_move_sums where job_id = ${jobId} and key <> all(${skip}) group by key
   `;
   const m = (n: number, sum: number, sumsq: number) => ({ n, sum, sumsq });
   return new Map(
@@ -795,7 +799,9 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   let groups = await loadGroups();
   const { outlook, base } = await baseRun(jobId);
   if (!base.seasons) return { done: job.status === "done" };
-  const sums = await moveSums(jobId);
+  if (settledSums.jobId !== jobId) Object.assign(settledSums, { jobId, sums: new Map() });
+  const known = settledSums.sums;
+  let sums = new Map([...known, ...(await moveSums(jobId, [...known.keys()]))]);
   // Each move is checked to its group's precision (ADR-060), or to less once it's out of its
   // race (`lowered`: ADR-063 racing elimination).
   const tierOf = (gs: GroupRow[], lowered = new Map<string, Tier>()) => {
@@ -865,6 +871,14 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   const noMoreToIssue = next.every((g) => !groupHasWork(g));
   const allBack = next.every((g) => g.posted >= Math.min(g.next_chunk, g.max_chunks));
   const done = job.status !== "superseded" && noMoreToIssue && (allBack || closing);
+  // The last refresh reads every move's sums again (a chunk in flight may have added to one
+  // remembered as settled); until then, settled moves' sums are remembered.
+  if (done && known.size) {
+    sums = await moveSums(jobId);
+    effects = effectsOf(groups, lowered);
+    markPicks(effects, h2h);
+  } else
+    for (const e of effects) if (!e.active && sums.has(e.key)) known.set(e.key, sums.get(e.key)!);
 
   // "Best" is among waiver moves (trade ideas are checked too, but compared on their own),
   // computed once the job is done (each contender's every chunk: kept off the refreshes).
@@ -1009,7 +1023,42 @@ async function storeSettled(jobId: number, rosterKey: string, effects: DeepEffec
  * The latest worker job, with its results when the stored deep checks are this job's. Asked
  * jobs only with `withAsked` (the simulate buttons): the pages follow the full job.
  */
-export async function liveJob(withAsked = false): Promise<
+/**
+ * A deep-checks row cut in the database (Neon transfer, Nov 16): the job id, only the effects
+ * for these move keys (or these adds' moves), and how many effects have settled.
+ */
+async function deepRow(
+  viewKey: string,
+  only?: { keys?: string[]; adds?: string[] },
+): Promise<{ jobId: number; effects: DeepEffect[]; settled: number } | null> {
+  if (!only) {
+    const v = await readView<Pick<DeepChecks, "jobId" | "effects">>(viewKey);
+    if (!v) return null;
+    const effects = v.value.effects;
+    return { jobId: v.value.jobId, effects, settled: effects.filter((e) => !e.active).length };
+  }
+  const match = only.keys
+    ? db()`e->>'key' = any(${only.keys})`
+    : db()`split_part(e->>'key', ':', 1) = any(${only.adds ?? []})`;
+  const [r] = await db()<{ job_id: number; effects: DeepEffect[]; settled: number }[]>`
+    select (value->>'jobId')::int as job_id,
+      coalesce((select jsonb_agg(e) from jsonb_array_elements(value->'effects') e
+        where ${match}), '[]'::jsonb) as effects,
+      (select count(*) from jsonb_array_elements(value->'effects') e
+        where (e->>'active') is distinct from 'true')::int as settled
+    from view_cache where key = ${viewKey}
+  `;
+  return r ? { jobId: r.job_id, effects: r.effects, settled: r.settled } : null;
+}
+
+/**
+ * The latest job and its deep checks. `only`: just these move keys (or adds), cut in the
+ * database; polls and cards pass it (the full row is ~100 KB).
+ */
+export async function liveJob(
+  withAsked = false,
+  only?: { keys?: string[]; adds?: string[] },
+): Promise<
   | (LiveJob & {
       trigger: string | null;
       createdAt: Date;
@@ -1034,12 +1083,8 @@ export async function liveJob(withAsked = false): Promise<
       select id, status, trigger, roster_key, created_at, refreshed_at from sim_jobs
       where status <> 'superseded' and (${withAsked} or not asked_only) order by id desc limit 1
     `,
-    latestDeepChecks(),
-    withAsked
-      ? readView<Pick<DeepChecks, "jobId" | "effects">>(ASKED_KEY)
-          .then((v) => v?.value ?? null)
-          .catch(() => null)
-      : null,
+    deepRow(DEEP_KEY, only),
+    withAsked ? deepRow(ASKED_KEY, only).catch(() => null) : null,
   ]);
   if (!j) return null;
   const mine = [deep, asked].find((d) => d?.jobId === j.id) ?? null;
@@ -1055,7 +1100,7 @@ export async function liveJob(withAsked = false): Promise<
     effects,
     trigger: j.trigger,
     createdAt: j.created_at,
-    settled: mine ? mine.effects.filter((e) => !e.active).length : 0,
+    settled: mine?.settled ?? 0,
     total: keys[0]?.n ?? 0,
     version: versionOf(j),
   };
@@ -1094,7 +1139,7 @@ export async function bestChecksByAdd(
   if (!dbConfigured() || !addIds.length) return { byAdd, live: false };
   const ids = new Set(addIds.map(String));
   const [job, rows] = await Promise.all([
-    liveJob(),
+    liveJob(false, { adds: [...ids] }),
     db()<{ key: string; roster_key: string; effect: DeepEffect }[]>`
       select key, roster_key, effect from move_results
       where split_part(key, ':', 1) = any(${[...ids]})
@@ -1121,7 +1166,7 @@ export async function bestChecksByAdd(
 
 /** Deep checks for these move keys as a page shows them (lib/nba/move-shown.ts). */
 export async function deepChecksFor(keys: string[], rosterNow: string): Promise<DeepView> {
-  const [job, last] = await Promise.all([liveJob(), settledResults(keys)]);
+  const [job, last] = await Promise.all([liveJob(false, { keys }), settledResults(keys)]);
   return deepView(keys, job, last, rosterNow);
 }
 
@@ -1132,15 +1177,6 @@ export async function settledResults(keys: string[]): Promise<Map<string, Settle
     select key, roster_key, effect from move_results where key = any(${keys})
   `;
   return new Map(rows.map((r) => [r.key, { rosterKey: r.roster_key, effect: r.effect }]));
-}
-
-/** The latest deep checks (for the Moves page). */
-export async function latestDeepChecks(): Promise<DeepChecks | null> {
-  if (!dbConfigured()) return null;
-  const [r] = await db()<
-    { value: DeepChecks }[]
-  >`select value from view_cache where key = ${DEEP_KEY}`;
-  return r?.value ?? null;
 }
 
 /**

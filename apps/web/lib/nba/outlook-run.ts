@@ -10,6 +10,7 @@ import {
 } from "@fantasy-copilot/espn";
 import { simulateSeasonAsync, type SimTeamResult } from "@fantasy-copilot/fantasy-core";
 import { db } from "../db";
+import { memoAsync } from "../fetch-memo";
 import { espnConfig } from "../env";
 import { LAST_SCORING_PERIOD, matchupPeriodOf, scoringPeriodForDate, gameDate } from "./calendar";
 import { loadLeague } from "./data";
@@ -217,8 +218,11 @@ export async function provisionalOutlook(): Promise<OutlookRun | null> {
   return rows[0] ?? null;
 }
 
-/** One point per run for a team: date and its odds. */
-export async function outlookHistory(teamId: number) {
+/**
+ * One point per run for a team: date and its odds (a minute per instance: the League page
+ * reloads while a run updates).
+ */
+export const outlookHistory = memoAsync(60_000, String, async (teamId: number) => {
   const rows = await db()<{ run_at: Date; t: OutlookTeam | null }[]>`
     select run_at,
       (select r from jsonb_array_elements(results) r where (r->>'teamId')::int = ${teamId}) as t
@@ -233,4 +237,4 @@ export async function outlookHistory(teamId: number) {
       champ: r.t!.champ,
       expWins: r.t!.expWins,
     }));
-}
+});

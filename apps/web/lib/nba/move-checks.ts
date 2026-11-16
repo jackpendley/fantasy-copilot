@@ -47,16 +47,18 @@ export function shortlist(v: WaiverView): StreamOption[] {
 }
 
 /**
- * Jack's roster as the simulation sees it: "<players and slots>.<their injury news>". The first
- * part changes only with his own moves (lib/nba/move-shown.ts keeps the last numbers on screen
- * while news alone is re-checked).
+ * Jack's roster as the simulation sees it: "<players, and who's in the IR slot>.<their injury
+ * news>". The first part changes only with his own moves (lib/nba/move-shown.ts keeps the last
+ * numbers on screen while news alone is re-checked). Lineup slots aren't in it: the simulation
+ * sets its own lineups, so moving a player between the bench and a starting slot changes
+ * nothing it computes (Nov 16: a lineup change used to blank every move's numbers).
  */
 export function rosterKeyOf(
   roster: Pick<RosterPlayer, "id" | "slot" | "injuryStatus">[],
   injuries: Pick<InjuryReport, "playerId" | "status" | "returnDate">[],
 ): string {
   const news = new Map(injuries.map((i) => [i.playerId, [i.status, i.returnDate ?? null]]));
-  const players = roster.map((p) => [p.id, p.slot]).sort();
+  const players = roster.map((p) => [p.id, p.slot === "IR" ? "IR" : ""]).sort();
   const status = roster.map((p) => [p.id, p.injuryStatus ?? null, news.get(p.id) ?? null]).sort();
   return `${fingerprintOf(players)}.${fingerprintOf(status)}`;
 }

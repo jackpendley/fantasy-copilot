@@ -169,9 +169,12 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
 
   // DARKO publishes once a day at no fixed time: look hourly, game day or not.
   // Rosters, slots and injury news: unchanged since this instance's last run means the work
-  // below repeats on the same data (docs/COMPUTE.md measures how often).
+  // below repeats on the same data (docs/COMPUTE.md measures how often). Jack's roster from
+  // tomorrow too: the simulations use it, and a move or IR change after today's lock shows only
+  // there.
   const fp = fingerprintOf([
     data.teams.map((t) => [t.id, t.roster.map((p) => [p.id, p.slot, p.injuryStatus])]),
+    data.ahead.me.roster.map((p) => [p.id, p.slot, p.injuryStatus]),
     data.injuries.map((i) => [i.playerId, i.status, i.returnDate ?? null]),
   ]);
   const leagueChanged = lastLeague == null ? null : fp !== lastLeague;

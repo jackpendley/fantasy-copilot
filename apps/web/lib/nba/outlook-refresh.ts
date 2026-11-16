@@ -266,11 +266,25 @@ export async function queueLockJob(firstTip: number): Promise<"queued" | "curren
   return "queued";
 }
 
+/**
+ * `later`: queue the job after the response (a page visit), so the caller gets the decision at
+ * once.
+ */
 export async function simRosterCheck(
   roster: Parameters<typeof rosterKeyOf>[0],
   injuries: Parameters<typeof rosterKeyOf>[1],
   watchList: number[] = [],
+  later = false,
 ): Promise<"current" | "waiting" | "queued"> {
+  const queue = async (trigger: string) => {
+    if (!later) return refreshLogged(trigger);
+    // Visits come often: one waiting build is enough (the next check catches anything newer).
+    const [building] = await db()`
+      select 1 from worker_tasks where kind = 'sim-build' and status in ('queued', 'running')
+        and created_at > now() - interval '10 minutes' limit 1
+    `;
+    if (!building) after(() => refreshLogged(trigger));
+  };
   if (!workerEnabled()) return "current";
   const key = rosterKeyOf(roster, injuries);
   const saver = saverOn();
@@ -292,7 +306,7 @@ export async function simRosterCheck(
   const minimal = minimalOn();
   const watchChanged = j?.watch_key != null && j.watch_key !== watchKeyOf(watchList);
   if (watchChanged && !minimal && !(j.live && j.recent)) {
-    await refreshLogged("You changed your watch list");
+    await queue("You changed your watch list");
     return "queued";
   }
   if (!j?.roster_key || j.roster_key === key) return "current";
@@ -300,7 +314,7 @@ export async function simRosterCheck(
   // Minimal mode: injury news waits for the nightly job or Jack's own move.
   if (news && minimal) return "current";
   if (news && ((j.live && j.recent) || (saver && j.within_saver_gap))) return "waiting";
-  await refreshLogged(news ? "Injury news for your players" : "Your roster changed (IR or slots)");
+  await queue(news ? "Injury news for your players" : "Your roster changed");
   return "queued";
 }
 

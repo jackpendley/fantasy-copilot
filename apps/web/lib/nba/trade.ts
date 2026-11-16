@@ -9,7 +9,6 @@
 
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import {
-  SLOT_ACCEPTS,
   expandSlots,
   greedyLineup,
   irEligible,
@@ -93,20 +92,14 @@ export interface TeamValue {
   activations: Activation[];
   /** Per player id: games he's available for and how many he'd start, rest of season. */
   usage: Map<number, { games: number; starts: number }>;
-  /** Starting slots left empty, rest of season (slot-days), by the positions they take. */
+  /**
+   * Room in the lineup, rest of season: on how many days one more guard, forward or center
+   * would have started (counted per extra player: two open guard spots on a day count 2).
+   */
   holes: Holes;
 }
 
-/**
- * Empty starting slot-days by kind: guard (PG, SG, G), forward (SF, PF, F), center (C), and any
- * (UTIL and other mixed slots: no one at all was free).
- */
-export interface Holes {
-  guard: number;
-  forward: number;
-  center: number;
-  any: number;
-}
+export type Holes = Record<"guard" | "forward" | "center", number>;
 
 /** Days with any NBA game (cached per schedule: teamValue runs for every move). */
 const leagueDaysCache = new WeakMap<ValueContext["gameDays"], Set<number>>();
@@ -117,16 +110,6 @@ const leagueDaysOf = (gameDays: ValueContext["gameDays"]) => {
     leagueDaysCache.set(gameDays, days);
   }
   return days;
-};
-
-const GUARDS = new Set(["PG", "SG"]);
-const FORWARDS = new Set(["SF", "PF"]);
-const holeKind = (slot: string): keyof Holes => {
-  const takes = SLOT_ACCEPTS[slot] ?? [];
-  if (takes.every((p) => GUARDS.has(p))) return "guard";
-  if (takes.every((p) => FORWARDS.has(p))) return "forward";
-  if (takes.every((p) => p === "C")) return "center";
-  return "any";
 };
 
 export interface Activation {
@@ -156,11 +139,12 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   players.forEach(({ p }, i) => {
     for (const d of ctx.gameDays.get(p.proTeamId) ?? []) if (d >= first[i]!) mask[d]! |= 1 << i;
   });
-  // The day's starters (exact greedy) and empty slots, solved once per set of players.
-  const memo = new Map<number, { starters: number[]; empty: string[] }>();
-  const lineupOf = (mask: number) => {
+  // The day's starters (exact greedy), solved once per set of players; with the room for more
+  // (roster fit) where the season's days are counted.
+  const memo = new Map<number, { starters: number[]; room?: Holes }>();
+  const lineupOf = (mask: number, withRoom = false) => {
     let s = memo.get(mask);
-    if (!s) {
+    if (!s || (withRoom && !s.room)) {
       const playing: number[] = [];
       for (let i = 0; i < players.length; i++) if (mask & (1 << i)) playing.push(i);
       s = greedyLineup(
@@ -168,6 +152,7 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
         (i) => players[i]!.v,
         (i) => players[i]!.p.positions as Position[],
         ctx.openSlots,
+        withRoom,
       );
       memo.set(mask, s);
     }
@@ -237,22 +222,27 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   let playoffs = 0;
   const games = new Array<number>(players.length).fill(0);
   const starts = new Array<number>(players.length).fill(0);
-  const holes: Holes = { guard: 0, forward: 0, center: 0, any: 0 };
+  const holes: Holes = { guard: 0, forward: 0, center: 0 };
+  const addRoom = (room: Holes) => {
+    holes.guard += room.guard;
+    holes.forward += room.forward;
+    holes.center += room.center;
+  };
   // Days with NBA games only: a day off for the whole league has nothing to fill.
   const leagueDays = leagueDaysOf(ctx.gameDays);
   for (let day = ctx.fromDay; day <= ctx.lastDay; day++) {
     if (!mask[day]) {
-      if (leagueDays.has(day)) for (const slot of ctx.openSlots) holes[holeKind(slot)]++;
+      if (leagueDays.has(day)) addRoom(lineupOf(0, true).room!);
       continue;
     }
     for (let k = 0; k < players.length; k++) if (mask[day]! & (1 << k)) games[k]!++;
-    const l = lineupOf(mask[day]!);
+    const l = lineupOf(mask[day]!, true);
     let pts = 0;
     for (const k of l.starters) {
       pts += players[k]!.v;
       starts[k]!++;
     }
-    for (const slot of l.empty) holes[holeKind(slot)]++;
+    addRoom(l.room!);
     if (playoffDay(day)) playoffs += pts;
     else regular += pts;
   }

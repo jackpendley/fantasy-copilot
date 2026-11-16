@@ -97,38 +97,63 @@ export function greedyStarters<T>(
   eligible: (p: T) => readonly Position[],
   openSlots: readonly string[],
 ): T[] {
-  return greedyLineup(players, value, eligible, openSlots).starters;
+  return greedyLineup(players, value, eligible, openSlots, false).starters;
 }
 
+/** Kinds of player a lineup may have room for. */
+export const ROOM_KINDS = {
+  guard: ["PG", "SG"],
+  forward: ["SF", "PF"],
+  center: ["C"],
+} as const satisfies Record<string, readonly Position[]>;
+
 /**
- * greedyStarters, plus the slots left empty. Players take the first slot that fits in
- * `openSlots` order (ESPN's: PG, SG, SF, PF, C, G, F, UTIL), so the empty ones are those no one
- * available could fill: a missing guard leaves G empty, not a UTIL.
+ * greedyStarters, plus how many more players of each kind could still start (`room`): the
+ * lineup's open slots, counted the way that matters. A swingman who could fill a guard or a
+ * forward slot doesn't decide which of them is "the" open one: a guard has room if adding one
+ * (and re-seating the others) puts him in the lineup.
  */
 export function greedyLineup<T>(
   players: readonly T[],
   value: (p: T) => number,
   eligible: (p: T) => readonly Position[],
   openSlots: readonly string[],
-): { starters: T[]; empty: string[] } {
-  const owner = new Array<number>(openSlots.length).fill(-1);
+  /** Count the room (off: starters only, as greedyStarters). */
+  withRoom = true,
+): { starters: T[]; room: Record<keyof typeof ROOM_KINDS, number> } {
   const sorted = [...players].sort((a, b) => value(b) - value(a));
-  const seated: T[] = [];
-  const tryPlace = (pi: number, seen: boolean[]): boolean => {
+  // Augmenting path: seat player `pi` (an index into `sorted`, or past it for an added player of
+  // `extra`'s kind), moving others along.
+  const place = (
+    owner: number[],
+    pi: number,
+    seen: boolean[],
+    extra: readonly Position[] = [],
+  ): boolean => {
+    const elig = pi < sorted.length ? eligible(sorted[pi]!) : extra;
     for (let s = 0; s < openSlots.length; s++) {
-      if (seen[s] || !slotAccepts(openSlots[s]!, eligible(sorted[pi]!))) continue;
+      if (seen[s] || !slotAccepts(openSlots[s]!, elig)) continue;
       seen[s] = true;
-      if (owner[s] === -1 || tryPlace(owner[s]!, seen)) {
+      if (owner[s] === -1 || place(owner, owner[s]!, seen, extra)) {
         owner[s] = pi;
         return true;
       }
     }
     return false;
   };
+  const fresh = () => new Array<boolean>(openSlots.length).fill(false);
+  const owner = new Array<number>(openSlots.length).fill(-1);
+  const seated: T[] = [];
   for (let i = 0; i < sorted.length && seated.length < openSlots.length; i++) {
     const snap = [...owner];
-    if (tryPlace(i, new Array<boolean>(openSlots.length).fill(false))) seated.push(sorted[i]!);
+    if (place(owner, i, fresh())) seated.push(sorted[i]!);
     else owner.splice(0, owner.length, ...snap);
   }
-  return { starters: seated, empty: openSlots.filter((_, s) => owner[s] === -1) };
+  const room = { guard: 0, forward: 0, center: 0 };
+  if (!withRoom) return { starters: seated, room };
+  for (const kind of Object.keys(ROOM_KINDS) as (keyof typeof ROOM_KINDS)[]) {
+    const trial = [...owner];
+    while (place(trial, sorted.length + room[kind], fresh(), ROOM_KINDS[kind])) room[kind]++;
+  }
+  return { starters: seated, room };
 }

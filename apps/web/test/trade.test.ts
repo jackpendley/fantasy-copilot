@@ -65,28 +65,35 @@ describe("teamValue", () => {
   });
 });
 
-describe("teamValue's empty lineup slots (roster fit)", () => {
+describe("teamValue's room in the lineup (roster fit)", () => {
   // Guard-only slots (PG, SG, G), a C and a UTIL; every team plays days 1-10.
   const fitCtx = valueContext(games, { PG: 1, SG: 1, G: 1, C: 1, UTIL: 1, BE: 3 }, 1, 10, 1);
   const guard = (id: number, fppg: number) => ({ ...p(id, "PG", fppg), positions: ["PG", "SG"] });
   const guards = [guard(1, 20), guard(3, 18), guard(5, 16)];
   const bigs = [p(7, "C", 30), p(9, "C", 25), p(11, "C", 22)];
 
-  it("counts a guard slot left empty every day once the third guard goes", () => {
+  it("counts room for a guard every day once the third guard goes", () => {
     expect(teamValue([...guards, ...bigs], fitCtx).holes).toEqual({
       guard: 0,
       forward: 0,
       center: 0,
-      any: 0,
     });
     const thin = teamValue([...guards.slice(0, 2), ...bigs, p(13, "C", 21)], fitCtx);
-    expect(thin.holes.guard).toBe(10);
-    expect(thin.holes.any).toBe(0);
+    expect(thin.holes).toEqual({ guard: 10, forward: 0, center: 0 });
+  });
+
+  it("a swingman doesn't decide which slot is open: room counts who could still start", () => {
+    // PG, SG, G, F, UTIL with two guards, a SG/SF and one forward: the swingman covers either
+    // G or F, so there's room for exactly one more guard or forward, every day.
+    const ctx2 = valueContext(games, { PG: 1, SG: 1, G: 1, F: 1, UTIL: 1, BE: 3 }, 1, 10, 1);
+    const swing = { ...p(15, "SG", 25), positions: ["SG", "SF"] };
+    const v = teamValue([guard(1, 20), guard(3, 18), swing, p(17, "SF", 22)], ctx2);
+    expect(v.holes).toEqual({ guard: 10, forward: 10, center: 10 });
   });
 
   it("an extra center only competes for C and UTIL: no hole filled, none opened", () => {
     const more = teamValue([...guards, ...bigs, p(13, "C", 21)], fitCtx);
-    expect(more.holes).toEqual({ guard: 0, forward: 0, center: 0, any: 0 });
+    expect(more.holes).toEqual({ guard: 0, forward: 0, center: 0 });
     expect(more.usage.get(13)!.starts).toBe(0);
   });
 });

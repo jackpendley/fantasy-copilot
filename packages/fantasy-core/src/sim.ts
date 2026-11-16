@@ -94,6 +94,12 @@ export interface SimInput {
    * is the season's own playoffs, so 1 is exactly the plain simulation.
    */
   playoffReplays?: number;
+  /**
+   * Position-aware streaming (MODEL_CARD pre-registration 2026-11-16): streams and IR pickups
+   * value players by the lineup points they add this week (positions, schedule, who's out) and
+   * the share of games they'd start, not by raw points. Off: the calibrated raw-value rule.
+   */
+  fitStreams?: boolean;
 }
 
 /** One simulated season's ending, teams in input order. */
@@ -109,6 +115,10 @@ export interface SeasonOutcome {
   titleShares: number[];
   /** Each team's points by period (input order; index = period), banked points included. */
   points: number[][];
+  /** Each team's streams and IR pickups in the rest of the regular season (input order). */
+  adds: number[];
+  /** Who they were (player ids, in the order added; input order of teams). */
+  pickups: number[][];
 }
 
 export interface SimTeamResult {
@@ -335,6 +345,11 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     }
     return seated;
   };
+  /** Who took each open slot in the last bestLineup (null: left empty). */
+  const lastSlots = (): (P | null)[] => Array.from(owner, (i) => (i >= 0 ? sorted[i]! : null));
+  const fitStreams = input.fitStreams ?? false;
+  /** Free agents scored by fit at each stream (the best by raw value). */
+  const FIT_CANDIDATES = 5;
 
   const tIndex = new Map(teams.map((t, i) => [t.id, i]));
   const lastPeriod = input.periodOf(lastDay);
@@ -370,6 +385,9 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const healthyOn = new Int32Array(NH);
   const healthyVal = new Uint8Array(NH);
   const faOwner = new Int32Array(NH);
+  /** Each team's streams and IR pickups this season, and who they were. */
+  const adds = new Int32Array(n);
+  const pickups: number[][] = teams.map(() => []);
   let stamp = 0;
   let day = 0;
 
@@ -419,34 +437,118 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     return ok;
   };
 
-  type TeamState = { roster: P[]; lineups: Map<number, P[]> };
+  type TeamState = {
+    roster: P[];
+    lineups: Map<number, P[]>;
+    /** Each memoized lineup's slots (fitStreams). */
+    slots: Map<number, (P | null)[]>;
+  };
   const setRoster = (x: TeamState, r: P[]) => {
     x.roster = r;
     x.lineups.clear();
+    x.slots.clear();
+  };
+  /** Which roster players pass `keep`, as a bitmask over the roster. */
+  const maskOf = (x: TeamState, keep: (r: P) => boolean) => {
+    let mask = 0;
+    for (let k = 0; k < x.roster.length; k++) if (keep(x.roster[k]!)) mask |= 1 << k;
+    return mask;
+  };
+  const solve = (x: TeamState, mask: number) => {
+    const l = bestLineup(x.roster.filter((_, k) => (mask >> k) & 1));
+    x.lineups.set(mask, l);
+    x.slots.set(mask, lastSlots());
+    return l;
   };
   /** The best lineup from the roster players passing `keep` (memoized by who passes). */
   const lineupOf = (x: TeamState, keep: (r: P) => boolean) => {
-    let mask = 0;
-    const pass: P[] = [];
-    for (let k = 0; k < x.roster.length; k++) {
-      const r = x.roster[k]!;
-      if (keep(r)) {
-        mask |= 1 << k;
-        pass.push(r);
-      }
-    }
-    let l = x.lineups.get(mask);
-    if (!l) {
-      l = bestLineup(pass);
-      x.lineups.set(mask, l);
-    }
-    return l;
+    const mask = maskOf(x, keep);
+    return x.lineups.get(mask) ?? solve(x, mask);
+  };
+  /** That lineup's slots: who starts in each open slot, null where it's empty. */
+  const slotsOf = (x: TeamState, keep: (r: P) => boolean) => {
+    const mask = maskOf(x, keep);
+    if (!x.slots.has(mask)) solve(x, mask);
+    return x.slots.get(mask)!;
   };
   const fit = (r: P) => outOf(r) === 0;
   /** A streaming target's worth today: his games left this week plus a few games' value. */
   const val = (pl: P) => {
     const o = outOf(pl);
     return (o > 0 ? 0 : pl.fppg * pl.left[day]!) + 3 * pl.fppg * (o > 5 ? 0.3 : 1);
+  };
+
+  /**
+   * Can he play his team's game on day `d` of this week, as far as is known today? His current
+   * absence runs its course over his team's games before then.
+   */
+  const availOn = (pl: P, d: number) =>
+    pl.days[d] === 1 && outOf(pl) <= pl.left[day]! - pl.left[d]!;
+  /**
+   * fitStreams: worth in lineup points, from the team's lineups on this week's remaining days.
+   * A roster player is worth what the lineup loses without him (his points minus the best
+   * player not starting that day who fits his slot); a free agent what he adds (his points in
+   * an open slot that takes him, else over the weakest starter whose slot he fits). Plus
+   * `3 x fppg` scaled by the share of this week's games he'd start (1 with none left).
+   */
+  const fitOf = (x: TeamState) => {
+    const week: { d: number; slots: (P | null)[] }[] = [];
+    for (let d = day; d <= lastDay && period[d] === period[day]; d++)
+      week.push({ d, slots: slotsOf(x, (r) => availOn(r, d)) });
+    const later = (pl: P, plays: number, starts: number) =>
+      3 * pl.fppg * (plays ? starts / plays : 1) * (outOf(pl) > 5 ? 0.3 : 1);
+    const rosterVal = (r: P) => {
+      let pts = 0;
+      let plays = 0;
+      let starts = 0;
+      for (const { d, slots } of week) {
+        if (!availOn(r, d)) continue;
+        plays++;
+        const j = slots.indexOf(r);
+        if (j < 0) continue;
+        starts++;
+        let next = 0;
+        for (const b of x.roster)
+          if (b !== r && !slots.includes(b) && (b.elig >> j) & 1 && b.fppg > next && availOn(b, d))
+            next = b.fppg;
+        pts += r.fppg - next;
+      }
+      return pts + later(r, plays, starts);
+    };
+    const freeVal = (f: P) => {
+      let pts = 0;
+      let plays = 0;
+      let starts = 0;
+      for (const { d, slots } of week) {
+        if (!availOn(f, d)) continue;
+        plays++;
+        let gain = 0;
+        for (let j = 0; j < slots.length; j++) {
+          if (!((f.elig >> j) & 1)) continue;
+          const o = slots[j];
+          gain = Math.max(gain, o ? f.fppg - o.fppg : f.fppg);
+        }
+        if (gain > 0) {
+          starts++;
+          pts += gain;
+        }
+      }
+      return pts + later(f, plays, starts);
+    };
+    return { rosterVal, freeVal };
+  };
+  /** The `k` unowned free agents with the highest `score` (best first). */
+  const topFree = (list: P[], k: number, score: (f: P) => number) => {
+    const top: { f: P; v: number }[] = [];
+    for (const f of list) {
+      if (faOwner[f.h] !== -1) continue;
+      const v = score(f);
+      if (top.length === k && v <= top[k - 1]!.v) continue;
+      top.push({ f, v });
+      top.sort((a, b) => b.v - a.v);
+      if (top.length > k) top.pop();
+    }
+    return top.map((t) => t.f);
   };
 
   let seasonsDone = 0;
@@ -509,9 +611,12 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         streamer: teams[i]!.addsPerWeek >= 0.25,
         /** Lineups by availability bitmask, for the roster as it stands. */
         lineups: new Map<number, P[]>(),
+        slots: new Map<number, (P | null)[]>(),
       };
     });
     const weekPts = banked.map((b) => Float64Array.from(b));
+    adds.fill(0);
+    for (const list of pickups) list.length = 0;
     let curP = 0;
     const orderKey = new Float64Array(n);
     const rosterIds = () =>
@@ -594,20 +699,34 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
           if (!x.ir && x.budget > 0) {
             const hurt = x.roster.find((r) => outOf(r) > 5);
             let fa: P | undefined;
-            if (hurt)
+            if (hurt && fitStreams) {
+              // The best fit among the few best by points.
+              const fit = fitOf(x);
+              let faV = -Infinity;
+              for (const f of topFree(faList, FIT_CANDIDATES, (p) => p.fppg)) {
+                const v = fit.freeVal(f);
+                if (v > faV) {
+                  fa = f;
+                  faV = v;
+                }
+              }
+            } else if (hurt)
               for (const f of faList) if (faOwner[f.h] === -1 && (!fa || f.fppg > fa.fppg)) fa = f;
             if (hurt && fa) {
               setRoster(x, [...x.roster.filter((r) => r !== hurt), fa]);
               faOwner[fa.h] = ti;
               x.ir = { player: hurt, fill: fa };
               x.budget--;
+              adds[ti]!++;
+              pickups[ti]!.push(fa.src.id);
             }
           }
           if (x.streamer && x.budget > 0) {
+            const fit = fitStreams ? fitOf(x) : null;
             let drop: P | undefined;
             let dropV = Infinity;
             for (const r of x.roster) {
-              const v = val(r);
+              const v = fit ? fit.rosterVal(r) : val(r);
               if (v < dropV) {
                 drop = r;
                 dropV = v;
@@ -616,9 +735,9 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
             if (drop && (outOf(drop) <= 5 || x.ir)) {
               let best: P | null = null;
               let bestV = dropV + 8;
-              for (const f of faList) {
+              for (const f of fit ? topFree(faList, FIT_CANDIDATES, val) : faList) {
                 if (faOwner[f.h] !== -1) continue;
-                const v = val(f);
+                const v = fit ? fit.freeVal(f) : val(f);
                 if (v > bestV) {
                   best = f;
                   bestV = v;
@@ -638,6 +757,8 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
                 }
                 faOwner[pick.h] = ti;
                 x.budget--;
+                adds[ti]!++;
+                pickups[ti]!.push(pick.src.id);
               }
             }
           }
@@ -669,6 +790,8 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     // when asked: input.playoffReplays).
     const regularEnd = replayFrom >= fromDay ? replayFrom - 1 : lastDay;
     for (let d = fromDay; d <= regularEnd; d++) playDay(d);
+    const regularAdds = Array.from(adds);
+    const regularPickups = pickups.map((list) => [...list]);
     // Regular season: decided weeks keep their actual winner.
     const wins = new Array<number>(n).fill(0);
     const pf = new Array<number>(n).fill(0);
@@ -752,7 +875,9 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
           inFaList.clear();
           for (const f of faList) inFaList.add(f);
           // Fresh lineup caches: a replay's roster changes refilled the shared ones.
-          st.forEach((x, i) => Object.assign(x, saved.st[i], { lineups: new Map() }));
+          st.forEach((x, i) =>
+            Object.assign(x, saved.st[i], { lineups: new Map(), slots: new Map() }),
+          );
           weekPts.forEach((w, i) => w.set(saved.weekPts[i]!));
           curP = saved.curP;
           // New luck for this replay: every draw from here on is keyed by it.
@@ -784,6 +909,8 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       playoffs: seeds.map((i) => teams[i]!.id),
       titleShares: Array.from(shares),
       points: weekPts.map((w) => Array.from(w)),
+      adds: regularAdds,
+      pickups: regularPickups,
     });
     seasonsDone++;
     yield summary;

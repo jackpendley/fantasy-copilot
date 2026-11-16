@@ -634,3 +634,84 @@ describe("a roster change on a later day (a claim that clears then)", { timeout:
     expect(kept).toBe(20);
   });
 });
+
+// MODEL_CARD pre-registration 2026-11-16, check 1: two guards for three guard-only slots (PG,
+// SG, G), six centers, and a guard and a center free agent at equal points.
+describe("fitStreams: position-aware streaming", { timeout: 60_000 }, () => {
+  const guardShort = (): SimTeam => {
+    const p = (i: number, eligible: Position[], fppg: number, pro: number): SimPlayer => ({
+      id: 100 + i,
+      eligible,
+      proTeamId: pro,
+      fppg,
+      gp: 72,
+      sd: 0.1,
+    });
+    const roster = [
+      p(0, ["PG", "SG"], 35, 1),
+      p(1, ["PG", "SG"], 34, 2),
+      ...[36, 35, 34, 33, 32, 31].map((f, k) => p(2 + k, ["C"], f, 1 + (k % 6))),
+      ...[35, 34, 20, 19].map((f, k) => p(8 + k, ["SF", "PF"], f, 3 + (k % 4))),
+    ];
+    return { id: 1, roster, act: 1, addsPerWeek: 1.5 };
+  };
+  const others = [2, 3, 4, 5, 6, 7, 8].map((id) => ({ ...team(id, 30), addsPerWeek: 0 }));
+  const free = (id: number, eligible: Position[], pro: number): SimPlayer => ({
+    id,
+    eligible,
+    proTeamId: pro,
+    fppg: 30,
+    gp: 72,
+    sd: 0.1,
+  });
+  // The center first: the raw rule takes the first of equals.
+  const pool = [free(901, ["C"], 5), free(902, ["PG", "SG"], 6)];
+  /** Team 1's pickups of the two: the share that were the guard, as pickups and in the final roster. */
+  const guardShare = (fitStreams: boolean) => {
+    let guard = 0;
+    let center = 0;
+    let finalGuard = 0;
+    let finalCenter = 0;
+    simulateSeason(
+      league([guardShort(), ...others], {
+        freeAgents: pool,
+        seasons: 200,
+        fitStreams,
+        inspect: (_, o) => {
+          for (const id of o.pickups[0]!) {
+            if (id === 902) guard++;
+            if (id === 901) center++;
+          }
+          if (o.rosters[0]!.includes(902)) finalGuard++;
+          if (o.rosters[0]!.includes(901)) finalCenter++;
+        },
+      }),
+    );
+    return {
+      pickups: guard / Math.max(1, guard + center),
+      final: finalGuard / Math.max(1, finalGuard + finalCenter),
+      n: guard + center,
+    };
+  };
+
+  it("streams the guard the lineup is missing, not an equal center", () => {
+    const fit = guardShare(true);
+    const raw = guardShare(false);
+    console.log(
+      `guard share: pickups fit ${fit.pickups.toFixed(3)} (n ${fit.n}), raw ${raw.pickups.toFixed(3)} (n ${raw.n}); final rosters fit ${fit.final.toFixed(3)}, raw ${raw.final.toFixed(3)}`,
+    );
+    expect(fit.pickups).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it("reports each team's adds, and the raw rule is unchanged by the option's plumbing", () => {
+    const input = league([team(1, 40), ...[2, 3, 4, 5, 6, 7, 8].map((id) => team(id, 30))], {
+      seasons: 50,
+    });
+    const adds: number[][] = [];
+    const a = simulateSeason({ ...input, inspect: (_, o) => adds.push(o.adds) });
+    const b = simulateSeason({ ...input, fitStreams: false });
+    expect(a).toEqual(b);
+    expect(adds).toHaveLength(50);
+    expect(adds.every((x) => x.length === 8 && x.every((k) => k >= 0))).toBe(true);
+  });
+});

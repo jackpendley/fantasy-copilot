@@ -806,6 +806,32 @@ One evaluation. The code is kept on the unmerged branch `experiment/fit-streams`
 
 **Not part of this test:** a teammate newly out long-term (the mirror case). There are no "without him" games to project from at that point; that needs a minutes-share model.
 
+### Result (2026-11-16): failed, not shipped
+
+One evaluation (`scripts/backtest-teammate-return.ts`, pre-registration on main at d3d1f51). The harness was first checked with `DRY=1`, which prints event counts only, no outcomes.
+
+| Events                               | n                   | MAE today | MAE candidate | Candidate − today | 95% CI (by player) |
+| ------------------------------------ | ------------------- | --------- | ------------- | ----------------- | ------------------ |
+| **Pooled (the test)**                | 2,120 (611 players) | 4.32      | 4.75          | +0.427            | [0.299, 0.560]     |
+| 2025-26                              | 1,183 (322 players) | 4.20      | 4.59          | +0.381            | [0.195, 0.573]     |
+| 2024-25                              | 937 (289 players)   | 4.47      | 4.96          | +0.486            | [0.287, 0.686]     |
+| Minutes moved ≥ 4 during the absence | 818 (377 players)   | 4.42      | 5.19          | +0.764            | [0.511, 1.018]     |
+
+Projecting from only the games the teammate played is clearly worse, so today's projection stays.
+
+**Exploration, after the evaluation (not a test):** today's projection's signed error, by how much the player's minutes moved while the teammate was out:
+
+| Minutes while he was out | n     | Today − actual | Candidate − actual |
+| ------------------------ | ----- | -------------- | ------------------ |
+| up ≥ 6                   | 425   | −0.65          | −4.16              |
+| up 3–6                   | 377   | +0.68          | −1.32              |
+| within ±3                | 1,085 | +0.09          | −0.09              |
+| down ≥ 3                 | 233   | −0.20          | +1.71              |
+
+- **Reading:** a fill-in's bigger role mostly sticks over the 10 games after the teammate returns. Returning players often come back on limited minutes, and coaches keep what worked. Today's projection is about unbiased for them; the biggest fill-ins even beat it slightly.
+- **So** Paul Reed's 27.1 isn't shown to be inflated for the coming weeks.
+- **Not tested:** horizons beyond 10 games, and direct same-position backups specifically. Either needs its own pre-registration, judged forward on this season's later returns, since these two seasons have now been looked at.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

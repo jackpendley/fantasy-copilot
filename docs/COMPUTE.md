@@ -333,3 +333,28 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - **Unchanged:** every page reads ESPN live when opened; Jack's own moves and asked deep checks get full simulations; the nightly job.
 - **Tripwire:** if a morning total is **3 h 56 m or more** before Nov 18, Jack pays for one month of Pro that day. (Corrected Nov 10: Pro has no CPU-hour cap; 16 h was the trial's. A later downgrade to Hobby re-applies the 4 h rolling window, which would then hold Pro-month usage.)
 - **After Nov 29:** the steady state must stay ≤ ~7 min a day for all projects (Hobby averages 8). The worker writing to Neon directly (planned ~Nov 21) is the main lever.
+
+## 10. Database transfer (Neon egress)
+
+**Nov 16:** Neon emailed that the Free plan's 5 GB of public network transfer for the month was used up. On Free, Neon then suspends compute until the next billing period or an upgrade. We had budgeted Vercel CPU, never database transfer: every byte a query returns to Vercel counts.
+
+**Sizes measured locally** (ESPN reads, database off; before → after #162):
+
+| Payload                      | Read                                      | Before                                               | After                                            |
+| ---------------------------- | ----------------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
+| sim-build task input         | once per job, by the worker               | 1,859 KB                                             | 375 KB (gzip)                                    |
+| job setup                    | each runner (16)                          | 41 KB                                                | 11 KB, once per server instance                  |
+| job moves                    | each runner (16)                          | 836 KB (492 moves; ~115 in production)               | 18 KB, once per server instance                  |
+| trade-search task input      | each search (~15–30 a day)                | 1,013 KB                                             | 200 KB                                           |
+| racing refresh: head to head | every 20 s while a job runs               | every live move's per-chunk means (tens of MB a job) | one row per pair (~120)                          |
+| P(best) chunk means          | was every refresh                         | ≤12 contenders × chunks                              | once, when the job is done                       |
+| Moves poll                   | every 10 s while a job runs (visible tab) | ~100 KB                                              | 20 s; 204 with no body unless the checks changed |
+| card percentiles             | per server instance's first card          | every player's PBP stats, two seasons                | the stored distributions (nightly)               |
+| Outlook history              | League page, 5-min cache                  | every run's full results (~3 KB a run)               | four fields per team                             |
+
+**Rules from here:**
+
+- Payloads over ~50 KB are stored compressed (`lib/gz.ts`), not as jsonb.
+- Aggregate in SQL; don't fetch per-chunk rows.
+- Polls skip unchanged data.
+- Check the Neon usage panel weekly.

@@ -5,6 +5,7 @@ import "server-only";
 // queued one of the same kind.
 
 import { db, dbConfigured } from "@/lib/db";
+import { pack, unpack } from "@/lib/gz";
 import { dispatchWorker } from "./github-dispatch";
 
 /**
@@ -33,16 +34,25 @@ export async function heartbeat(name: string, seconds = 90) {
   `;
 }
 
-/** Queue a task (true when queued, false when the same input is already queued or running). */
-export async function enqueueTask(kind: TaskKind, fingerprint: string, input: unknown) {
+/**
+ * Queue a task (true when queued, false when the same input is already queued or running). The
+ * input is stored compressed; `keep`: the small part its result still needs once it's done
+ * (a sim-build's context and base season).
+ */
+export async function enqueueTask(
+  kind: TaskKind,
+  fingerprint: string,
+  input: unknown,
+  keep: unknown = {},
+) {
   if (!dbConfigured()) return false;
   await db()`
     update worker_tasks set status = 'superseded', finished_at = now()
     where kind = ${kind} and status = 'queued' and fingerprint <> ${fingerprint}
   `;
   const rows = await db()`
-    insert into worker_tasks (kind, fingerprint, input)
-    values (${kind}, ${fingerprint}, ${db().json(input as never)})
+    insert into worker_tasks (kind, fingerprint, input, input_gz)
+    values (${kind}, ${fingerprint}, ${db().json(keep as never)}, ${pack(input)})
     on conflict (kind, fingerprint) where status in ('queued', 'running') do nothing
     returning id
   `;
@@ -105,7 +115,7 @@ export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: 
   // Short (the runner asks at least every 30 s): a lock outliving the runner would keep a new
   // task from starting a run.
   await heartbeat(POLL_LOCK, 45);
-  const [t] = await db()<{ id: number; kind: TaskKind; input: unknown }[]>`
+  const [t] = await db()<{ id: number; kind: TaskKind; input: unknown; input_gz: string | null }[]>`
     update worker_tasks set status = 'running', started_at = now(), attempts = attempts + 1
     where id = (
       select id from worker_tasks
@@ -115,15 +125,18 @@ export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: 
       order by created_at limit 1
       for update skip locked
     )
-    returning id, kind, input
+    returning id, kind, input, input_gz
   `;
-  return t ?? null;
+  if (!t) return null;
+  // Tasks queued before compression keep their input as jsonb.
+  return { id: t.id, kind: t.kind, input: t.input_gz ? unpack(t.input_gz) : t.input };
 }
 
 /**
  * Close a task; its kind and fingerprint (null when it wasn't running, e.g. handed out again
- * since). Its input is cleared (it can be megabytes; Neon's free plan has 0.5 GB), except the
- * small part a sim-build's result still needs (`keep`, read by the caller first).
+ * since). Its compressed input is cleared (it can be megabytes; Neon's free plan has 0.5 GB),
+ * leaving the small part a sim-build's result still needs (`keep`). A task queued before
+ * compression has that part cut from its jsonb input.
  */
 export async function finishTask(
   id: number,
@@ -132,9 +145,11 @@ export async function finishTask(
   const [t] = await db()<{ kind: TaskKind; fingerprint: string }[]>`
     update worker_tasks set status = ${error ? "failed" : "done"}, finished_at = now(),
       error = ${error ?? null},
-      input = case when kind in ('sim-build', 'sim-asked')
+      input = case when input_gz is not null then input
+        when kind in ('sim-build', 'sim-asked')
         then jsonb_build_object('ctx', input->'ctx', 'base', input->'build'->'base')
-        else '{}'::jsonb end
+        else '{}'::jsonb end,
+      input_gz = null
     where id = ${id} and status = 'running'
     returning kind, fingerprint
   `;

@@ -90,8 +90,16 @@ const outlookOdds = memoAsync(
   5 * 60_000,
   () => "all",
   async (): Promise<RunOdds[]> => {
-    const rows = await db()<{ run_at: Date; results: OutlookTeam[] }[]>`
-      select run_at, results from outlook_runs where status = 'final' order by run_at
+    // Only the fields used, cut in the database (every run's full results was ~3 KB a run).
+    const rows = await db()<
+      { run_at: Date; results: Pick<OutlookTeam, "teamId" | "champ" | "playoffs" | "expWins">[] }[]
+    >`
+      select run_at, (
+        select jsonb_agg(jsonb_build_object('teamId', t->'teamId', 'champ', t->'champ',
+          'playoffs', t->'playoffs', 'expWins', t->'expWins'))
+        from jsonb_array_elements(results) t
+      ) as results
+      from outlook_runs where status = 'final' order by run_at
     `;
     return rows.map((r) => ({
       runAt: r.run_at.getTime(),

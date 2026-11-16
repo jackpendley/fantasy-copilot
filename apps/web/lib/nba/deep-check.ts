@@ -303,6 +303,44 @@ export function pairedDiff(
   return { d, se: Math.sqrt(v / n) };
 }
 
+/** Move a minus move b in title odds, head to head (null when unknown or too few chunks). */
+export type HeadToHead = (a: string, b: string) => Delta | null;
+
+/** Head to head from each move's chunk means (tests, small jobs). */
+export const headToHeadOf =
+  (means: ChunkMeans): HeadToHead =>
+  (a, b) =>
+    pairedDiff(a, b, means);
+
+/** Per pair over their shared chunks: how many, and the sum and sum of squares of a - b. */
+export interface PairSums {
+  a: string;
+  b: string;
+  n: number;
+  s: number;
+  q: number;
+}
+
+/**
+ * Head to head from per-pair sums (the database adds them up: one row per pair instead of
+ * every chunk's means, ADR-063 addendum). Asked the other way round, the difference flips.
+ */
+export function headToHeadFromSums(rows: PairSums[]): HeadToHead {
+  const by = new Map<string, Delta>();
+  for (const r of rows) {
+    if (r.n < MIN_SHARED) continue;
+    const d = r.s / r.n;
+    const v = Math.max(0, (r.q - r.n * d * d) / (r.n - 1));
+    by.set(`${r.a}|${r.b}`, { d, se: Math.sqrt(v / r.n) });
+  }
+  return (a, b) => {
+    const x = by.get(`${a}|${b}`);
+    if (x) return x;
+    const y = by.get(`${b}|${a}`);
+    return y ? { d: -y.d, se: y.se } : null;
+  };
+}
+
 type Rated = Pick<DeepEffect, "key" | "title">;
 
 /**
@@ -310,8 +348,8 @@ type Rated = Pick<DeepEffect, "key" | "title">;
  * when they share enough chunks; otherwise from their own margins (which can't tell close moves
  * apart, so they keep racing).
  */
-export function beats(a: Rated, b: Rated, means?: ChunkMeans): boolean {
-  const p = means ? pairedDiff(a.key, b.key, means) : null;
+export function beats(a: Rated, b: Rated, h2h?: HeadToHead): boolean {
+  const p = h2h?.(a.key, b.key) ?? null;
   if (p) return p.d > 2 * p.se;
   return a.title.d - b.title.d > 2 * Math.hypot(a.title.se, b.title.se);
 }
@@ -327,13 +365,13 @@ export const addOf = (key: string): string | null =>
  */
 export function pickDrop<T extends Rated & Pick<DeepEffect, "wins">>(
   options: T[],
-  means?: ChunkMeans,
+  h2h?: HeadToHead,
   week?: (o: T) => number,
 ): T | null {
   const leader = options.reduce<T | null>((b, o) => (!b || o.title.d > b.title.d ? o : b), null);
   if (!leader) return null;
   return options
-    .filter((o) => o === leader || !beats(leader, o, means))
+    .filter((o) => o === leader || !beats(leader, o, h2h))
     .sort(
       (x, y) => y.wins.d - x.wins.d || (week ? week(y) - week(x) : 0) || y.title.d - x.title.d,
     )[0]!;
@@ -356,7 +394,7 @@ const MAX_DECISION = 4;
 export function promotions(
   effects: DeepEffect[],
   tierOf: (key: string) => Tier,
-  means?: ChunkMeans,
+  h2h?: HeadToHead,
 ): Map<string, Tier> {
   const out = new Map<string, Tier>();
   const raise = (key: string, tier: Tier) => {
@@ -368,7 +406,7 @@ export function promotions(
     const [leader, ...rest] = [...field].sort((a, b) => b.title.d - a.title.d);
     if (!leader) return;
     raise(leader.key, tier);
-    for (const e of rest.filter((e) => !beats(leader, e, means)).slice(0, max)) raise(e.key, tier);
+    for (const e of rest.filter((e) => !beats(leader, e, h2h)).slice(0, max)) raise(e.key, tier);
   };
   const byAdd = new Map<string, DeepEffect[]>();
   for (const e of live) byAdd.set(addOf(e.key)!, [...(byAdd.get(addOf(e.key)!) ?? []), e]);
@@ -384,7 +422,7 @@ export function promotions(
 }
 
 /** Each add's card pick (pickDrop, head to head), marked on its effect. */
-export function markPicks(effects: DeepEffect[], means?: ChunkMeans): DeepEffect[] {
+export function markPicks(effects: DeepEffect[], h2h?: HeadToHead): DeepEffect[] {
   const byAdd = new Map<string, DeepEffect[]>();
   for (const e of effects) {
     e.pick = false;
@@ -393,8 +431,27 @@ export function markPicks(effects: DeepEffect[], means?: ChunkMeans): DeepEffect
     byAdd.set(add, [...(byAdd.get(add) ?? []), e]);
   }
   for (const drops of byAdd.values()) {
-    const p = pickDrop(drops, means);
+    const p = pickDrop(drops, h2h);
     if (p) p.pick = true;
   }
   return effects;
+}
+
+/**
+ * The head-to-head pairs a refresh compares: each add's best drop by title against its other
+ * drops (the card's pick and its rivals), and the best waiver move gaining title odds against
+ * the others gaining some (the decision tier). Live moves only.
+ */
+export function pairsNeeded(effects: DeepEffect[]): [string, string][] {
+  const live = effects.filter((e) => !e.dropped && e.seasons > 0 && addOf(e.key) != null);
+  const out = new Map<string, [string, string]>();
+  const against = (field: DeepEffect[]) => {
+    const [leader, ...rest] = [...field].sort((a, b) => b.title.d - a.title.d);
+    if (leader) for (const e of rest) out.set(`${leader.key}|${e.key}`, [leader.key, e.key]);
+  };
+  const byAdd = new Map<string, DeepEffect[]>();
+  for (const e of live) byAdd.set(addOf(e.key)!, [...(byAdd.get(addOf(e.key)!) ?? []), e]);
+  for (const drops of byAdd.values()) against(drops);
+  against(live.filter((e) => e.title.d > 0));
+  return [...out.values()];
 }

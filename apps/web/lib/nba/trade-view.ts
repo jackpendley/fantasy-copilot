@@ -16,7 +16,7 @@ import { after } from "next/server";
 import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
 import { minimalOn } from "@/lib/cpu-saver";
 import { dbConfigured } from "@/lib/db";
-import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
+import { fingerprintOf, readView, viewStamp, writeView } from "@/lib/view-cache";
 import { loadLeagueView } from "./league-view";
 import { findTradeTargets, type TradeIdea } from "./trade";
 import { PACKAGES_PER_TARGET, compact, tradeSearchInput, type StoredIdea } from "./trade-task";
@@ -390,7 +390,7 @@ let running: Promise<boolean> | null = null;
  */
 export function refreshTradeTargets({ force = false }: { force?: boolean } = {}): Promise<boolean> {
   running ??= (async () => {
-    const row = await readView<StoredIdea[]>(KEY).catch(() => null);
+    const row = await viewStamp(KEY).catch(() => null);
     if (!force && row && !refreshDue(row.computedAt)) return false;
     const v = await loadLeagueView();
     const fingerprint = tradeFingerprint(v);

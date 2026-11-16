@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   if (body.version && body.version === (await deepVersion())) {
     return new NextResponse(null, { status: 204 });
   }
-  const [job, last] = await Promise.all([liveJob(), settledResults(keys)]);
+  const [job, last] = await Promise.all([liveJob(false, { keys }), settledResults(keys)]);
   // A job waiting with no runner (a missed dispatch) gets one while Jack watches.
   if (job?.live) after(() => ensureWorker(2 * 60_000).catch(() => false));
   return NextResponse.json(deepView(keys, job, last, body.roster));

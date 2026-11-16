@@ -377,6 +377,19 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
   - **Closing lines** are captured inside 20 minutes of tip, not 90. Each capture overwrote the last, so only the final one ever counted.
   - **The lock job's check** runs once per first tip per instance, not every 5 minutes for an hour.
 
+**Transfer cuts (Nov 16, second PR):**
+
+| Read                                                         | Before                                                                         | After                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Moves poll, Moves page, trade simulate poll, Free agents tab | the whole deep-checks row (~100 KB, every move)                                | only the moves shown, cut in SQL (`liveJob(…, { keys })`)                                      |
+| Job refresh (every 20 s per job)                             | every move's sums (~270 B each)                                                | only moves still racing; settled ones remembered per instance, all re-read on the last refresh |
+| League page while a run updates                              | full page every 5 s; every final run's history and every league move each time | every 15 s; history and moves kept a minute per instance                                       |
+| Trends (and Draft)                                           | prior seasons' ~1 MB row per view                                              | six hours per instance                                                                         |
+| Nightly freshness checks (season baselines, trade ideas)     | the whole row                                                                  | fingerprint and time only                                                                      |
+| A job's trade ideas                                          | the whole stored list                                                          | its first `TRADE_MOVES`, cut in SQL                                                            |
+
+Not yet cut, small this early in the season and measured with the traffic log before deciding: the Model page's and the nightly blend/defense reads of every logged game (they grow all season).
+
 **Rules from here (adding to the ones above):**
 
 - Every new scheduled step says how often it queries the database; a run with nothing new sends no query.

@@ -31,7 +31,7 @@ async function recentJobs() {
 async function jobStatus() {
   if (!dbConfigured()) return [];
   return db()<(JobRow & { last_ok: Date | null })[]>`
-    select distinct on (job) job, status, detail, ran_at,
+    select distinct on (job) job, status, left(detail, 300) as detail, ran_at,
       (select max(ran_at) from refresh_log o where o.job = r.job and o.status = 'ok') as last_ok
     from refresh_log r order by job, ran_at desc
   `;

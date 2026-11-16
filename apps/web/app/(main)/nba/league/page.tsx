@@ -191,10 +191,10 @@ export default async function LeaguePage({
           <RefreshCw className="size-4 shrink-0 animate-spin text-primary" aria-hidden />
           <span>
             {o.provisional
-              ? `Refining with the latest rosters: ${o.provisional.seasons.toLocaleString("en-US")} seasons so far. These odds are provisional and update every few seconds.`
+              ? `Refining with the latest rosters: ${o.provisional.seasons.toLocaleString("en-US")} seasons so far. These odds are provisional and update every 15 seconds.`
               : "Updating for the latest roster move. Provisional odds appear in a few seconds."}
           </span>
-          <LiveRefresh active seconds={5} />
+          <LiveRefresh active seconds={15} />
         </div>
       )}
 

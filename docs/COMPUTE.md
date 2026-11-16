@@ -376,6 +376,8 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
   - **The run's own logs** (`gameday` in refresh_log, its cpu_log row) are written only when the run queried the database anyway (`dbUse.queries`).
   - **Closing lines** are captured inside 20 minutes of tip, not 90. Each capture overwrote the last, so only the final one ever counted.
   - **The lock job's check** runs once per first tip per instance, not every 5 minutes for an hour.
+  - **Trade ideas after injury news or other teams' moves:** at most hourly on the worker (was every 15 minutes). On Nov 16 news launched the worker every 20 minutes from mid-afternoon, one 8-second trade search each, and each run kept Neon awake ~7 minutes. Jack's own moves and the nightly job still refresh right away.
+  - **The task runner leaves after 30 s idle** (was 2 minutes of asks every 15 s); a new task dispatches a run anyway.
 
 **Transfer cuts (Nov 16, second PR):**
 

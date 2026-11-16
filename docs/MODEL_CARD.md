@@ -910,6 +910,27 @@ Projecting from only the games the teammate played is clearly worse, so today's 
 
 **Not part of this test:** the mirror case (a teammate newly out long-term), and horizons between 10 games and the rest of the season.
 
+### Result (2026-11-16): failed, not shipped
+
+One evaluation (`scripts/backtest-teammate-return-2.ts`, pre-registration on main at 1746c87). `scripts/fetch-history.ts` cached every player who played in 2020-21 to 2023-24 (533, 579, 502 and 536; no failed fetch). `DRY=1` first: 1,224, 906 and 798 player-events (2021-22, 2022-23, 2023-24), 429 of them same-position backups, none without a position.
+
+| Set                                      | Candidate         | n                     | MAE today | MAE candidate | Candidate − today | 99.17% CI (by player) |
+| ---------------------------------------- | ----------------- | --------------------- | --------- | ------------- | ----------------- | --------------------- |
+| 1. All affected teammates                | A, full revert    | 2,928 (1,054 players) | 3.63      | 4.01          | +0.385            | [0.242, 0.533]        |
+| 1. All affected teammates                | B, after 10 games | 2,928 (1,054 players) | 3.63      | 3.75          | +0.121            | [0.015, 0.231]        |
+| 1. All affected teammates                | C, halfway        | 2,928 (1,054 players) | 3.63      | 3.65          | +0.024            | [−0.055, 0.102]       |
+| 2. Same-position backups, minutes up ≥ 4 | A, full revert    | 429 (315 players)     | 3.87      | 4.25          | +0.380            | [−0.091, 0.887]       |
+| 2. Same-position backups, minutes up ≥ 4 | B, after 10 games | 429 (315 players)     | 3.87      | 3.82          | −0.051            | [−0.408, 0.340]       |
+| 2. Same-position backups, minutes up ≥ 4 | C, halfway        | 429 (315 players)     | 3.87      | 3.73          | −0.144            | [−0.406, 0.147]       |
+
+No interval lies below 0, so today's projection stays for the rest of the season too. Over all affected teammates, reverting is worse (A, B) or no better (C). For same-position backups, B and C lean better but are well within noise.
+
+**Exploration, after the evaluation (not a test):** backup centers whose minutes rose ≥ 6 during the absence (Paul Reed's case), signed error over the rest of the season, n = 31: today **+2.02** FP/G, A −3.72, B −1.99, C −0.85.
+
+- **Reading:** across all fill-ins, today's projection holds up for the rest of the season as it did for 10 games. The one hint is the narrowest group: big-minute backup centers ran about 2 FP/G below today's projection over the rest of the season, and halfway came closest. With 31 events and the subgroup chosen after the fact, that's a lead, not a finding.
+- **For Reed:** no tested rule says to change his 27.1. If the hint holds, his rest-of-season value is nearer 25 than 27 once Duren is back.
+- **Next, if wanted:** pre-register "halfway for same-position backups whose minutes rose ≥ 6" and judge it forward on this season's returns.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

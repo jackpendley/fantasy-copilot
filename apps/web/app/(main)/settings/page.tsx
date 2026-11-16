@@ -79,7 +79,7 @@ async function computeUse() {
     db()<{ jobs: number; ms: number | null; secs: number | null; moves: number | null }[]>`
       select count(*)::int as jobs, avg(vercel_cpu_ms)::float as ms,
         avg(extract(epoch from updated_at - created_at)) filter (where status = 'done')::float as secs,
-        avg(jsonb_array_length(moves))::float as moves
+        avg(coalesce(n_moves, jsonb_array_length(moves)))::float as moves
       from sim_jobs where created_at > now() - interval '24 hours'
     `,
   ]);

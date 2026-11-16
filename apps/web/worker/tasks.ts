@@ -32,7 +32,8 @@ const HANDLERS: Record<string, (input: never) => unknown> = {
  * simulations are under way (a task then is rare; each ask costs the app a request).
  */
 const POLL_MS = 15_000;
-const IDLE_MS = 2 * 60_000;
+// Short: each ask is a query, and a new task dispatches a run anyway (Neon sleeps sooner).
+const IDLE_MS = 30_000;
 const STAY_MS = 30_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

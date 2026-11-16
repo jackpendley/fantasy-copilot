@@ -820,6 +820,23 @@ One evaluation (pre-registration on main at f038550; code on the unmerged branch
 - **Before an attempt 3:** profile where the time goes. One candidate is roster changes clearing the lineup caches, and the per-check scoring. Any new attempt needs its own pre-registration.
 - **Reported (4,000 seasons, noisy):** Reed for Naz Reid: raw −1.0, fit +0.3. Reed for Kris Dunn: raw +0.4, fit +1.3.
 
+### Attempt 3: profiling, no test run (2026-11-16)
+
+Branch `experiment/fit-streams-3` (not merged). `scripts/profile-sim.ts` there snapshots the league's simulation input to `data/local/` and times or profiles either rule offline (a plain esbuild bundle under `node --cpu-prof`; through tsx every frame reads as line 1). One machine, 1,000 seasons, profiling seed 20261116.
+
+**Where attempt 2's extra time went** (fit 7.8 ms vs raw 4.0 ms per season, self time over 1,000 seasons):
+
+| Cost                           | Extra   | Cause                                                                                  |
+| ------------------------------ | ------- | -------------------------------------------------------------------------------------- |
+| `topFree`                      | +0.75 s | re-sorted its shortlist on every insert while scanning every free agent                |
+| `weekOf` and its lineup solves | +1.1 s  | the week's lineups solved again after every roster change and at each new week         |
+| `lastSlots`                    | +0.54 s | copying lineup slots, also on the raw path (so the measured baseline was inflated too) |
+| drop pool, closures, GC        | +0.6 s  | copy-and-sort of the roster each check, closures built per check                       |
+
+**The rewrite:** slots only on the fit path; week lineups from today on; fixed-size shortlists; scoring hoisted out of per-check closures. It makes **identical decisions** (same seed: the same 73,021 adds and the same title odds for all 12 teams as attempt 2). The cost went from **7.8 to 5.1 ms per season**, against a raw rule of **3.1 ms** in the same bundle: **+65%**, short of check 5's +20%.
+
+**What's left is the design, not waste:** per 1,000 seasons, 424k fit checks, 60% of which rebuild the week's lineups (each team's first check of a week, and every check after a roster change). That's 1.37M extra lineup solves on top of the raw rule's 1.57M, plus the scoring itself. Getting to +20% needs a cheaper model of positional need, for example room counts by position without solving lineups, or today's room only. That would be a different candidate with its own pre-registration. So **no attempt-3 run was made**: it would fail check 5 for certain.
+
 ## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
 
 **Question:** a player who filled in while a regular teammate was out keeps his inflated numbers in every rest-of-season value: trades, Moves, the season simulator. Example, Nov 16: Paul Reed played all 12 of his games without Jalen Duren (out since Oct 23). Ours projects 27.1 FP/G, ESPN preseason 17.6, for all 60 games left, though Duren's estimated return is Nov 24. Does projecting from the games the teammate **played** predict the player better once the teammate is back?

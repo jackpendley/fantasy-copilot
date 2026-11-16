@@ -873,6 +873,43 @@ Projecting from only the games the teammate played is clearly worse, so today's 
 - **So** Paul Reed's 27.1 isn't shown to be inflated for the coming weeks.
 - **Not tested:** horizons beyond 10 games, and direct same-position backups specifically. Either needs its own pre-registration, judged forward on this season's later returns, since these two seasons have now been looked at.
 
+## Pre-registration: teammate returns, test 2 — rest of season and same-position backups (2026-11-16, before any run)
+
+**Question:** test 1 (above) judged the next 10 games after a regular teammate returns. Rest-of-season values (the card's projected points, `teamValue` in trades and Moves, the simulator) hold one per-game number for every game left. Does a fill-in's projection over **the rest of the season** improve if it reverts, fully or partly, to how he played with the teammate? And is the answer different for a **direct same-position backup** (Paul Reed behind Jalen Duren)?
+
+**Why older seasons:** 2024-25 and 2025-26 were looked at in test 1. Jack chose (Nov 16) to test now on **2021-22, 2022-23 and 2023-24**, which no test has evaluated for this question (2023-24's logs were only a prior in test 1), rather than wait for this season's returns.
+
+**Data:** ESPN's public season pool lists every player who played each season and his default position; each one's public game log is cached (`scripts/fetch-history.ts`, `data/local/backtest/`). The prior is his previous season (2020-21 for 2021-22, and so on), as in test 1.
+
+**Events and affected players:** exactly as test 1 (`scripts/backtest-teammate-return.ts`): T averages 20+ minutes over his last 10 games, misses ≥ 5 straight team games, and plays again for the same team (game R). P is on that team at R, with ≥ 3 games during the absence and ≥ 10 before R. As of R's day.
+
+**Target:** P's mean FP over **all his remaining regular-season games** from R (at least 10).
+
+**Today's rule (baseline):** `perGameProjection` from all his games so far.
+
+**Candidates** (each the shipped function with the same prior):
+
+- **A, full revert:** from only his games this season in which T played.
+- **B, revert after 10:** today's projection for the team's next 10 games, A after; the predicted mean weights them by the team's remaining games (known on the day).
+- **C, halfway:** the mean of today's projection and A, for every remaining game.
+
+**Event sets:**
+
+1. All affected teammates.
+2. **Same-position backups:** P's default position group equals T's (guards PG/SG, forwards SF/PF, centers C), and P's minutes during the absence exceed his minutes before it by ≥ 4.
+
+**Metric:** per (P, event), |candidate − actual| − |today − actual|; the mean, with a bootstrap interval (4,000 resamples, clustered by player). Three candidates × two sets = six comparisons, so each uses a **99.17% interval** (Bonferroni for 95% overall).
+
+**Ships only if** a comparison's interval is entirely below 0.
+
+- A pass in set 1 applies to every player whose teammate returns; a pass only in set 2 applies only to same-position backups whose minutes rose ≥ 4.
+- If more than one candidate passes in a set, the lowest MAE ships.
+- Shipping means rest-of-season values change on T's estimated return day (simulator, `teamValue`, week projection, trades, the card's "after T returns" number), with an ADR. If none passes, nothing changes, and the cards' rest-of-season values stay as they are.
+
+**When:** `DRY=1` first (event counts only, no outcomes), then one evaluation. Nothing to tune; thresholds are fixed above.
+
+**Not part of this test:** the mirror case (a teammate newly out long-term), and horizons between 10 games and the rest of the season.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

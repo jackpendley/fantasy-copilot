@@ -762,6 +762,23 @@ The pre-registration above was committed (6ce7d6b) before the harness existed (`
 
 **When:** one evaluation, run once the candidate is implemented (`apps/web/scripts/experiment-fit-streams.ts`), with no tuning between runs. A failed check isn't re-run with changed thresholds.
 
+### Result (2026-11-16): failed checks 1 and 5, not shipped
+
+One evaluation. The code is kept on the unmerged branch `experiment/fit-streams` (d07ab7c): the `fitStreams` flag, the per-season adds and pickups it was measured by, the check-1 test, and `scripts/experiment-fit-streams.ts`. League setup: day 28 (week 5), 15 regular weeks left, 4,000 seasons per rule.
+
+| Check                    | Result                                                                                                                    |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| 1. Fit (synthetic)       | **Fail.** The guard was 0.556 of the candidate's pickups of the two (n = 417; raw rule 0.480, n = 515). The bar was 0.90. |
+| 2. Add volume            | Pass for all 11 teams with ≥ 0.25 adds per week. The largest change was −0.08 a week.                                     |
+| 3. Weekly scoring spread | Pass for all 9 teams with act ≥ 0.7. Every CV moved by 0.003 or less.                                                     |
+| 4. League points         | Pass: 847.7 → 861.5 a week (+1.6%).                                                                                       |
+| 5. Cost                  | **Fail:** 3.6 → 8.9 ms per season (+147%). The bar was +20%.                                                              |
+
+- **A disclosure on check 1:** the first harness measured a proxy, which of the two free agents was on the final roster: 0.773 vs raw 0.503. The pre-registration says "its streams", so the pickups themselves were then counted once, and that count is the result above. The bar wasn't changed.
+- **Why check 1 failed (diagnosis after the result):** at 1.5 adds a week, the synthetic team usually adds **both** free agents over a season. The center also adds lineup points: UTIL slots held by 19–20-point forwards. So the share of pickups can't show which one the rule prefers when it has to choose. A revised check would need to measure the first choice between them. That needs a new pre-registration, and a cheaper candidate, given check 5.
+- **Reported (4,000 seasons, noisy):** Jack's title odds with Reed for Naz Reid: raw +0.2, fit +0.6. With Reed for Kris Dunn: raw +0.8, fit +0.9. Production's racing deep check that day settled at Reid +0.4±0.1 and Dunn +0.3±0.1 (160,000 seasons).
+- **Note on check 3:** CVs were pooled over seasons and weeks (about 0.29, which includes between-season spread), not the within-season ~0.13 of the calibration. Both rules were measured the same way.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

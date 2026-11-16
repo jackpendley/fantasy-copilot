@@ -4,9 +4,11 @@ import "server-only";
 // plain JSON. The moves are split into groups of 12, most important first; runners take a
 // group's chunks of 500 seasons, post back paired results, and the Outlook and the Moves checks
 // update from the sums. Moves stop getting seasons once their title change is known to their
-// tier's precision (ADR-060: ±0.35 points for the moves Jack acts on, ±1 for the rest); clearly
-// worse moves stop early. Trades Jack asks to simulate get a small job of their own (sim-asked:
-// only those trades), run before the full job and invisible to the Moves and League pages.
+// tier's precision (ADR-060, ADR-063: ±0.2 points for the moves Jack acts on, ±0.1 for his best
+// move and its rivals, ±1 for the rest); moves still in reach of a better one race on into a
+// deeper tier, and clearly worse moves stop early. Trades Jack asks to simulate get a small job
+// of their own (sim-asked: only those trades), run before the full job and invisible to the
+// Moves and League pages.
 
 import {
   toWire,
@@ -18,12 +20,17 @@ import {
 import { db, dbConfigured } from "@/lib/db";
 import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
 import {
+  DECISION_TIER,
   MIN_BASE_SEASONS,
   REST_TIER,
   TOP_TIER,
+  addOf,
   contendersOf,
   effectsFromSums,
+  markPicks,
+  promotions,
   withPBest,
+  type ChunkMeans,
   type DeepEffect,
   type MoveSums,
   type Tier,
@@ -50,6 +57,8 @@ import {
   groupsOf,
   hasChunksLeft,
   pickGroup,
+  promoteGroups,
+  type GroupKeys,
   type SimBuildInput,
   type SimGroup,
   type TradeSpec,
@@ -66,7 +75,7 @@ import { decodeWire, encodeWire } from "@/lib/wire-json";
 export const CHUNK_SEASONS = 500;
 export const REPLAYS = 10;
 /** The most any group can take (its own tier's limit is stored with it). */
-const MAX_CHUNKS = TOP_TIER.maxSeasons / CHUNK_SEASONS;
+const MAX_CHUNKS = DECISION_TIER.maxSeasons / CHUNK_SEASONS;
 const MIN_BASE_CHUNKS = MIN_BASE_SEASONS / CHUNK_SEASONS;
 /**
  * Runners' posts recompute the checks at most this often (and whenever all are back): each
@@ -597,22 +606,43 @@ async function moveSums(jobId: number): Promise<Map<string, MoveSums>> {
   );
 }
 
-/** Each contender's mean title difference in each of its chunks (for P(best)). */
-async function titleMeans(
-  jobId: number,
-  keys: string[],
-): Promise<Map<string, Map<number, number>>> {
-  const out = new Map<string, Map<number, number>>();
-  if (keys.length < 2) return out;
-  const rows = await db()<{ key: string; chunk: number; m: number }[]>`
-    select key, chunk, title_s / n as m from sim_move_sums
-    where job_id = ${jobId} and key = any(${keys})
+/**
+ * Each move's mean title and wins difference in each of its chunks: head-to-head comparisons
+ * (racing, the cards' picks) and P(best).
+ */
+async function chunkMeans(jobId: number, keys: string[]): Promise<ChunkMeans> {
+  const out: ChunkMeans = new Map();
+  if (!keys.length) return out;
+  const rows = await db()<{ key: string; chunk: number; t: number; w: number }[]>`
+    select key, chunk, title_s / n as t, wins_s / n as w from sim_move_sums
+    where job_id = ${jobId} and key = any(${keys}) and n > 0
   `;
   for (const r of rows) {
     if (!out.has(r.key)) out.set(r.key, new Map());
-    out.get(r.key)!.set(r.chunk, r.m);
+    out.get(r.key)!.set(r.chunk, { title: r.t, wins: r.w });
   }
   return out;
+}
+
+/**
+ * Racing (ADR-063): move the promoted moves into new, deeper groups. One refresh at a time per
+ * job (a lock), reading the groups again inside it, so two refreshes never move a move twice.
+ * Returns whether any moved.
+ */
+async function promote(jobId: number, promo: Map<string, Tier>): Promise<boolean> {
+  return db().begin(async (sql) => {
+    await sql`select pg_advisory_xact_lock(${jobId})`;
+    const groups = await sql<GroupKeys[]>`
+      select grp, keys, active, next_chunk, max_seasons from sim_groups where job_id = ${jobId}
+    `;
+    const { update, add } = promoteGroups(groups, promo);
+    if (!add.length) return false;
+    for (const g of update)
+      await sql`update sim_groups set keys = ${g.keys}, active = ${g.active}
+        where job_id = ${jobId} and grp = ${g.grp}`;
+    await sql`insert into sim_groups ${sql(add.map((g) => ({ job_id: jobId, ...g })))}`;
+    return true;
+  });
 }
 
 /** The base run so far: every team's odds (weighted by seasons) and Jack's own outcomes. */
@@ -666,41 +696,64 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
     from sim_jobs where id = ${jobId}
   `;
   if (!job) return { done: true };
-  const groups = await db()<GroupRow[]>`
+  const loadGroups = () => db()<GroupRow[]>`
     select grp, prio, keys, active, cardinality(active) as n_active, next_chunk, posted,
       target_2se, min_seasons, max_seasons, min_seasons / ${job.chunk_seasons} as min_chunks,
       max_seasons / ${job.chunk_seasons} as max_chunks
     from sim_groups where job_id = ${jobId} order by prio, grp
   `;
-  // Each move is checked to its group's precision (ADR-060).
-  const tiers = new Map<string, Tier>(
-    groups.flatMap((g) =>
-      g.keys.map((k) => [
-        k,
-        { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
-      ]),
-    ),
-  );
+  let groups = await loadGroups();
   const { outlook, base } = await baseRun(jobId);
   if (!base.seasons) return { done: job.status === "done" };
-  const effects = effectsFromSums(
-    groups.flatMap((g) => g.keys),
-    await moveSums(jobId),
-    (k) => tiers.get(k) ?? TOP_TIER,
+  const sums = await moveSums(jobId);
+  // Each move is checked to its group's precision (ADR-060).
+  const tierOf = (gs: GroupRow[]) => {
+    const tiers = new Map<string, Tier>(
+      gs.flatMap((g) =>
+        g.keys.map((k) => [
+          k,
+          { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
+        ]),
+      ),
+    );
+    return (k: string) => tiers.get(k) ?? TOP_TIER;
+  };
+  const effectsOf = (gs: GroupRow[]) =>
+    effectsFromSums(
+      gs.flatMap((g) => g.keys),
+      sums,
+      tierOf(gs),
+    );
+  let effects = effectsOf(groups);
+  // Waiver moves still in play, compared head to head (trade ideas are compared on their own).
+  const means = await chunkMeans(
+    jobId,
+    effects.filter((e) => addOf(e.key) != null && !e.dropped && e.seasons > 0).map((e) => e.key),
   );
+  // Racing (ADR-063): moves still in reach of a card's best drop, or of Jack's best move, go
+  // deeper. Not while closing a job whose runners went quiet (it would never finish).
+  if (job.status === "running" && !job.asked_only && !closing) {
+    const promo = promotions(effects, tierOf(groups), means);
+    if (promo.size && (await promote(jobId, promo))) {
+      groups = await loadGroups();
+      effects = effectsOf(groups);
+      await startWorker();
+    }
+  }
   // "Best" is among waiver moves (trade ideas are checked too, but compared on their own).
   const contenders = contendersOf(
     effects,
-    new Set(effects.filter((e) => !e.key.startsWith("trade:")).map((e) => e.key)),
+    new Set(effects.filter((e) => addOf(e.key) != null).map((e) => e.key)),
   );
-  withPBest(
-    effects,
-    contenders,
-    await titleMeans(
-      jobId,
-      contenders.map((e) => e.key),
-    ),
+  const titleMeans = new Map(
+    contenders.map((e) => [
+      e.key,
+      new Map([...(means.get(e.key) ?? [])].map(([c, m]) => [c, m.title])),
+    ]),
   );
+  withPBest(effects, contenders, contenders.length < 2 ? new Map() : titleMeans);
+  // The drop each card opens on.
+  markPicks(effects, means);
 
   // Each group keeps only its moves still getting seasons.
   const active = new Set(effects.filter((e) => e.active).map((e) => e.key));
@@ -885,8 +938,9 @@ export async function liveJob(
 }
 
 /**
- * Each add's best checked move (by title change) for the Free agents tab: from the settled
- * results and the job under way, chosen as on Moves (lib/nba/move-shown.ts).
+ * Each add's best checked move for the Free agents tab (its card's pick, else the most title
+ * odds): from the settled results and the job under way, chosen as on Moves
+ * (lib/nba/move-shown.ts).
  */
 export async function bestChecksByAdd(
   addIds: number[],
@@ -915,7 +969,10 @@ export async function bestChecksByAdd(
     if (!s.effect || s.effect.seasons <= 0) continue;
     const add = Number(key.split(":")[0]);
     const cur = byAdd.get(add);
-    if (!cur || s.effect.title.d > cur.effect.title.d)
+    // The card's pick first (lib/nba/deep-check.ts pickDrop), then the most title odds.
+    const rank = (e: DeepEffect) => [Number(e.pick ?? false), e.title.d] as const;
+    const [p, t] = rank(s.effect);
+    if (!cur || p > rank(cur.effect)[0] || (p === rank(cur.effect)[0] && t > rank(cur.effect)[1]))
       byAdd.set(add, { key, state: s.state, effect: s.effect });
   }
   return { byAdd, live: job?.live ?? false };

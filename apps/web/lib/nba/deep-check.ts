@@ -19,8 +19,16 @@ export interface Tier {
   minSeasons: number;
   maxSeasons: number;
 }
-/** The moves Jack acts on: each Moves card's opening move, streams, his watch list. */
-export const TOP_TIER: Tier = { target2se: 0.0035, minSeasons: 4_000, maxSeasons: 40_000 };
+/**
+ * The move that could be Jack's best of all, and every move still in reach of it (racing,
+ * ADR-063): ±0.1 title points.
+ */
+export const DECISION_TIER: Tier = { target2se: 0.001, minSeasons: 4_000, maxSeasons: 160_000 };
+/**
+ * The moves Jack acts on: each Moves card's opening move, streams, his watch list, and the
+ * drops still in reach of a card's best (ADR-063): ±0.2.
+ */
+export const TOP_TIER: Tier = { target2se: 0.002, minSeasons: 4_000, maxSeasons: 40_000 };
 /** Everything else (other drops, trade ideas, the Free agents tab): enough to rank them. */
 export const REST_TIER: Tier = { target2se: 0.01, minSeasons: 1_000, maxSeasons: 6_000 };
 /** A move worse than doing nothing by four standard errors stops after this many (ADR-058). */
@@ -49,6 +57,8 @@ export interface DeepEffect {
   active: boolean;
   /** Stopped early: clearly worse than doing nothing. */
   dropped: boolean;
+  /** The drop its add's card opens on (pickDrop, head to head); set by the job's refresh. */
+  pick?: boolean;
 }
 
 const deltaOf = (s: MetricSums): Delta => {
@@ -260,4 +270,131 @@ export function baseOdds(chunks: ChunkResult[]): Record<Metric, number> & { seas
   for (const m of METRICS)
     out[m] = seasons ? chunks.reduce((a, c) => a + c.base[m], 0) / seasons : 0;
   return out;
+}
+
+/** Each move's mean title and wins difference in each of its chunks (for head-to-head checks). */
+export type ChunkMeans = Map<string, Map<number, { title: number; wins: number }>>;
+
+/** Head to head needs at least this many chunks in common. */
+const MIN_SHARED = 8;
+
+/**
+ * Move a minus move b, head to head: over the chunks both have (a chunk number is the same
+ * seasons for every move), so the noise they share cancels. Null with too few chunks in common.
+ */
+export function pairedDiff(
+  a: string,
+  b: string,
+  means: ChunkMeans,
+  metric: "title" | "wins" = "title",
+): Delta | null {
+  const ma = means.get(a);
+  const mb = means.get(b);
+  if (!ma || !mb) return null;
+  const diffs: number[] = [];
+  for (const [chunk, x] of ma) {
+    const y = mb.get(chunk);
+    if (y) diffs.push(x[metric] - y[metric]);
+  }
+  const n = diffs.length;
+  if (n < MIN_SHARED) return null;
+  const d = diffs.reduce((s, x) => s + x, 0) / n;
+  const v = diffs.reduce((s, x) => s + (x - d) ** 2, 0) / (n - 1);
+  return { d, se: Math.sqrt(v / n) };
+}
+
+type Rated = Pick<DeepEffect, "key" | "title">;
+
+/**
+ * Is move a clearly better for the title than move b (by two standard errors)? Head to head
+ * when they share enough chunks; otherwise from their own margins (which can't tell close moves
+ * apart, so they keep racing).
+ */
+export function beats(a: Rated, b: Rated, means?: ChunkMeans): boolean {
+  const p = means ? pairedDiff(a.key, b.key, means) : null;
+  if (p) return p.d > 2 * p.se;
+  return a.title.d - b.title.d > 2 * Math.hypot(a.title.se, b.title.se);
+}
+
+/** The add a waiver move's key is for (moveKey: add:drop:il); null for a trade. */
+export const addOf = (key: string): string | null =>
+  key.startsWith("trade:") ? null : key.split(":")[0]!;
+
+/**
+ * The drop an add's card opens on (Jack, Nov 16): the most title odds, unless another drop is
+ * within the simulation's noise of it, head to head; then, among those, the most expected wins,
+ * then the better win chance this week (`week`, when known), then the most title odds.
+ */
+export function pickDrop<T extends Rated & Pick<DeepEffect, "wins">>(
+  options: T[],
+  means?: ChunkMeans,
+  week?: (o: T) => number,
+): T | null {
+  const leader = options.reduce<T | null>((b, o) => (!b || o.title.d > b.title.d ? o : b), null);
+  if (!leader) return null;
+  return options
+    .filter((o) => o === leader || !beats(leader, o, means))
+    .sort(
+      (x, y) => y.wins.d - x.wins.d || (week ? week(y) - week(x) : 0) || y.title.d - x.title.d,
+    )[0]!;
+}
+
+/** Drops racing a card's best at once (beyond these, a drop is too unlikely to matter). */
+const MAX_RIVALS = 3;
+/** Moves racing for Jack's best move of all. */
+const MAX_DECISION = 4;
+
+/**
+ * Racing (ADR-063): the moves whose check must go deeper now, and to which tier.
+ * - Each card's add (an add with a move checked to the top tier): its best drop by title and up
+ *   to MAX_RIVALS drops not clearly behind it get the top tier, so the card opens on numbers
+ *   as precise as its rivals'.
+ * - Jack's best move of all (the most title odds, gaining some) and up to MAX_DECISION - 1
+ *   moves not clearly behind it get the decision tier.
+ * Only raises a move's tier; a move clearly worse than doing nothing never races.
+ */
+export function promotions(
+  effects: DeepEffect[],
+  tierOf: (key: string) => Tier,
+  means?: ChunkMeans,
+): Map<string, Tier> {
+  const out = new Map<string, Tier>();
+  const raise = (key: string, tier: Tier) => {
+    if (tier.maxSeasons > Math.max(tierOf(key).maxSeasons, out.get(key)?.maxSeasons ?? 0))
+      out.set(key, tier);
+  };
+  const live = effects.filter((e) => !e.dropped && e.seasons > 0 && addOf(e.key) != null);
+  const race = (field: DeepEffect[], max: number, tier: Tier) => {
+    const [leader, ...rest] = [...field].sort((a, b) => b.title.d - a.title.d);
+    if (!leader) return;
+    raise(leader.key, tier);
+    for (const e of rest.filter((e) => !beats(leader, e, means)).slice(0, max)) raise(e.key, tier);
+  };
+  const byAdd = new Map<string, DeepEffect[]>();
+  for (const e of live) byAdd.set(addOf(e.key)!, [...(byAdd.get(addOf(e.key)!) ?? []), e]);
+  for (const drops of byAdd.values())
+    if (drops.some((e) => tierOf(e.key).maxSeasons >= TOP_TIER.maxSeasons))
+      race(drops, MAX_RIVALS, TOP_TIER);
+  race(
+    live.filter((e) => e.title.d > 0),
+    MAX_DECISION - 1,
+    DECISION_TIER,
+  );
+  return out;
+}
+
+/** Each add's card pick (pickDrop, head to head), marked on its effect. */
+export function markPicks(effects: DeepEffect[], means?: ChunkMeans): DeepEffect[] {
+  const byAdd = new Map<string, DeepEffect[]>();
+  for (const e of effects) {
+    e.pick = false;
+    const add = addOf(e.key);
+    if (add == null || e.dropped || e.seasons <= 0) continue;
+    byAdd.set(add, [...(byAdd.get(add) ?? []), e]);
+  }
+  for (const drops of byAdd.values()) {
+    const p = pickDrop(drops, means);
+    if (p) p.pick = true;
+  }
+  return effects;
 }

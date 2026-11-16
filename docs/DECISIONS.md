@@ -811,7 +811,7 @@
   - The trade search's fingerprint includes both lists, so a change re-runs it.
   - A change also queues a simulation job ("You changed your protected players"). Moves that no longer exist leave the page at once, since the page's analysis reads the prefs.
   - Nothing goes to ESPN.
-- **Precision tiers** (`lib/nba/deep-check.ts`; stored per group: `target_2se`, `min_seasons`, `max_seasons`):
+- **Precision tiers** (`lib/nba/deep-check.ts`; stored per group: `target_2se`, `min_seasons`, `max_seasons`; superseded by ADR-063, Nov 16):
 
   | Tier     | Moves                                                                                              | Target (2 SE)      | Seasons      |
   | -------- | -------------------------------------------------------------------------------------------------- | ------------------ | ------------ |
@@ -872,3 +872,39 @@
   - taller squares or two-line stats;
   - lines cut with "…", or one line shrinking on its own;
   - layouts that spread the name and stats above and below a centered score.
+
+## ADR-063: racing deep checks and head-to-head picks (2026-11-16)
+
+- **Why:** the Paul Reed card opened on dropping Kris Dunn.
+  - Dunn's drop, at the rest tier (6,000 seasons): title +0.5±0.5, wins +0.14.
+  - Naz Reid's drop, at the top tier (40,000 seasons): title +0.5±0.2, wins +0.17. It was also better on #1 seed, this week (+12.8 vs +9.2) and rest-of-season lineup points (+7 vs −209).
+  - The card opened on the highest title number, however imprecise.
+  - Jack wants each card to open on the best move, checked most precisely. He also wants more precision than ±0.2 for the best moves: the better a move looks, the deeper it's checked.
+- **Tiers** (`lib/nba/deep-check.ts`, all 2 SE of the title change):
+
+  | Tier         | Moves                                                               | Target | Seasons       |
+  | ------------ | ------------------------------------------------------------------- | ------ | ------------- |
+  | **Decision** | Jack's best move (most title odds, gaining some) and up to 3 rivals | ±0.1   | 4,000–160,000 |
+  | **Top**      | each card's opening move, and its best drop plus up to 3 rivals     | ±0.2   | 4,000–40,000  |
+  | **Rest**     | everything else                                                     | ±1.0   | 1,000–6,000   |
+  - A **rival** is a move not clearly behind the leader: not 2 SE behind it head to head (`beats`).
+  - Clearly worse moves still stop at 1,000 seasons (ADR-058).
+
+- **Racing** (`promotions`, applied in `refreshJob`):
+  - Each refresh, a move that should be deeper leaves its group for a new group at that tier (`promoteGroups`: up to 12 moves, one tier per group).
+  - The new group's chunks continue after its moves' old groups, so no move repeats a chunk number and every move stays paired.
+  - Tiers only go up within a job.
+  - An advisory lock per job keeps two refreshes from moving the same move.
+  - No promotions happen while a quiet job is being closed.
+- **Head to head** (`pairedDiff`): two moves' difference over the chunks they share. Chunk numbers are the same seasons for every move, so the noise they share cancels.
+  - It needs 8 shared chunks. With fewer, each move's own margin is used, which keeps close moves racing.
+- **The pick** (`pickDrop`, marked as `pick` on each add's chosen effect):
+  - the most title odds;
+  - among drops within the noise of the leader, the most expected wins;
+  - then this week's win chance (on the page);
+  - then title.
+
+  The Moves cards open on it (streams still open on the drop that made them a stream). The Free agents tab shows it, and the cards rank by it. The drop list shows each title change with its ±.
+
+- **Cost:** to be measured on the first jobs (docs/COMPUTE.md). Budget: 12 min per job (about 6.6 before) and 2 s of Vercel CPU (0.8 before). Over budget, the decision tier's cap drops to 72,000 seasons (±0.15).
+- **Note:** the ± is simulation noise only. The model's own error (projections, the sim's assumptions) is larger, and no number of seasons removes it.

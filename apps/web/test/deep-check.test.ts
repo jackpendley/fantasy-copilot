@@ -13,6 +13,7 @@ import {
   pairsNeeded,
   pickDrop,
   promotions,
+  racingTargets,
   DECISION_TIER,
   EARLY_SEASONS,
   REST_TIER,
@@ -333,5 +334,30 @@ describe("racing and each card's pick (ADR-063)", () => {
       ["2:a:", "2:b:"],
       ["1:reid:", "2:a:"],
     ]);
+  });
+  it("racing elimination: a promoted move clearly behind its race's leader stops racing", () => {
+    const best = fx("1:reid:", 0.006, 0.0005, 0.17);
+    const close = fx("1:dunn:", 0.0058, 0.0005, 0.11);
+    const behind = fx("2:x:", 0.002, 0.0005, 0.05); // out of the race for the best move
+    const card = fx("3:a:", -0.002, 0.0005);
+    const cardBehind = fx("3:b:", -0.006, 0.0005); // behind his card's best
+    const racing = new Map([
+      ["1:reid:", DECISION_TIER],
+      ["1:dunn:", DECISION_TIER],
+      ["2:x:", DECISION_TIER],
+      ["3:b:", TOP_TIER],
+    ]);
+    const lowered = racingTargets(
+      [best, close, behind, card, cardBehind],
+      (k) => racing.get(k) ?? null,
+    );
+    // Still in reach: no change. Out of the best-move race but his card's best: a card's ±0.2.
+    expect(lowered.has("1:reid:")).toBe(false);
+    expect(lowered.has("1:dunn:")).toBe(false);
+    expect(lowered.get("2:x:")).toBe(TOP_TIER);
+    // Behind his card's best drop: the rest tier (stops).
+    expect(lowered.get("3:b:")).toBe(REST_TIER);
+    // Never promoted: untouched.
+    expect(lowered.has("3:a:")).toBe(false);
   });
 });

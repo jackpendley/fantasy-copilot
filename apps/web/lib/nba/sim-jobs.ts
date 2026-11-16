@@ -31,6 +31,7 @@ import {
   markPicks,
   pairsNeeded,
   promotions,
+  racingTargets,
   withPBest,
   type PairSums,
   type DeepEffect,
@@ -132,6 +133,7 @@ type GroupRow = SimGroup & {
   target_2se: number;
   min_seasons: number;
   max_seasons: number;
+  promoted: boolean;
 };
 
 const groupHasWork = (g: SimGroup) => hasChunksLeft(g, MIN_BASE_CHUNKS);
@@ -690,18 +692,24 @@ async function titleMeans(
  * job (a lock), reading the groups again inside it, so two refreshes never move a move twice.
  * Returns whether any moved.
  */
-async function promote(jobId: number, promo: Map<string, Tier>): Promise<boolean> {
+async function promote(
+  jobId: number,
+  promo: Map<string, Tier>,
+  chunkSeasons: number,
+): Promise<boolean> {
   return db().begin(async (sql) => {
     await sql`select pg_advisory_xact_lock(${jobId})`;
     const groups = await sql<GroupKeys[]>`
-      select grp, keys, active, next_chunk, max_seasons from sim_groups where job_id = ${jobId}
+      select grp, keys, active, next_chunk, max_seasons, promoted
+      from sim_groups where job_id = ${jobId}
     `;
-    const { update, add } = promoteGroups(groups, promo);
-    if (!add.length) return false;
+    const { update, add } = promoteGroups(groups, promo, chunkSeasons);
+    if (!update.length && !add.length) return false;
     for (const g of update)
       await sql`update sim_groups set keys = ${g.keys}, active = ${g.active}
         where job_id = ${jobId} and grp = ${g.grp}`;
-    await sql`insert into sim_groups ${sql(add.map((g) => ({ job_id: jobId, ...g })))}`;
+    if (add.length)
+      await sql`insert into sim_groups ${sql(add.map((g) => ({ job_id: jobId, ...g })))}`;
     return true;
   });
 }
@@ -759,7 +767,7 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   if (!job) return { done: true };
   const loadGroups = () => db()<GroupRow[]>`
     select grp, prio, keys, active, cardinality(active) as n_active, next_chunk, posted,
-      target_2se, min_seasons, max_seasons, min_seasons / ${job.chunk_seasons} as min_chunks,
+      target_2se, min_seasons, max_seasons, promoted, min_seasons / ${job.chunk_seasons} as min_chunks,
       max_seasons / ${job.chunk_seasons} as max_chunks
     from sim_groups where job_id = ${jobId} order by prio, grp
   `;
@@ -767,23 +775,28 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   const { outlook, base } = await baseRun(jobId);
   if (!base.seasons) return { done: job.status === "done" };
   const sums = await moveSums(jobId);
-  // Each move is checked to its group's precision (ADR-060).
-  const tierOf = (gs: GroupRow[]) => {
+  // Each move is checked to its group's precision (ADR-060), or to less once it's out of its
+  // race (`lowered`: ADR-063 racing elimination).
+  const tierOf = (gs: GroupRow[], lowered = new Map<string, Tier>()) => {
     const tiers = new Map<string, Tier>(
       gs.flatMap((g) =>
         g.keys.map((k) => [
           k,
-          { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
+          {
+            target2se: lowered.get(k)?.target2se ?? g.target_2se,
+            minSeasons: g.min_seasons,
+            maxSeasons: g.max_seasons,
+          },
         ]),
       ),
     );
     return (k: string) => tiers.get(k) ?? TOP_TIER;
   };
-  const effectsOf = (gs: GroupRow[]) =>
+  const effectsOf = (gs: GroupRow[], lowered?: Map<string, Tier>) =>
     effectsFromSums(
       gs.flatMap((g) => g.keys),
       sums,
-      tierOf(gs),
+      tierOf(gs, lowered),
     );
   let effects = effectsOf(groups);
   // Waiver moves still in play, compared head to head (trade ideas are compared on their own).
@@ -792,13 +805,27 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   // deeper. Not while closing a job whose runners went quiet (it would never finish).
   if (job.status === "running" && !job.asked_only && !closing) {
     const promo = promotions(effects, tierOf(groups), h2h);
-    if (promo.size && (await promote(jobId, promo))) {
+    if (promo.size && (await promote(jobId, promo, job.chunk_seasons))) {
       groups = await loadGroups();
       effects = effectsOf(groups);
       h2h = headToHeadFromSums(await pairSums(jobId, pairsNeeded(effects)));
       await startWorker();
     }
   }
+  // Racing elimination: a promoted move clearly behind its race's leader stops needing that
+  // race's precision.
+  const racing = new Map(
+    groups
+      .filter((g) => g.promoted)
+      .flatMap((g) =>
+        g.keys.map((k) => [
+          k,
+          { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
+        ]),
+      ),
+  );
+  const lowered = racingTargets(effects, (k) => racing.get(k) ?? null, h2h);
+  if (lowered.size) effects = effectsOf(groups, lowered);
   // The drop each card opens on.
   markPicks(effects, h2h);
 

@@ -1,8 +1,9 @@
 # Season simulations for the app (ADR-053): the Outlook and deep checks of waiver moves, run
 # here instead of on Vercel (whose free plan has 4 CPU-hours a month); and other tasks the app
 # hands off, like the trade idea search (docs/COMPUTE.md). The app starts this
-# workflow when rosters change (workflow_dispatch); the schedule is a fallback. Sixteen runners
-# take chunks of seasons from the app until every move's title change is known to ±0.5 points
+# workflow when rosters change (workflow_dispatch); the schedule is a fallback. Eighteen runners
+# (GitHub Free runs 20 jobs at once: these, the task runner and the peek) take chunks of seasons
+# from the app until every move's title change is known to its tier's precision
 # (ADR-058: every candidate move, most important first).
 # Secrets: WORKER_SECRET only (the app's /api/worker key). No ESPN or database credentials.
 
@@ -47,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
     steps:
       - uses: actions/checkout@v4
         with:

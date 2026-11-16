@@ -455,3 +455,37 @@ export function pairsNeeded(effects: DeepEffect[]): [string, string][] {
   against(live.filter((e) => e.title.d > 0));
   return [...out.values()];
 }
+
+/**
+ * Racing elimination (ADR-063): the precision a promoted move still needs, when it has fallen
+ * clearly behind (head to head) the leader of the race that promoted it. Out of the race for
+ * Jack's best move, it still gets a card's precision (the top tier) unless its own card's best
+ * drop also beats it; out of a card's race, the rest tier's (it stops). `promotedTier`: the tier
+ * of a move's racing group, null for moves not promoted.
+ */
+export function racingTargets(
+  effects: DeepEffect[],
+  promotedTier: (key: string) => Tier | null,
+  h2h?: HeadToHead,
+): Map<string, Tier> {
+  const out = new Map<string, Tier>();
+  const live = effects.filter((e) => !e.dropped && e.seasons > 0 && addOf(e.key) != null);
+  const top = (field: DeepEffect[]) =>
+    field.reduce<DeepEffect | null>((b, e) => (!b || e.title.d > b.title.d ? e : b), null);
+  const best = top(live.filter((e) => e.title.d > 0));
+  const byAdd = new Map<string, DeepEffect[]>();
+  for (const e of live) byAdd.set(addOf(e.key)!, [...(byAdd.get(addOf(e.key)!) ?? []), e]);
+  const behindOnCard = (e: DeepEffect) => {
+    const leader = top(byAdd.get(addOf(e.key)!)!)!;
+    return leader !== e && beats(leader, e, h2h);
+  };
+  for (const e of live) {
+    const t = promotedTier(e.key);
+    if (!t) continue;
+    if (t.maxSeasons >= DECISION_TIER.maxSeasons) {
+      if (best && best !== e && beats(best, e, h2h))
+        out.set(e.key, behindOnCard(e) ? REST_TIER : TOP_TIER);
+    } else if (t.maxSeasons >= TOP_TIER.maxSeasons && behindOnCard(e)) out.set(e.key, REST_TIER);
+  }
+  return out;
+}

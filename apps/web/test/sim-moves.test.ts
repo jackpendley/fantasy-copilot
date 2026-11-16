@@ -421,9 +421,23 @@ describe("trade ideas built as patches on the base season", () => {
 
 describe("racing moves into deeper groups (ADR-063)", () => {
   const groups = [
-    { grp: 0, keys: ["a", "b"], active: ["a"], next_chunk: 80, max_seasons: 40_000 },
-    { grp: 1, keys: ["c", "d", "e"], active: ["d"], next_chunk: 12, max_seasons: 6_000 },
-    { grp: 2, keys: ["f"], active: ["f"], next_chunk: 20, max_seasons: 6_000 },
+    {
+      grp: 0,
+      keys: ["a", "b"],
+      active: ["a"],
+      next_chunk: 80,
+      max_seasons: 40_000,
+      promoted: false,
+    },
+    {
+      grp: 1,
+      keys: ["c", "d", "e"],
+      active: ["d"],
+      next_chunk: 12,
+      max_seasons: 6_000,
+      promoted: false,
+    },
+    { grp: 2, keys: ["f"], active: ["f"], next_chunk: 20, max_seasons: 6_000, promoted: false },
   ];
 
   it("moves promoted moves to new groups whose chunks continue, one tier per group", () => {
@@ -434,6 +448,7 @@ describe("racing moves into deeper groups (ADR-063)", () => {
         ["f", TOP_TIER],
         ["a", DECISION_TIER],
       ]),
+      500,
     );
     expect(update).toEqual([
       { grp: 0, keys: ["b"], active: [] },
@@ -445,7 +460,13 @@ describe("racing moves into deeper groups (ADR-063)", () => {
     // c's group was at chunk 12 and f's at 20: the new group starts after both.
     expect(top).toMatchObject({ keys: ["c", "f"], active: ["c", "f"], next_chunk: 20, posted: 20 });
     expect(top.target_2se).toBe(TOP_TIER.target2se);
-    expect(deep).toMatchObject({ keys: ["a"], next_chunk: 80, posted: 80, prio: 1 });
+    expect(deep).toMatchObject({
+      keys: ["a"],
+      next_chunk: 80,
+      posted: 80,
+      prio: 1,
+      promoted: true,
+    });
     expect(add.map((g) => g.grp).sort()).toEqual([3, 4]);
     // No move is lost or doubled.
     const all = [
@@ -456,6 +477,27 @@ describe("racing moves into deeper groups (ADR-063)", () => {
     expect(all).toEqual(["a", "b", "c", "d", "e", "f"]);
   });
 
+  it("pools later promotions into a racing group with room, not a group of their own", () => {
+    const racing = [
+      ...groups,
+      { grp: 3, keys: ["c"], active: ["c"], next_chunk: 30, max_seasons: 40_000, promoted: true },
+    ];
+    const { update, add } = promoteGroups(racing, new Map([["f", TOP_TIER]]), 500);
+    expect(add).toEqual([]);
+    expect(update).toEqual([
+      { grp: 2, keys: [], active: [] },
+      { grp: 3, keys: ["c", "f"], active: ["c", "f"] },
+    ]);
+    // Not into a group behind his old one's chunks (he'd repeat chunk numbers), nor a full one.
+    const behind = [...groups, { ...racing[3]!, next_chunk: 10 }];
+    expect(promoteGroups(behind, new Map([["f", TOP_TIER]]), 500).add).toHaveLength(1);
+    const full = [
+      ...groups,
+      { ...racing[3]!, keys: Array.from({ length: 12 }, (_, i) => `k${i}`) },
+    ];
+    expect(promoteGroups(full, new Map([["f", TOP_TIER]]), 500).add).toHaveLength(1);
+  });
+
   it("leaves a move already that deep (another refresh moved it first)", () => {
     const { update, add } = promoteGroups(
       groups,
@@ -464,6 +506,7 @@ describe("racing moves into deeper groups (ADR-063)", () => {
         ["d", REST_TIER],
         ["zz", TOP_TIER],
       ]),
+      500,
     );
     expect(update).toEqual([]);
     expect(add).toEqual([]);

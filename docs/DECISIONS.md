@@ -918,3 +918,9 @@
   - Each card shows the kinds the move changes by 2 or more days, and both players' games in the playoff weeks.
   - **Why room and not "empty slots by kind" (#157's first version):** a swingman decides which slot is "the" empty one, so a center add read "guard 136 → 130".
 - **Not shipped:** position-aware streaming in the season sim. It failed its pre-registered checks (MODEL_CARD, Nov 16). The sim's in-season streams stay raw-value, while its lineups are position-aware.
+- **Addendum (Nov 16, evening): same precision, less compute (#163).**
+  - **The problem:** the next full job kept all 16 runners and still took 18.7 min and 2,152 chunks. Each refresh's promotions made their own group, so a ±0.1 move could sit alone in a group running up to 320 chunks and re-simulating the base each chunk. Rivals also raced on after clearly losing.
+  - **Pooling:** a promoted move joins a racing group of its tier with room (`sim_groups.promoted`, migration 0029). That needs fewer than 12 moves, chunks left, and not behind his old group's chunks. A new group is made only when none fits.
+  - **Elimination (`racingTargets`):** a promoted move clearly behind (2 SE, head to head) the leader of the race that promoted it stops needing that race's precision. Out of the best-move race, it still gets a card's ±0.2 unless its card's best drop also beats it. Out of a card's race, it stops. The leaders run to their targets.
+  - **Runners:** 16 → 18. GitHub Free runs 20 jobs at once, and the task runner and the peek take the rest.
+  - **Playoff replays stay at 10.** Measured with `scripts/measure-move-precision.ts` on three moves, title variance × CPU (lower is better): 1 replay ~110, 10 replays ~45, 20 replays ~60.

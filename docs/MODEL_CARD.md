@@ -779,6 +779,29 @@ One evaluation. The code is kept on the unmerged branch `experiment/fit-streams`
 - **Reported (4,000 seasons, noisy):** Jack's title odds with Reed for Naz Reid: raw +0.2, fit +0.6. With Reed for Kris Dunn: raw +0.8, fit +0.9. Production's racing deep check that day settled at Reid +0.4±0.1 and Dunn +0.3±0.1 (160,000 seasons).
 - **Note on check 3:** CVs were pooled over seasons and weeks (about 0.29, which includes between-season spread), not the within-season ~0.13 of the calibration. Both rules were measured the same way.
 
+## Pre-registration: position-aware streaming, attempt 2 (2026-11-16, before any run)
+
+**Why again:** the first attempt failed two checks (above). Check 1 was confounded: over a season the synthetic team adds both free agents, so the share of pickups can't show which one the rule prefers. Check 5 failed on cost: lineups were re-solved for each day of the week at every stream check.
+
+**Candidate (attempt 2):**
+
+- **Same values as attempt 1:** lineup points this week (positions, schedule, current absences), plus `3 x fppg` scaled by the share of games started.
+- **Cached lineups:** each team's lineups for the week, with every roster player who plays that day, are solved once per team per week and roster, then reused at every check. A player's own availability still counts his current absence.
+- **Fewer scored:** only the 5 weakest roster players by raw value are scored as drops (5 best free agents, as before).
+- Branch `experiment/fit-streams-2`.
+
+**Checks (all must pass):**
+
+1. **First choice (synthetic, same roster and free agents as attempt 1):** in each season where team 1 picks up either free agent, the first one picked is the guard in ≥ 90% of seasons. The raw rule is reported alongside.
+2. **Add volume:** as in attempt 1 (±15% or ±0.15 adds a week of the raw rule, teams with ≥ 0.25 adds a week).
+3. **Weekly scoring spread:** as in attempt 1 (±0.01 CV, teams with act ≥ 0.7).
+4. **League points:** as in attempt 1 (≥ the raw rule's − 0.5%).
+5. **Cost:** CPU per simulated season ≤ +20% over the raw rule, same machine, same run.
+
+**Data and run:** the league as it stands on the run day; 4,000 seasons per rule, same seed (`scripts/experiment-fit-streams.ts`); check 1 as a test, 200 seasons. One evaluation, no tuning between runs.
+
+**Ships only if** all five pass (then `fitStreams` becomes the default, with an ADR). Otherwise the result is written here and the raw rule stays.
+
 ## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
 
 **Question:** a player who filled in while a regular teammate was out keeps his inflated numbers in every rest-of-season value: trades, Moves, the season simulator. Example, Nov 16: Paul Reed played all 12 of his games without Jalen Duren (out since Oct 23). Ours projects 27.1 FP/G, ESPN preseason 17.6, for all 60 games left, though Duren's estimated return is Nov 24. Does projecting from the games the teammate **played** predict the player better once the teammate is back?

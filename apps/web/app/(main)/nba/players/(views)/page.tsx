@@ -11,7 +11,13 @@ import { SetupError } from "@/lib/env";
 import { fmtPts, fmtTip } from "@/lib/format";
 import { dateForScoringPeriod } from "@/lib/nba/calendar";
 import { loadWaiverView } from "@/lib/nba/waivers-view";
-import { moveChecks, moveKey, rosterKey, type MoveChecks } from "@/lib/nba/move-checks";
+import {
+  moveChecks,
+  moveKey,
+  rosterKey,
+  watchedFreeAgents,
+  type MoveChecks,
+} from "@/lib/nba/move-checks";
 import type { MoveEffect } from "@/lib/nba/move-sim";
 import { DeepBanner, DeepLive } from "@/components/fc/deep-live";
 import { RefreshAt } from "@/components/refresh-at";
@@ -26,7 +32,7 @@ import { interestTargets, tradeForPackages, tradeHref } from "@/lib/nba/trade-vi
 import type { TradeIdea } from "@/lib/nba/trade";
 import { latestOutlook } from "@/lib/nba/outlook-run";
 import { deepView } from "@/lib/nba/move-shown";
-import { workerEnabled } from "@/lib/nba/outlook-refresh";
+import { simRosterCheck, workerEnabled } from "@/lib/nba/outlook-refresh";
 import { deepChecksFor, liveJob, settledResults } from "@/lib/nba/sim-jobs";
 import { dbConfigured } from "@/lib/db";
 import { winChanceLabel } from "@/lib/nba/week";
@@ -346,6 +352,19 @@ export default async function MovesPage({
     worker ? settledResults(keys).catch(() => new Map()) : Promise.resolve(new Map()),
   ]);
   const deep = deepView(keys, job, last, roster);
+  // Moves with no numbers and no job running (e.g. overnight, when the 5-minute check doesn't
+  // read the league): this visit checks Jack's roster against the last job and queues one if
+  // it changed, so the cards say "Checking…" instead of "—".
+  const queued =
+    worker &&
+    !job?.live &&
+    Object.values(deep.states).includes("none") &&
+    (await simRosterCheck(
+      v.data.ahead.me.roster,
+      v.data.injuries,
+      watchedFreeAgents(v.data.me.watchList, v.data.teams),
+      true,
+    ).catch(() => null)) === "queued";
   const myOutlook = outlookRun?.results.find((t) => t.teamId === v.data.me.id);
   const outlook = myOutlook
     ? {
@@ -450,7 +469,7 @@ export default async function MovesPage({
           }))}
           initial={[...(v.inputs.noDrop ?? [])]}
         />
-        <DeepLive initial={deep} roster={roster} keys={keys}>
+        <DeepLive initial={deep} roster={roster} keys={keys} queued={queued}>
           <DeepBanner />
           {best.length ? (
             <div className="divide-y overflow-hidden rounded-xl border bg-card">

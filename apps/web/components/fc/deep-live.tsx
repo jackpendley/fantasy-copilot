@@ -2,9 +2,11 @@
 
 // The Moves page's deep checks, kept current while the worker re-checks moves (ADR-058): the
 // page renders the numbers as they are, and this polls /api/moves/status every 10 seconds
-// while a job runs (visible tabs only), so cards swap in new numbers without a reload.
+// while a job runs (visible tabs only), so cards swap in new numbers without a reload. A tab
+// shown again (a phone app reopened) asks once, and after a long time away reloads the page.
 
 import { createContext, useContext, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import type { DeepView } from "@/lib/nba/move-shown";
 
@@ -14,11 +16,24 @@ const Ctx = createContext<DeepView | null>(null);
 export const useDeepView = () => useContext(Ctx);
 
 const POLL_MS = 10_000;
+/** How long a check the page queued is waited for (its job is built first, ~1-2 minutes). */
+const WAIT_MS = 10 * 60_000;
+/** Hidden this long, a tab reloads the page when shown again (the day or the moves may differ). */
+const STALE_MS = 5 * 60_000;
+
+/** While a queued check is awaited, moves without numbers show as being checked. */
+const awaiting = (v: DeepView): DeepView => ({
+  ...v,
+  states: Object.fromEntries(
+    Object.entries(v.states).map(([k, s]) => [k, s === "none" ? "loading" : s]),
+  ),
+});
 
 export function DeepLive({
   initial,
   roster,
   keys,
+  queued = false,
   children,
 }: {
   initial: DeepView;
@@ -26,23 +41,62 @@ export function DeepLive({
   roster: string;
   /** Every move on the page. */
   keys: string[];
+  /** The page queued a check (its moves had no numbers and no job was running). */
+  queued?: boolean;
   children: React.ReactNode;
 }) {
-  const [view, setView] = useState(initial);
+  const router = useRouter();
+  const [waiting, setWaiting] = useState(queued);
+  const [view, setView] = useState(queued ? awaiting(initial) : initial);
+  // A new render from the server (a refresh) brings new numbers.
+  const [rendered, setRendered] = useState(initial);
+  if (rendered !== initial) {
+    setRendered(initial);
+    setWaiting(queued);
+    setView(queued ? awaiting(initial) : initial);
+  }
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setWaiting(false), WAIT_MS);
+    return () => clearTimeout(t);
+  }, [waiting]);
   const live = view.job?.live ?? false;
   useEffect(() => {
-    if (!live) return;
-    const id = setInterval(async () => {
-      if (document.visibilityState !== "visible") return;
+    const poll = async () => {
       const res = await fetch("/api/moves/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ roster, keys }),
       }).catch(() => null);
-      if (res?.ok) setView((await res.json()) as DeepView);
-    }, POLL_MS);
-    return () => clearInterval(id);
-  }, [live, roster, keys]);
+      if (!res?.ok) return;
+      const next = (await res.json()) as DeepView;
+      // The queued job is under way: from here its own state shows.
+      if (next.job?.live) setWaiting(false);
+      setView(waiting && !next.job?.live ? awaiting(next) : next);
+    };
+    let hiddenAt = document.visibilityState === "hidden" ? Date.now() : null;
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      const away = hiddenAt != null ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      if (away >= STALE_MS) router.refresh();
+      else void poll();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const id =
+      live || waiting
+        ? setInterval(() => {
+            if (document.visibilityState === "visible") void poll();
+          }, POLL_MS)
+        : undefined;
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      if (id) clearInterval(id);
+    };
+  }, [live, waiting, roster, keys, router]);
   return <Ctx.Provider value={view}>{children}</Ctx.Provider>;
 }
 

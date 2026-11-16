@@ -4,7 +4,7 @@
 
 **Live** at **https://fantasycopilot.vercel.app** (Vercel Pro since Nov 10, Neon Postgres, Free plan).
 
-**Neon: the Free plan's 5 GB of public network transfer for November ran out on Nov 16** (Neon's email). On Free, Neon then suspends compute until the next billing period or an upgrade. The app and the 1:47 PM deploy's migration still worked afterwards. **Jack is checking the console** (suspended? the reset date? this month's CU-hours) and deciding between Launch (pay-as-you-go, no minimum, $0.106/CU-hour, 500 GB transfer included) and waiting. While suspended, deploys fail at the migrate step.
+**Neon: the Free plan's 5 GB of public network transfer for November ran out on Nov 16** (Neon's email). On Free, Neon then suspends compute until the next billing period or an upgrade. The app still worked afterwards, and #162's production deploy ran its migration. **Jack is checking the console** (suspended? the reset date? this month's CU-hours) and deciding between Launch (pay-as-you-go, no minimum, $0.106/CU-hour, 500 GB transfer included) and waiting. While suspended, deploys fail at the migrate step.
 
 - **Tabs:** Today, Matchup, Players (Moves, Free agents, Trends, Draft), League (Trades, team pages).
 - **Simulations:** moves and trades run on the GitHub Actions worker (ADR-058/059).

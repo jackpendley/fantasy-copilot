@@ -346,7 +346,11 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     return seated;
   };
   /** Who took each open slot in the last bestLineup (null: left empty). */
-  const lastSlots = (): (P | null)[] => Array.from(owner, (i) => (i >= 0 ? sorted[i]! : null));
+  const lastSlots = (): (P | null)[] => {
+    const out = new Array<P | null>(OPEN.length);
+    for (let j = 0; j < OPEN.length; j++) out[j] = owner[j]! >= 0 ? sorted[owner[j]!]! : null;
+    return out;
+  };
   const fitStreams = input.fitStreams ?? false;
   /** Free agents scored by fit at each stream (the best by raw value). */
   const FIT_CANDIDATES = 5;
@@ -463,19 +467,13 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const solve = (x: TeamState, mask: number) => {
     const l = bestLineup(x.roster.filter((_, k) => (mask >> k) & 1));
     x.lineups.set(mask, l);
-    x.slots.set(mask, lastSlots());
+    if (fitStreams) x.slots.set(mask, lastSlots());
     return l;
   };
   /** The best lineup from the roster players passing `keep` (memoized by who passes). */
   const lineupOf = (x: TeamState, keep: (r: P) => boolean) => {
     const mask = maskOf(x, keep);
     return x.lineups.get(mask) ?? solve(x, mask);
-  };
-  /** That lineup's slots: who starts in each open slot, null where it's empty. */
-  const slotsOf = (x: TeamState, keep: (r: P) => boolean) => {
-    const mask = maskOf(x, keep);
-    if (!x.slots.has(mask)) solve(x, mask);
-    return x.slots.get(mask)!;
   };
   const fit = (r: P) => outOf(r) === 0;
   /** A streaming target's worth today: his games left this week plus a few games' value. */
@@ -503,71 +501,108 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const weekOf = (x: TeamState) => {
     const cached = x.week;
     if (cached && cached.period === period[day] && cached.roster === x.roster) return cached.days;
+    // From today: the days before it are never read (the cache lasts while the roster does).
     const days: { d: number; slots: (P | null)[]; bench: P[] }[] = [];
-    let d0 = day;
-    while (d0 > fromDay && period[d0 - 1] === period[day]) d0--;
-    for (let d = d0; d <= lastDay && period[d] === period[day]; d++) {
-      const slots = slotsOf(x, (r) => r.days[d] === 1);
-      days.push({ d, slots, bench: x.roster.filter((r) => r.days[d] === 1 && !slots.includes(r)) });
+    for (let d = day; d <= lastDay && period[d] === period[day]; d++) {
+      let mask = 0;
+      for (let k = 0; k < x.roster.length; k++) if (x.roster[k]!.days[d] === 1) mask |= 1 << k;
+      if (!x.slots.has(mask)) solve(x, mask);
+      const slots = x.slots.get(mask)!;
+      const bench: P[] = [];
+      for (let k = 0; k < x.roster.length; k++)
+        if ((mask >> k) & 1 && !slots.includes(x.roster[k]!)) bench.push(x.roster[k]!);
+      days.push({ d, slots, bench });
     }
     x.week = { period: period[day]!, roster: x.roster, days };
     return days;
   };
-  const fitOf = (x: TeamState) => {
-    const week = weekOf(x).filter((w) => w.d >= day);
-    const later = (pl: P, plays: number, starts: number) =>
-      3 * pl.fppg * (plays ? starts / plays : 1) * (outOf(pl) > 5 ? 0.3 : 1);
-    const rosterVal = (r: P) => {
-      let pts = 0;
-      let plays = 0;
-      let starts = 0;
-      for (const { d, slots, bench } of week) {
-        if (!availOn(r, d)) continue;
-        plays++;
-        const j = slots.indexOf(r);
-        if (j < 0) continue;
+  type Week = { d: number; slots: (P | null)[]; bench: P[] }[];
+  /** The week's lineups from today on, for scoring (`weekOf` keeps earlier days too). */
+  const fitOf = (x: TeamState): Week => {
+    const all = weekOf(x);
+    let i = 0;
+    while (i < all.length && all[i]!.d < day) i++;
+    return i === 0 ? all : all.slice(i);
+  };
+  const later = (pl: P, plays: number, starts: number) =>
+    3 * pl.fppg * (plays ? starts / plays : 1) * (outOf(pl) > 5 ? 0.3 : 1);
+  const rosterVal = (week: Week, r: P) => {
+    let pts = 0;
+    let plays = 0;
+    let starts = 0;
+    for (const { d, slots, bench } of week) {
+      if (!availOn(r, d)) continue;
+      plays++;
+      const j = slots.indexOf(r);
+      if (j < 0) continue;
+      starts++;
+      let next = 0;
+      for (const b of bench) if ((b.elig >> j) & 1 && b.fppg > next && availOn(b, d)) next = b.fppg;
+      pts += r.fppg - next;
+    }
+    return pts + later(r, plays, starts);
+  };
+  const freeVal = (week: Week, f: P) => {
+    let pts = 0;
+    let plays = 0;
+    let starts = 0;
+    for (const { d, slots } of week) {
+      if (!availOn(f, d)) continue;
+      plays++;
+      let gain = 0;
+      for (let j = 0; j < slots.length; j++) {
+        if (!((f.elig >> j) & 1)) continue;
+        const o = slots[j];
+        gain = Math.max(gain, o ? f.fppg - o.fppg : f.fppg);
+      }
+      if (gain > 0) {
         starts++;
-        let next = 0;
-        for (const b of bench)
-          if ((b.elig >> j) & 1 && b.fppg > next && availOn(b, d)) next = b.fppg;
-        pts += r.fppg - next;
+        pts += gain;
       }
-      return pts + later(r, plays, starts);
-    };
-    const freeVal = (f: P) => {
-      let pts = 0;
-      let plays = 0;
-      let starts = 0;
-      for (const { d, slots } of week) {
-        if (!availOn(f, d)) continue;
-        plays++;
-        let gain = 0;
-        for (let j = 0; j < slots.length; j++) {
-          if (!((f.elig >> j) & 1)) continue;
-          const o = slots[j];
-          gain = Math.max(gain, o ? f.fppg - o.fppg : f.fppg);
-        }
-        if (gain > 0) {
-          starts++;
-          pts += gain;
-        }
+    }
+    return pts + later(f, plays, starts);
+  };
+  /** The `k` roster players with the lowest raw value (each valued once). */
+  const weakF: P[] = [];
+  const weakV: number[] = [];
+  const weakest = (roster: P[], k: number) => {
+    weakF.length = 0;
+    weakV.length = 0;
+    for (const r of roster) {
+      const v = val(r);
+      if (weakF.length === k && v >= weakV[k - 1]!) continue;
+      let i = Math.min(weakF.length, k - 1);
+      while (i > 0 && weakV[i - 1]! > v) {
+        weakF[i] = weakF[i - 1]!;
+        weakV[i] = weakV[i - 1]!;
+        i--;
       }
-      return pts + later(f, plays, starts);
-    };
-    return { rosterVal, freeVal };
+      weakF[i] = r;
+      weakV[i] = v;
+    }
+    return weakF;
   };
   /** The `k` unowned free agents with the highest `score` (best first). */
+  const topF: P[] = [];
+  const topV: number[] = [];
   const topFree = (list: P[], k: number, score: (f: P) => number) => {
-    const top: { f: P; v: number }[] = [];
+    topF.length = 0;
+    topV.length = 0;
     for (const f of list) {
       if (faOwner[f.h] !== -1) continue;
       const v = score(f);
-      if (top.length === k && v <= top[k - 1]!.v) continue;
-      top.push({ f, v });
-      top.sort((a, b) => b.v - a.v);
-      if (top.length > k) top.pop();
+      if (topF.length === k && v <= topV[k - 1]!) continue;
+      // Insert in order (k is small): shift the lower ones down.
+      let i = Math.min(topF.length, k - 1);
+      while (i > 0 && topV[i - 1]! < v) {
+        topF[i] = topF[i - 1]!;
+        topV[i] = topV[i - 1]!;
+        i--;
+      }
+      topF[i] = f;
+      topV[i] = v;
     }
-    return top.map((t) => t.f);
+    return topF;
   };
 
   let seasonsDone = 0;
@@ -723,7 +758,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
               const fit = fitOf(x);
               let faV = -Infinity;
               for (const f of topFree(faList, FIT_CANDIDATES, (p) => p.fppg)) {
-                const v = fit.freeVal(f);
+                const v = freeVal(fit, f);
                 if (v > faV) {
                   fa = f;
                   faV = v;
@@ -745,11 +780,9 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
             let drop: P | undefined;
             let dropV = Infinity;
             // Fit scores only the few weakest by raw value (cheap), like the free agents.
-            const dropPool = fit
-              ? [...x.roster].sort((a, b) => val(a) - val(b)).slice(0, FIT_CANDIDATES)
-              : x.roster;
+            const dropPool = fit ? weakest(x.roster, FIT_CANDIDATES) : x.roster;
             for (const r of dropPool) {
-              const v = fit ? fit.rosterVal(r) : val(r);
+              const v = fit ? rosterVal(fit, r) : val(r);
               if (v < dropV) {
                 drop = r;
                 dropV = v;
@@ -760,7 +793,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
               let bestV = dropV + 8;
               for (const f of fit ? topFree(faList, FIT_CANDIDATES, val) : faList) {
                 if (faOwner[f.h] !== -1) continue;
-                const v = fit ? fit.freeVal(f) : val(f);
+                const v = fit ? freeVal(fit, f) : val(f);
                 if (v > bestV) {
                   best = f;
                   bestV = v;

@@ -2,7 +2,9 @@
 
 ## Where things stand
 
-**Live** at **https://fantasycopilot.vercel.app** (Vercel Pro since Nov 10, Neon Postgres).
+**Live** at **https://fantasycopilot.vercel.app** (Vercel Pro since Nov 10, Neon Postgres, Free plan).
+
+**Neon: the Free plan's 5 GB of public network transfer for November ran out on Nov 16** (Neon's email). On Free, Neon then suspends compute until the next billing period or an upgrade. The app and the 1:47 PM deploy's migration still worked afterwards. **Jack is checking the console** (suspended? the reset date? this month's CU-hours) and deciding between Launch (pay-as-you-go, no minimum, $0.106/CU-hour, 500 GB transfer included) and waiting. While suspended, deploys fail at the migrate step.
 
 - **Tabs:** Today, Matchup, Players (Moves, Free agents, Trends, Draft), League (Trades, team pages).
 - **Simulations:** moves and trades run on the GitHub Actions worker (ADR-058/059).
@@ -30,7 +32,17 @@
 | #159 | **Runners wait while a racing job has chunks out.** In the first racing job, 8 of 16 left at minute 5, before the promotions; it took 19 min.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | #160 | **Roster fit counts room** ("how many more guards could start"), not which slot the greedy left empty. A swingman (Hart, SG/SF) had made a center add read "guard 136 → 130".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
-- **Not shipped:** position-aware streaming in the season sim. It failed pre-registered checks 1 (fit: 0.556 of pickups were the guard; bar 0.90) and 5 (CPU +147%; bar +20%). Calibration checks 2–4 passed. The code is on the unmerged branch `experiment/fit-streams`; the diagnosis is in MODEL_CARD. Both the points estimate and the sim's lineups were already position-aware; only the sim's own in-season streams aren't.
+**Nov 16, afternoon (#162–#167):** Jack's follow-ups: the Neon transfer limit, jobs too long, a second try at position-aware streaming, and whether Paul Reed is overvalued while Jalen Duren is out.
+
+| PR   | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #162 | **Database transfer cut** (docs/COMPUTE.md §10). Task inputs and job payloads are stored gzip+base64 (migration 0028): sim-build 1,859 → 375 KB, trade-search 1,013 → 200 KB, job moves 836 → 18 KB, and runners read each job about once per server instance. Racing's head to head is summed in SQL (one row per pair); P(best) is computed once, at the end. The Moves poll gets 204 unless the checks changed (every 20 s). Card percentiles read stored distributions. The Outlook history takes four fields. Move results older than 14 days are pruned. |
+| #163 | **Faster racing:** promoted moves pool into racing groups with room (migration 0029); a promoted rival clearly behind its race's leader stops; 18 runners. Playoff replays stay at 10 (measured best precision per CPU). The first full job after #159 had taken 18.7 min and 2,152 chunks.                                                                                                                                                                                                                                                                    |
+| #164 | **Pre-registration:** projections after a teammate returns.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| #165 | **That test failed, not shipped.** Projecting a fill-in from only the games the returning teammate played is worse over his next 10 games (MAE +0.43 [+0.30, +0.56], 2,120 player-events, 2024-26). Exploration: today's projection is about unbiased for fill-ins, and the biggest beat it slightly (−0.65), so their role mostly sticks. Reed's 27.1 isn't shown to be inflated for the coming weeks; longer horizons are untested.                                                                                                                          |
+| #166 | **Pre-registration:** position-aware streaming, attempt 2 (first-choice check, cached lineups).                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| #167 | **Attempt 2 failed on cost, not shipped.** The guard was the first pickup in 100% of seasons (raw rule 7%), and calibration held, but CPU went +108% (bar +20%). The code is on `experiment/fit-streams-2`. Profile before any attempt 3.                                                                                                                                                                                                                                                                                                                      |
+
 - **Nov 9–13 (#118–#154):** minimal mode and the saver, trade packages on request, trades with a team, the opaque phone status bar, the Matchup scoreboard details, rows and daily projections, stream timing around the first tip, centered rows and the phone score column (ADR-062), and stat tables that fit phones. The PRs are in git history.
 
 **Asked trades (fixed in #128):** until #128 each ask queued a full job (~250 moves plus the Outlook), so League and Players showed loaders and the trade waited ~12 min. Now an ask queues an asked-only job that doesn't replace the full one. Each ask still costs ~5 s of Vercel CPU (`prepareJob`).
@@ -42,7 +54,8 @@
   - each card opens on its pick, and the dropdown shows each ±;
   - the "Open lineup spots" line and playoff-week games;
   - reopening the app refreshes the numbers.
-- **Position-aware streaming:** whether to try again. That needs a new pre-registration (the first choice between two free agents, not the share of pickups) and a cheaper candidate.
+- **Neon:** check the console and choose Launch or waiting for the reset. If he upgrades: set spend alerts, and optionally a Neon API key (a secret) for a "database transfer this month" line on Settings.
+- **Position-aware streaming:** attempt 2 is right but doubles simulation cost. Whether to profile and try a third (cheaper) version.
 - **Earlier, still to check:** the popup's live box score fit during a game; the on-court edge during a game; the lock job's wait-for-the-tip moves (#143, #146).
 - **Worker → Neon directly** (approved Nov 9): Jack adds `DATABASE_URL` as a GitHub Actions secret when the PR is ready.
 
@@ -52,18 +65,19 @@ Ended Nov 10 (Jack's OK): Pro has no CPU cap, and the budget alerts cover spendi
 
 ## Next tasks
 
-1. **Measure a full racing job with every runner (#159):** today's first-tip job (5 PM MT) or the nightly job. Record wall time (budget 12 min), chunks and Vercel CPU per job (Settings; budget 2 s) in ADR-063 and docs/COMPUTE.md. Over budget: lower `DECISION_TIER.maxSeasons` to 72,000 (±0.15), or `MAX_RIVALS` to 2.
-2. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker). Jack adds `DATABASE_URL` as a GitHub Actions secret.
-3. **Scheduling stays on cron-job.org** (decided Nov 10). The 1-minute watch is parked (COMPUTE.md §7).
-4. **Draft accuracy:** the card appears once ranked players have 10+ games; record the first numbers in MODEL_CARD.
-5. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥ 60 absences with ESPN return dates have ended.
-6. **Still open:**
+1. **Measure the next full jobs with #163** (today's first-tip job at ~5 PM MT, then the nightly one): wall time (target ≤ 10 min), chunks, longest runner (worker logs), Vercel CPU per job (Settings). Record them in ADR-063 and docs/COMPUTE.md. Still slow: profile the per-chunk cost before cutting precision.
+2. **Watch database transfer:** the Neon usage panel for 3 days after #162, against the COMPUTE.md §10 table.
+3. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker). Jack adds `DATABASE_URL` as a GitHub Actions secret.
+4. **Scheduling stays on cron-job.org** (decided Nov 10). The 1-minute watch is parked (COMPUTE.md §7).
+5. **Draft accuracy:** the card appears once ranked players have 10+ games; record the first numbers in MODEL_CARD.
+6. **Return-date test** (MODEL_CARD, Nov 6): evaluate once ≥ 60 absences with ESPN return dates have ended.
+7. **Still open:**
    - the partner's simulated odds on trades;
    - the official-statuses forward test (≥ 1,500 rows);
    - the props and DARKO blend tests;
    - win-probability candidate C (Dec 6) and recalibration (week 13);
    - props coverage for free agents.
-7. **Roadmap** (`docs/ROADMAP.md`): own projection models, manager profiles, a playoff-schedule planner, NFL and MLB.
+8. **Roadmap** (`docs/ROADMAP.md`): own projection models, manager profiles, a playoff-schedule planner, NFL and MLB.
 
 ## Background
 

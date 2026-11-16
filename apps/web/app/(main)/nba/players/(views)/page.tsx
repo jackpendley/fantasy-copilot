@@ -188,6 +188,7 @@ function optionOf(o: StreamOption, note: string | null): MoveOption {
     ilCuts: o.ilCuts,
     rosCost: Math.max(0, -o.rosDelta),
     waitNote: note,
+    fit: o.fit,
   };
 }
 

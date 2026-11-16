@@ -9,8 +9,9 @@
 
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import {
+  SLOT_ACCEPTS,
   expandSlots,
-  greedyStarters,
+  greedyLineup,
   irEligible,
   isStartingSlot,
   type Position,
@@ -92,7 +93,41 @@ export interface TeamValue {
   activations: Activation[];
   /** Per player id: games he's available for and how many he'd start, rest of season. */
   usage: Map<number, { games: number; starts: number }>;
+  /** Starting slots left empty, rest of season (slot-days), by the positions they take. */
+  holes: Holes;
 }
+
+/**
+ * Empty starting slot-days by kind: guard (PG, SG, G), forward (SF, PF, F), center (C), and any
+ * (UTIL and other mixed slots: no one at all was free).
+ */
+export interface Holes {
+  guard: number;
+  forward: number;
+  center: number;
+  any: number;
+}
+
+/** Days with any NBA game (cached per schedule: teamValue runs for every move). */
+const leagueDaysCache = new WeakMap<ValueContext["gameDays"], Set<number>>();
+const leagueDaysOf = (gameDays: ValueContext["gameDays"]) => {
+  let days = leagueDaysCache.get(gameDays);
+  if (!days) {
+    days = new Set([...gameDays.values()].flatMap((d) => [...d]));
+    leagueDaysCache.set(gameDays, days);
+  }
+  return days;
+};
+
+const GUARDS = new Set(["PG", "SG"]);
+const FORWARDS = new Set(["SF", "PF"]);
+const holeKind = (slot: string): keyof Holes => {
+  const takes = SLOT_ACCEPTS[slot] ?? [];
+  if (takes.every((p) => GUARDS.has(p))) return "guard";
+  if (takes.every((p) => FORWARDS.has(p))) return "forward";
+  if (takes.every((p) => p === "C")) return "center";
+  return "any";
+};
 
 export interface Activation {
   player: RosterPlayer;
@@ -121,14 +156,14 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   players.forEach(({ p }, i) => {
     for (const d of ctx.gameDays.get(p.proTeamId) ?? []) if (d >= first[i]!) mask[d]! |= 1 << i;
   });
-  // The day's starters (exact greedy), solved once per set of players.
-  const memo = new Map<number, number[]>();
-  const starters = (mask: number) => {
+  // The day's starters (exact greedy) and empty slots, solved once per set of players.
+  const memo = new Map<number, { starters: number[]; empty: string[] }>();
+  const lineupOf = (mask: number) => {
     let s = memo.get(mask);
     if (!s) {
       const playing: number[] = [];
       for (let i = 0; i < players.length; i++) if (mask & (1 << i)) playing.push(i);
-      s = greedyStarters(
+      s = greedyLineup(
         playing,
         (i) => players[i]!.v,
         (i) => players[i]!.p.positions as Position[],
@@ -138,6 +173,7 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
     }
     return s;
   };
+  const starters = (mask: number) => lineupOf(mask).starters;
   const playoffDay = (day: number) => matchupPeriodOf(day) > ctx.regularWeeks;
 
   const activations: Activation[] = [];
@@ -201,21 +237,29 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   let playoffs = 0;
   const games = new Array<number>(players.length).fill(0);
   const starts = new Array<number>(players.length).fill(0);
+  const holes: Holes = { guard: 0, forward: 0, center: 0, any: 0 };
+  // Days with NBA games only: a day off for the whole league has nothing to fill.
+  const leagueDays = leagueDaysOf(ctx.gameDays);
   for (let day = ctx.fromDay; day <= ctx.lastDay; day++) {
-    if (!mask[day]) continue;
+    if (!mask[day]) {
+      if (leagueDays.has(day)) for (const slot of ctx.openSlots) holes[holeKind(slot)]++;
+      continue;
+    }
     for (let k = 0; k < players.length; k++) if (mask[day]! & (1 << k)) games[k]!++;
+    const l = lineupOf(mask[day]!);
     let pts = 0;
-    for (const k of starters(mask[day]!)) {
+    for (const k of l.starters) {
       pts += players[k]!.v;
       starts[k]!++;
     }
+    for (const slot of l.empty) holes[holeKind(slot)]++;
     if (playoffDay(day)) playoffs += pts;
     else regular += pts;
   }
   const usage = new Map(
     players.map(({ p }, k) => [p.id, { games: games[k]!, starts: starts[k]! }]),
   );
-  return { regular, playoffs, activations, usage };
+  return { regular, playoffs, activations, usage, holes };
 }
 
 /** Raw rest-of-season points (no lineup limits): how most managers size up a deal. */

@@ -19,7 +19,7 @@ import {
 } from "@fantasy-copilot/fantasy-core";
 import { etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
 import { perGameProjection } from "./projection";
-import { teamValue, weighted, type ValueContext } from "./trade";
+import { teamValue, weighted, type Holes, type ValueContext } from "./trade";
 import { projectTeamWeek, winProbability, type WeekInputs } from "./week";
 
 export interface WaiverInputs {
@@ -104,6 +104,11 @@ export interface StreamOption {
   dropCutFor: string | null;
   /** With this move, who comes back from IR and whom the roster cuts for him (teamValue). */
   ilCuts: { back: string; drop: string }[];
+  /**
+   * Roster fit: starting slot-days left empty for the rest of the season, without and with the
+   * move (teamValue holes), and the add's and dropped player's games in the playoff weeks.
+   */
+  fit: { before: Holes; after: Holes; playoffGames: { add: number; drop: number | null } } | null;
   /**
    * The move's whole value in expected wins: this week's change in win chance plus the rest
    * of the season's lineup points converted to wins (see `pointsToWins`).
@@ -317,6 +322,11 @@ export function waiverAnalysis(a: WaiverInputs): {
     ? (7 * baseSeason.regular) / Math.max(1, regularDaysLeft(a.season!))
     : a.myRemaining;
   const winsPerPoint = pointsToWins(Math.max(typicalWeek, 1));
+  /** A team's games in the playoff weeks (they decide the title). */
+  const playoffGames = (pro: number) =>
+    [...(a.season?.gameDays.get(pro) ?? [])].filter(
+      (day) => matchupPeriodOf(day) > a.season!.regularWeeks,
+    ).length;
   const seasonOf = (
     c: WaiverCandidate,
     d: { p: RosterPlayer | null; ros: number; il: RosterPlayer | null },
@@ -333,6 +343,7 @@ export function waiverAnalysis(a: WaiverInputs): {
         dropStarts: null,
         dropCutFor: null,
         ilCuts: [],
+        fit: null,
       };
     }
     // A delayed move counts from its day; otherwise the add plays once he can (a game of his
@@ -368,6 +379,14 @@ export function waiverAnalysis(a: WaiverInputs): {
       ilCuts: v.activations.flatMap((x) =>
         x.drop ? [{ back: x.player.name, drop: x.drop.name }] : [],
       ),
+      fit: {
+        before: b.holes,
+        after: v.holes,
+        playoffGames: {
+          add: playoffGames(c.player.proTeamId),
+          drop: d.p ? playoffGames(d.p.proTeamId) : null,
+        },
+      },
     };
   };
 

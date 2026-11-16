@@ -245,7 +245,7 @@
     - Not yet updated for 2026-27 (as of Jul 26).
 - **Storage** (migration 0005): `prop_lines`, `game_lines` and `projection_snapshots`, every row stamped with `captured_at` and tip.
   - Lines are only captured before tip (point in time).
-  - Snapshots: `morning` (nightly, 11:00Z), `pregame` (new Vercel cron, 22:00Z) and `close` (re-captured every 5 minutes inside 90 minutes of tip by the gameday job, once a 5-minute scheduler exists).
+  - Snapshots: `morning` (nightly, 11:00Z), `pregame` (new Vercel cron, 22:00Z) and `close` (re-captured every 5 minutes inside 90 minutes of tip by the gameday job, once a 5-minute scheduler exists). **Nov 16:** inside 20 minutes of tip. Each capture overwrites the last, and the extra captures kept Neon awake (docs/COMPUTE.md §10).
 - **Vegas projection** (`lib/nba/vegas.ts`):
   - Remove the bookmaker margin from each over/under, then solve for the mean: normal with variance 2.5×/1.3×/1.35× the mean for PTS/REB/AST, Poisson for 3PM/STL/BLK.
   - This league scores makes, misses and free throws rather than points, so the points line scales the model's shooting volume.
@@ -922,5 +922,5 @@
   - **The problem:** the next full job kept all 16 runners and still took 18.7 min and 2,152 chunks. Each refresh's promotions made their own group, so a ±0.1 move could sit alone in a group running up to 320 chunks and re-simulating the base each chunk. Rivals also raced on after clearly losing.
   - **Pooling:** a promoted move joins a racing group of its tier with room (`sim_groups.promoted`, migration 0029). That needs fewer than 12 moves, chunks left, and not behind his old group's chunks. A new group is made only when none fits.
   - **Elimination (`racingTargets`):** a promoted move clearly behind (2 SE, head to head) the leader of the race that promoted it stops needing that race's precision. Out of the best-move race, it still gets a card's ±0.2 unless its card's best drop also beats it. Out of a card's race, it stops. The leaders run to their targets.
-  - **Runners:** 16 → 18. GitHub Free runs 20 jobs at once, and the task runner and the peek take the rest.
+  - **Runners:** 16 → 18. GitHub Free runs 20 jobs at once, and the task runner and the peek take the rest. (The peek and the workflow's schedule were removed Nov 16, docs/COMPUTE.md §10.)
   - **Playoff replays stay at 10.** Measured with `scripts/measure-move-precision.ts` on three moves, title variance × CPU (lower is better): 1 replay ~110, 10 replays ~45, 20 replays ~60.

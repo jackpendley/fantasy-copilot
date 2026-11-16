@@ -8,6 +8,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { db, dbConfigured } from "@/lib/db";
 import { fmtDayTime } from "@/lib/format";
 import { DAILY_CPU_BUDGET_S } from "@/lib/nba/move-sim";
+import { BUDGET, FREE, onPace } from "@/lib/neon-budget";
+import { neonUsage } from "@/lib/neon-usage";
 
 type JobRow = { job: string; status: string; detail: string | null; ran_at: Date };
 
@@ -87,13 +89,15 @@ async function computeUse() {
 }
 
 export default async function SettingsPage() {
-  const [jobs, status, cpu, compute, rankingsAt] = await Promise.all([
+  const [jobs, status, cpu, compute, rankingsAt, neon] = await Promise.all([
     recentJobs().catch(() => []),
     jobStatus().catch(() => []),
     simulationCpu().catch(() => null),
     computeUse().catch(() => null),
     rankingsImportedAt().catch(() => null),
+    neonUsage().catch(() => null),
   ]);
+  const pace = neon ? onPace(neon, new Date()) : null;
   const cpuOf = (job: string) => cpu?.get(job) ?? { month: 0, day: 0 };
   const cpuTotal = ["move-sim", "outlook-sim", "trade-sim"].reduce((a, j) => a + cpuOf(j).month, 0);
   return (
@@ -147,6 +151,44 @@ export default async function SettingsPage() {
           <PushSettings />
         </CardContent>
       </Card>
+      {neon && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Database this month</CardTitle>
+            <CardDescription>
+              Neon&apos;s count since{" "}
+              {neon.periodStart ? fmtDayTime(neon.periodStart) : "the period began"}. Free allows{" "}
+              {FREE.transferBytes / 1e9} GB of transfer and {FREE.cuHours} CU-hours; our budget is{" "}
+              {BUDGET.transferBytes / 1e9} GB and {BUDGET.cuHours}. An alert comes at 60% and 85% of
+              Free, or when the month is on pace past the budget.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm tabular-nums">
+            {[
+              [
+                "Transfer",
+                `${(neon.transferBytes / 1e9).toFixed(2)} GB`,
+                pace && `${(pace.transferBytes / 1e9).toFixed(1)} GB`,
+                pace && pace.transferBytes > BUDGET.transferBytes,
+              ],
+              [
+                "Compute",
+                `${neon.cuHours.toFixed(1)} CU-hours (awake ${neon.activeHours.toFixed(0)} h)`,
+                pace && `${pace.cuHours.toFixed(0)} CU-hours`,
+                pace && pace.cuHours > BUDGET.cuHours,
+              ],
+            ].map(([label, used, projected, over]) => (
+              <div key={label as string} className="flex justify-between gap-2">
+                <span>{label}</span>
+                <span className={over ? "text-destructive" : "text-muted-foreground"}>
+                  {used}
+                  {projected && ` · on pace for ${projected}`}
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Background jobs</CardTitle>

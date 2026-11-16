@@ -67,7 +67,7 @@ import {
   type TradeSpec,
 } from "./sim-moves";
 import { loadWaiverInputs } from "./waivers-view";
-import { SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
+import { POLL_LOCK, SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
 import { saverOn } from "@/lib/cpu-saver";
 import { decodeWire, encodeWire } from "@/lib/wire-json";
 import { pack, unpack } from "@/lib/gz";
@@ -395,6 +395,27 @@ async function startWorker() {
     limit 1
   `;
   if (!busy) await dispatchWorker().catch(() => false);
+}
+
+/** When this instance last looked for work waiting without a runner (ms). */
+let ensuredAt = 0;
+
+/**
+ * The fallback for a missed dispatch (the workflow has no schedule: it woke Neon 96 times a
+ * day, docs/COMPUTE.md §10): work waiting with no runner up starts a run. Callers already have
+ * the database awake; at most every `everyMs` per instance. True when it dispatched.
+ */
+export async function ensureWorker(everyMs = 10 * 60_000): Promise<boolean> {
+  if (Date.now() - ensuredAt < everyMs) return false;
+  ensuredAt = Date.now();
+  if (!(await hasWork()) && !(await hasTasks())) return false;
+  const [busy] = await db()`
+    select 1 from sim_jobs where last_worker_at > now() - interval '45 seconds'
+    union all
+    select 1 from job_locks where name in (${SIM_LOCK}, ${POLL_LOCK}) and until > now()
+    limit 1
+  `;
+  return busy ? false : dispatchWorker().catch(() => false);
 }
 
 /** Is there work for a runner? (Cheap: one query.) */

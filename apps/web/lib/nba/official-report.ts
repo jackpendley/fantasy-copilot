@@ -96,14 +96,28 @@ export async function logOfficialReport(input: {
   games: ProGame[];
 }): Promise<{ file: string; read: boolean; changes: number }> {
   const file = slotFile(input.now);
-  const [last] = await db()<{ value: { file: string } }[]>`
-    select value from model_settings where key = 'official_report_last'
-  `;
-  if (last?.value.file === file) return { file, read: false, changes: 0 };
+  // This instance read it already: no database read (Neon stays asleep between reports).
+  if (memo.file === file) return { file, read: false, changes: 0 };
+  if (memo.file == null) {
+    const [last] = await db()<{ value: { file: string } }[]>`
+      select value from model_settings where key = 'official_report_last'
+    `;
+    if (last?.value.file === file) {
+      memo.file = file;
+      return { file, read: false, changes: 0 };
+    }
+  }
   const report = await fetchInjuryReport(file);
   if (!report) return { file, read: false, changes: 0 };
 
   const rows = officialStatusRows(report, matchPool(input.rostered, input.injuries), input.games);
+  // Statuses this instance stored or saw stored: a report that changes none of them needs no
+  // query. Any change still checks the table first (another instance may have logged it).
+  const known = (r: (typeof rows)[number]) => memo.status.get(`${r.playerId}|${r.gameDate}`);
+  if (memo.file != null && rows.every((r) => known(r) === r.status)) {
+    memo.file = file;
+    return { file, read: true, changes: 0 };
+  }
   let changes = 0;
   if (rows.length) {
     // Latest logged status per player and game day; only changes are stored.
@@ -115,6 +129,8 @@ export async function logOfficialReport(input: {
       order by player_id, game_date, published_at desc
     `;
     const prev = new Map(latest.map((l) => [`${l.player_id}|${l.game_date}`, l.status]));
+    if (memo.status.size > 20_000) memo.status.clear();
+    for (const r of rows) memo.status.set(`${r.playerId}|${r.gameDate}`, r.status);
     const fresh = rows.filter((r) => prev.get(`${r.playerId}|${r.gameDate}`) !== r.status);
     if (fresh.length) {
       await db()`
@@ -138,5 +154,9 @@ export async function logOfficialReport(input: {
     values ('official_report_last', ${db().json({ file, publishedAt: report.publishedAt } as never)})
     on conflict (key) do update set value = excluded.value, updated_at = now()
   `;
+  memo.file = file;
   return { file, read: true, changes };
 }
+
+/** This server instance's last report read, and each listed player's latest status by game day. */
+const memo = { file: null as string | null, status: new Map<string, string>() };

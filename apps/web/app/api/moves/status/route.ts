@@ -2,9 +2,9 @@
 // and state, and the job's progress, so the page can poll it instead of re-rendering
 // (lib/nba/move-shown.ts). A page that already has the latest version gets 204 without them.
 
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { deepView } from "@/lib/nba/move-shown";
-import { deepVersion, liveJob, settledResults } from "@/lib/nba/sim-jobs";
+import { deepVersion, ensureWorker, liveJob, settledResults } from "@/lib/nba/sim-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -23,5 +23,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse(null, { status: 204 });
   }
   const [job, last] = await Promise.all([liveJob(), settledResults(keys)]);
+  // A job waiting with no runner (a missed dispatch) gets one while Jack watches.
+  if (job?.live) after(() => ensureWorker(2 * 60_000).catch(() => false));
   return NextResponse.json(deepView(keys, job, last, body.roster));
 }

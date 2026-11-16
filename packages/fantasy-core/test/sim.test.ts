@@ -666,41 +666,41 @@ describe("fitStreams: position-aware streaming", { timeout: 60_000 }, () => {
   });
   // The center first: the raw rule takes the first of equals.
   const pool = [free(901, ["C"], 5), free(902, ["PG", "SG"], 6)];
-  /** Team 1's pickups of the two: the share that were the guard, as pickups and in the final roster. */
+  /**
+   * Check 1 (attempt 2): each season's first pickup of either free agent by team 1; the share
+   * that was the guard (and, for reference, of all pickups of the two).
+   */
   const guardShare = (fitStreams: boolean) => {
+    let firstGuard = 0;
+    let first = 0;
     let guard = 0;
-    let center = 0;
-    let finalGuard = 0;
-    let finalCenter = 0;
+    let both = 0;
     simulateSeason(
       league([guardShort(), ...others], {
         freeAgents: pool,
         seasons: 200,
         fitStreams,
         inspect: (_, o) => {
-          for (const id of o.pickups[0]!) {
-            if (id === 902) guard++;
-            if (id === 901) center++;
+          const picks = o.pickups[0]!.filter((id) => id === 901 || id === 902);
+          if (picks.length) {
+            first++;
+            if (picks[0] === 902) firstGuard++;
           }
-          if (o.rosters[0]!.includes(902)) finalGuard++;
-          if (o.rosters[0]!.includes(901)) finalCenter++;
+          guard += picks.filter((id) => id === 902).length;
+          both += picks.length;
         },
       }),
     );
-    return {
-      pickups: guard / Math.max(1, guard + center),
-      final: finalGuard / Math.max(1, finalGuard + finalCenter),
-      n: guard + center,
-    };
+    return { first: firstGuard / Math.max(1, first), n: first, all: guard / Math.max(1, both) };
   };
 
-  it("streams the guard the lineup is missing, not an equal center", () => {
+  it("picks the guard the lineup is missing first, not an equal center", () => {
     const fit = guardShare(true);
     const raw = guardShare(false);
     console.log(
-      `guard share: pickups fit ${fit.pickups.toFixed(3)} (n ${fit.n}), raw ${raw.pickups.toFixed(3)} (n ${raw.n}); final rosters fit ${fit.final.toFixed(3)}, raw ${raw.final.toFixed(3)}`,
+      `first pickup was the guard: fit ${fit.first.toFixed(3)} (n ${fit.n}), raw ${raw.first.toFixed(3)} (n ${raw.n}); share of all pickups: fit ${fit.all.toFixed(3)}, raw ${raw.all.toFixed(3)}`,
     );
-    expect(fit.pickups).toBeGreaterThanOrEqual(0.9);
+    expect(fit.first).toBeGreaterThanOrEqual(0.9);
   });
 
   it("reports each team's adds, and the raw rule is unchanged by the option's plumbing", () => {

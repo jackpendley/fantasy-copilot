@@ -95,7 +95,7 @@ export interface SimInput {
    */
   playoffReplays?: number;
   /**
-   * Position-aware streaming (MODEL_CARD pre-registration 2026-11-16): streams and IR pickups
+   * Position-aware streaming (MODEL_CARD pre-registrations 2026-11-16): streams and IR pickups
    * value players by the lineup points they add this week (positions, schedule, who's out) and
    * the share of games they'd start, not by raw points. Off: the calibrated raw-value rule.
    */
@@ -442,6 +442,12 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     lineups: Map<number, P[]>;
     /** Each memoized lineup's slots (fitStreams). */
     slots: Map<number, (P | null)[]>;
+    /** This week's lineups for the roster as it stands (fitStreams). */
+    week?: {
+      period: number;
+      roster: P[];
+      days: { d: number; slots: (P | null)[]; bench: P[] }[];
+    };
   };
   const setRoster = (x: TeamState, r: P[]) => {
     x.roster = r;
@@ -485,32 +491,45 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const availOn = (pl: P, d: number) =>
     pl.days[d] === 1 && outOf(pl) <= pl.left[day]! - pl.left[d]!;
   /**
-   * fitStreams: worth in lineup points, from the team's lineups on this week's remaining days.
-   * A roster player is worth what the lineup loses without him (his points minus the best
-   * player not starting that day who fits his slot); a free agent what he adds (his points in
-   * an open slot that takes him, else over the weakest starter whose slot he fits). Plus
-   * `3 x fppg` scaled by the share of this week's games he'd start (1 with none left).
+   * fitStreams (attempt 2, MODEL_CARD pre-registration 2026-11-16 #2): worth in lineup points,
+   * from the team's lineups on this week's remaining days. The lineups (everyone on the roster
+   * who plays that day) are solved once per team per week and roster, not at every check; each
+   * player's own availability counts his current absence. A roster player is worth what the
+   * lineup loses without him (his points minus the best player not starting that day who fits
+   * his slot); a free agent what he adds (his points in an open slot that takes him, else over
+   * the weakest starter whose slot he fits). Plus `3 x fppg` scaled by the share of this week's
+   * games he'd start (1 with none left).
    */
+  const weekOf = (x: TeamState) => {
+    const cached = x.week;
+    if (cached && cached.period === period[day] && cached.roster === x.roster) return cached.days;
+    const days: { d: number; slots: (P | null)[]; bench: P[] }[] = [];
+    let d0 = day;
+    while (d0 > fromDay && period[d0 - 1] === period[day]) d0--;
+    for (let d = d0; d <= lastDay && period[d] === period[day]; d++) {
+      const slots = slotsOf(x, (r) => r.days[d] === 1);
+      days.push({ d, slots, bench: x.roster.filter((r) => r.days[d] === 1 && !slots.includes(r)) });
+    }
+    x.week = { period: period[day]!, roster: x.roster, days };
+    return days;
+  };
   const fitOf = (x: TeamState) => {
-    const week: { d: number; slots: (P | null)[] }[] = [];
-    for (let d = day; d <= lastDay && period[d] === period[day]; d++)
-      week.push({ d, slots: slotsOf(x, (r) => availOn(r, d)) });
+    const week = weekOf(x).filter((w) => w.d >= day);
     const later = (pl: P, plays: number, starts: number) =>
       3 * pl.fppg * (plays ? starts / plays : 1) * (outOf(pl) > 5 ? 0.3 : 1);
     const rosterVal = (r: P) => {
       let pts = 0;
       let plays = 0;
       let starts = 0;
-      for (const { d, slots } of week) {
+      for (const { d, slots, bench } of week) {
         if (!availOn(r, d)) continue;
         plays++;
         const j = slots.indexOf(r);
         if (j < 0) continue;
         starts++;
         let next = 0;
-        for (const b of x.roster)
-          if (b !== r && !slots.includes(b) && (b.elig >> j) & 1 && b.fppg > next && availOn(b, d))
-            next = b.fppg;
+        for (const b of bench)
+          if ((b.elig >> j) & 1 && b.fppg > next && availOn(b, d)) next = b.fppg;
         pts += r.fppg - next;
       }
       return pts + later(r, plays, starts);
@@ -725,7 +744,11 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
             const fit = fitStreams ? fitOf(x) : null;
             let drop: P | undefined;
             let dropV = Infinity;
-            for (const r of x.roster) {
+            // Fit scores only the few weakest by raw value (cheap), like the free agents.
+            const dropPool = fit
+              ? [...x.roster].sort((a, b) => val(a) - val(b)).slice(0, FIT_CANDIDATES)
+              : x.roster;
+            for (const r of dropPool) {
               const v = fit ? fit.rosterVal(r) : val(r);
               if (v < dropV) {
                 drop = r;
@@ -876,7 +899,11 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
           for (const f of faList) inFaList.add(f);
           // Fresh lineup caches: a replay's roster changes refilled the shared ones.
           st.forEach((x, i) =>
-            Object.assign(x, saved.st[i], { lineups: new Map(), slots: new Map() }),
+            Object.assign(x, saved.st[i], {
+              lineups: new Map(),
+              slots: new Map(),
+              week: undefined,
+            }),
           );
           weekPts.forEach((w, i) => w.set(saved.weekPts[i]!));
           curP = saved.curP;

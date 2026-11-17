@@ -10,7 +10,7 @@ import "server-only";
 // PBP Stats and DARKO use NBA.com ids, so players are matched by name (team breaks ties).
 
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
-import { darkoPerGame, parseDarko } from "@fantasy-copilot/nba-data";
+import { darkoPerGame, parseDarko, readTimeout } from "@fantasy-copilot/nba-data";
 import {
   PBP_FIELDS,
   distributions,
@@ -54,7 +54,7 @@ export interface EspnAdvanced {
 /** ESPN's season stats for one player (regular season), or null before his first game. */
 export async function espnAdvanced(id: number, season: number): Promise<EspnAdvanced | null> {
   const url = `https://sports.core.api.espn.com/v2/sports/basketball/leagues/nba/seasons/${season}/types/2/athletes/${id}/statistics`;
-  const res = await SLOW(url);
+  const res = await SLOW(url, { signal: readTimeout() });
   if (!res.ok) return null;
   const data = (await res.json()) as {
     splits?: { categories?: { stats: { name: string; value: number }[] }[] };
@@ -100,7 +100,7 @@ type PbpRow = Record<string, string | number | null>;
 
 async function pbpTotals(season: number): Promise<PbpRow[]> {
   const url = `https://api.pbpstats.com/get-totals/nba?Season=${seasonLabel(season)}&SeasonType=Regular%2BSeason&Type=Player`;
-  const res = await SLOW(url);
+  const res = await SLOW(url, { signal: readTimeout() });
   if (!res.ok) return [];
   const data = (await res.json()) as { multi_row_table_data?: PbpRow[] };
   return data.multi_row_table_data ?? [];
@@ -283,7 +283,9 @@ export interface DarkoView {
 }
 
 export async function darkoView(name: string, team: string, scoring: ScoringMap) {
-  const res = await HOURLY("https://www.darko.app/projections/__data.json");
+  const res = await HOURLY("https://www.darko.app/projections/__data.json", {
+    signal: readTimeout(),
+  });
   if (!res.ok) return null;
   const { asOf, players } = parseDarko(await res.json());
   const d = byName(players, name, team, (x) => [x.name, x.team]);

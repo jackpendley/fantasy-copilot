@@ -5,6 +5,8 @@
 // Each prop comes as two unlabeled prices. The first is the over: on opening night its price
 // matched the one-sided "X+" milestone at the same threshold in 107 of 112 props (ADR-023).
 
+import { readTimeout } from "./timeout";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
 
@@ -80,7 +82,10 @@ export async function fetchPropBets(
   fetchImpl: typeof fetch = fetch,
 ): Promise<PropLine[]> {
   const url = `${CORE}/events/${gameId}/competitions/${gameId}/odds/${PROPS_PROVIDER}/propBets?limit=1000`;
-  const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(url, {
+    headers: { Accept: "application/json" },
+    signal: readTimeout(),
+  });
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`ESPN odds ${res.status} for game ${gameId}`);
   return parsePropBets(await res.json());
@@ -116,7 +121,10 @@ export async function fetchGameOdds(
   fetchImpl: typeof fetch = fetch,
 ): Promise<GameOdds | null> {
   const url = `${CORE}/events/${gameId}/competitions/${gameId}/odds`;
-  const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(url, {
+    headers: { Accept: "application/json" },
+    signal: readTimeout(),
+  });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`ESPN odds ${res.status} for game ${gameId}`);
   return parseGameOdds(await res.json());

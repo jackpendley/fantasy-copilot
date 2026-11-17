@@ -51,6 +51,11 @@ export interface WriteResult {
   response: unknown;
 }
 
+/** A write gives up waiting after this long (longer than a read: its outcome is then unknown). */
+export const WRITE_TIMEOUT_MS = 30_000;
+/** `WriteResult.code` when ESPN didn't answer: the outcome is unknown. */
+export const NO_RESPONSE = "NO_RESPONSE";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function readError(body: any): { code: string; message: string } {
   const d = body?.details?.[0] ?? {};
@@ -80,15 +85,29 @@ async function postTransaction(
   fetchImpl: typeof fetch,
 ): Promise<WriteResult> {
   const url = `${WRITE_HOST}/apis/v3/games/${cfg.game ?? "fba"}/seasons/${cfg.season}/segments/0/leagues/${cfg.leagueId}/transactions/`;
-  const res = await fetchImpl(url, {
-    method: "POST",
-    headers: {
-      Cookie: `espn_s2=${cfg.s2}; SWID=${cfg.swid}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetchImpl(url, {
+      method: "POST",
+      headers: {
+        Cookie: `espn_s2=${cfg.s2}; SWID=${cfg.swid}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(WRITE_TIMEOUT_MS),
+    });
+  } catch (e) {
+    // No answer (a timeout, a dropped connection): ESPN may or may not have made the change.
+    // Reported as a result, so the caller audits it like any other write; never retried.
+    return {
+      ok: false,
+      httpStatus: 0,
+      code: NO_RESPONSE,
+      message: `No answer from ESPN (${(e as Error).message}). The change may or may not have gone through: check ESPN.`,
+      response: null,
+    };
+  }
   const text = await res.text();
   let json: any = null;
   try {

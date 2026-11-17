@@ -47,6 +47,9 @@ export function ApplyMoves({ date, moves }: { date: string; moves: PendingMove[]
       } else if (res.status === 409 && out.error === "stale") {
         toast.info(out.message);
         setOpen(false);
+      } else if (out.code === "NO_RESPONSE") {
+        // Unknown outcome (the server got no answer from ESPN): the refresh shows what ESPN has.
+        toast.error(out.message);
       } else {
         toast.error(
           `ESPN rejected the moves: ${out.code ?? res.status} ${out.message ?? out.error ?? ""}`,

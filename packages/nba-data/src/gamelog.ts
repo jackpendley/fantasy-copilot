@@ -2,6 +2,8 @@
 // ids the fantasy API uses. Each game becomes a stat line in the abbreviations league scoring
 // uses (FGM, FGA, 3PM, ... PTS), so fantasy points come from fantasyPoints(withDerived(line)).
 
+import { readTimeout } from "./timeout";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
 
@@ -114,7 +116,7 @@ export async function fetchGameLog(
 ) {
   const res = await fetchImpl(
     `https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/${athleteId}/gamelog?season=${season}`,
-    { headers: { Accept: "application/json" } },
+    { headers: { Accept: "application/json" }, signal: readTimeout() },
   );
   if (res.status === 404) return [];
   if (!res.ok) throw new Error(`ESPN gamelog ${res.status}`);

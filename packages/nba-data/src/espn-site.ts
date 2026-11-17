@@ -1,13 +1,18 @@
 // ESPN's public site API (no cookies): scoreboard, injuries, game summaries. Team ids and
 // game ids are the same ones the fantasy API uses, and athlete ids are fantasy player ids.
 
+import { readTimeout } from "./timeout";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
 
 const SITE = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba";
 
 async function getJson(url: string, fetchImpl: typeof fetch): Promise<Json> {
-  const res = await fetchImpl(url, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(url, {
+    headers: { Accept: "application/json" },
+    signal: readTimeout(),
+  });
   if (!res.ok) throw new Error(`ESPN site ${res.status} for ${url}`);
   return res.json();
 }

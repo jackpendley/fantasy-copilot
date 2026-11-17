@@ -1158,6 +1158,34 @@ Shares fitted on 2017-18 to 2023-24: test 4's grouping G 0.23, F 0.07, C 0.49; c
 - **Per the pre-registration,** test 4's model stays as shipped. Whether to refit its shares on all nine seasons now is Jack's call (ADR-064). The between-seasons refit uses this season's forward data.
 - **Refitted (Jack, Nov 17):** production now uses test 4's model with the nine-season shares (G 0.22, F 0.06, C 0.34; ADR-064). Same model and fitting rule, more history; not a new test.
 
+## Pre-registration: teammate returns, test 6 — backup bigs on unseen seasons (2026-11-17, before any data)
+
+**Why:** Jack holds that a backup big loses production when the big ahead of him returns. Test 4's center result (−1.05 FP/G, 38 clean events) is too small a sample, and it came from seasons already explored. Every season from 2017-18 on has been explored for this question, so this test uses **1994-95 to 2016-17**, which nobody has evaluated. When this was written, **no game log, box score or outcome from those seasons had been fetched**: only metadata (schedules, positions, stat-field names, counts) was checked.
+
+**Who is a big (point-in-time):** ESPN gives past seasons only today's position labels: its core API, rosters and old box scores all carry the current label. Checked on 2017-18, 7 of the 26 players ESPN now calls C weren't centers that season. So a big is defined by his own stats before the game: **rebounds + blocks per 36 minutes ≥ 11.5**. The cutoff best reproduces ESPN's season-specific C label on 2017-18 to 2025-26 (3,242 player-seasons with 500+ minutes: 90.6% agreement, 73% of those flagged were centers, 64% of centers found). It was set from positions and box-score totals only, no outcomes.
+
+**Events:** as test 4, with clean events (the erratum under test 4: the teammate has games before the absence and games with the returning player). The returning regular (T, 20+ minutes over his last 10 games, 5+ straight team games missed) is a big over his last 10 games before the absence. The teammate (P) is a big over his games before the return, and his minutes during the absence exceed his minutes before it by ≥ 6. Positions play no part. Target, today's rule and priors as in tests 2–5 (`scripts/teammate-return-events.ts`): the prior is the previous season's average from the same data.
+
+**Model (minutes only):** today's projection is minutes × rate × trend. The model keeps the rate and moves only the minutes: `pred = today × (m − λ (m − m_with)) / m`. Here m is today's minutes estimate (the projection's minutes × the recent-minutes trend) and m_with is the same from only the games P played with T. **λ = 0.33, frozen**: the least-squares share for the minutes gap, fitted on the explored clean bigs events of 2017-18 to 2025-26 (52 events). It's not refitted on the test seasons. An event without a minutes estimate is left out and counted.
+
+**Training numbers (2017-26, in-sample, optimistic):** 52 events, FP/G improvement −0.514 per event, per-event SD 2.13. Power at 135 events: about 80% if that holds, about 29% at half of it.
+
+**Data:** ESPN's public box scores (site API `summary`) for every regular-season game of 1993-94 to 2016-17, from each team's schedule. Per-player logs are built from them and cached apart from the 2017-26 cache (`data/local/backtest-boxscores/`, gitignored). League scoring: the anonymized fixture's settings (identical to `docs/LEAGUE.md`). Public, no cookies; at most four requests at a time, with pauses.
+
+**Gate (counts only, before any outcome):** `DRY=1` reports events per season. **Evaluate only if there are ≥ 110 events** (about 70% power at the training effect). Otherwise stop: no outcome is computed, and the seasons stay unseen.
+
+**Comparison (one):** per event |model − actual| − |today − actual|; the mean, with a **95% interval** from 4,000 resamples clustered by player-season (seed 20261121). **Passes** if the interval lies entirely below 0.
+
+**Described, not tested:** by era (1994-95 to 2002-03, 2003-04 to 2009-10, 2010-11 to 2016-17); signed errors; minutes MAE; the same events limited to pairs ESPN labels C today (look-ahead, disclosed).
+
+**Consequence (Jack, Nov 17):**
+
+- **Passes:** production adjusts only bigs (by this stats rule, from the regular's estimated return), in minutes, by λ = 0.33. The guard and forward shares go to 0: no test supports them. This needs rebounds and blocks in production's game logs, and an ADR-064 amendment.
+- **Fails:** test 4's adjustment is turned off for everyone (ADR-064 amendment). Fill-ins keep today's projection.
+- Either way, the 2026-27 forward checks still run as amended.
+
+**When:** pushed before any fetch. Then fetch, then `DRY=1`, then (if the gate passes) one evaluation. Nothing is tuned or re-run.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

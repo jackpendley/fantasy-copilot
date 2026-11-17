@@ -1,6 +1,11 @@
 // Teammate-return events from cached past seasons (scripts/fetch-history.ts), shared by tests 2
-// and 3 (MODEL_CARD): a regular comes back from 5+ missed team games; each teammate's projection
+// to 5 (MODEL_CARD): a regular comes back from 5+ missed team games; each teammate's projection
 // as of that day by today's rule and by the reverting candidates, and his rest-of-season FP/G.
+//
+// A teammate with no games before the absence (no minutes to have risen from) or none with the
+// returning player (no "with him" projection, A) is left out: those values are undefined. Tests
+// 2-5 ran with them in (MODEL_CARD erratum, Nov 17), so their scripts pass `includeUndefined`
+// to reproduce what was recorded.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
@@ -92,6 +97,9 @@ export interface Row {
   sameGroup: boolean;
   /** The return game's time. */
   at: number;
+  /** His games before the absence, and with the returning player (0 only with includeUndefined). */
+  nBefore: number;
+  nWithT: number;
   /** Described, not used by any rule: his FP/G and minutes before the absence, during it, and after the return; T's FP/G over his last 10 games before it. */
   fpBefore: number;
   fpDuring: number;
@@ -112,10 +120,20 @@ export interface Row {
   tRb36: number;
 }
 
-export function analyze(season: number, scoring: ScoringMap): Row[] {
+/** Parsed game logs by file: a season's logs are read again as the next season's priors. */
+const parsed = new Map<string, GameLogEntry[]>();
+
+export function analyze(
+  season: number,
+  scoring: ScoringMap,
+  { includeUndefined = false }: { includeUndefined?: boolean } = {},
+): Row[] {
   const fp = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
-  const read = (file: string): GameLogEntry[] =>
-    JSON.parse(readFileSync(new URL(file, CACHE), "utf8"));
+  const read = (file: string): GameLogEntry[] => {
+    let log = parsed.get(file);
+    if (!log) parsed.set(file, (log = JSON.parse(readFileSync(new URL(file, CACHE), "utf8"))));
+    return log!;
+  };
   const positions = new Map(
     Object.entries(
       JSON.parse(readFileSync(new URL(`positions-${season}.json`, CACHE), "utf8")) as Record<
@@ -136,15 +154,15 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
     const min = gs.reduce((a, g) => a + g.min, 0);
     return min ? (36 * gs.reduce((a, g) => a + g.rb, 0)) / min : NaN;
   };
-  const files = readdirSync(CACHE).filter((f) => /^\d+-\d+\.json$/.test(f));
-  const ids = [...new Set(files.map((f) => Number(f.split("-")[0])))];
+  const files = new Set(readdirSync(CACHE).filter((f) => /^\d+-\d+\.json$/.test(f)));
+  const ids = [...new Set([...files].map((f) => Number(f.split("-")[0])))];
   const logs = new Map<number, G[]>();
   const priors = new Map<number, { fp: number; min: number; gp: number }>();
   // The two sides of each game: a side's team is what the other side lists as its opponent.
   const sideTeam = new Map<string, string>();
   for (const id of ids) {
     const regular = (s: number) =>
-      files.includes(`${id}-${s}.json`)
+      files.has(`${id}-${s}.json`)
         ? read(`${id}-${s}.json`).filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0)
         : [];
     const cur = regular(season);
@@ -196,6 +214,7 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
       const missed = schedule.filter((g) => g.t > last.t && g.t < back.t);
       if (missed.length < MIN_MISSED) continue;
       const missedSides = new Set(missed.map((g) => g.side));
+      const tGroup = groupOf(positions.get(t));
       // The team's games from the return on (known on the day): B's weights.
       const teamLeft = schedule.filter((g) => g.t >= back.t).length;
       // Each teammate on the team at the return game.
@@ -208,6 +227,7 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
         if (so.length < 10 || during.length < 3 || rest.length < REST_MIN) continue;
         const withT = so.filter((g) => played.get(t)!.has(g.side));
         const beforeAbsence = so.filter((g) => g.t <= last.t);
+        if (!includeUndefined && (!withT.length || !beforeAbsence.length)) continue;
         const base = perGameProjection(asPlayer(prior, so)).fppg;
         const A = perGameProjection(asPlayer(prior, withT)).fppg;
         const first = Math.min(FIRST, teamLeft);
@@ -215,6 +235,7 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
           mean(during.map((g) => g.min)) -
           (beforeAbsence.length ? mean(beforeAbsence.map((g) => g.min)) : 0);
         const group = groupOf(positions.get(p));
+        const sameGroup = group != null && group === tGroup;
         rows.push({
           season,
           player: p,
@@ -225,9 +246,11 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
           actual: mean(rest.map((g) => g.fp)),
           minShift,
           group,
-          same: group != null && group === groupOf(positions.get(t)) && minShift >= SAME_SHIFT,
-          sameGroup: group != null && group === groupOf(positions.get(t)),
+          same: sameGroup && minShift >= SAME_SHIFT,
+          sameGroup,
           at: back.t,
+          nBefore: beforeAbsence.length,
+          nWithT: withT.length,
           fpBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.fp)) : NaN,
           fpDuring: mean(during.map((g) => g.fp)),
           minBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.min)) : NaN,
@@ -235,7 +258,7 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
           minAfter: mean(rest.map((g) => g.min)),
           tFp: mean(before.map((g) => g.fp)),
           teammate: t,
-          tGroup: groupOf(positions.get(t)),
+          tGroup,
           pElig: eligible.get(p) ?? [],
           tElig: eligible.get(t) ?? [],
           pRb36: rb36(so),
@@ -249,6 +272,9 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
 
 /** Mean (candidate error − today's error), with a (1 − alpha) bootstrap interval clustered by player. */
 export function judge(rows: Row[], k: Candidate, alpha: number, seed: number) {
+  // No events is missing data, not a failed test.
+  if (!rows.length) throw new Error(`no events to judge for candidate ${k}`);
+  if (!(alpha > 0 && alpha < 1)) throw new Error(`alpha must be in (0, 1), got ${alpha}`);
   const diff = (r: Row) => Math.abs(r[k] - r.actual) - Math.abs(r.base - r.actual);
   const byPlayer = new Map<string, number[]>();
   for (const r of rows) {
@@ -276,6 +302,6 @@ export function judge(rows: Row[], k: Candidate, alpha: number, seed: number) {
     cand: mean(rows.map((r) => Math.abs(r[k] - r.actual))),
     diff: mean(rows.map(diff)),
     lo: means[Math.floor((alpha / 2) * BOOT)]!,
-    hi: means[Math.floor((1 - alpha / 2) * BOOT)]!,
+    hi: means[Math.min(BOOT - 1, Math.floor((1 - alpha / 2) * BOOT))]!,
   };
 }

@@ -5,6 +5,9 @@
 // Read-only: the cached public ESPN game logs in data/local/backtest/ (gitignored) and the
 // league's scoring settings.
 //
+// Frozen as recorded: this script keeps its own event code. Tests 2 onward use the shared
+// scripts/teammate-return-events.ts, whose fixes don't reach here on purpose.
+//
 //   node --env-file=.env.local --conditions=react-server --import tsx scripts/backtest-teammate-return.ts
 //   DRY=1 ...   event counts only (checks the harness without looking at outcomes)
 

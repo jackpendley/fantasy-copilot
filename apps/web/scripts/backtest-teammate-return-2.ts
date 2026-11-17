@@ -21,13 +21,16 @@ import {
   type Row,
 } from "./teammate-return-events";
 
+// As recorded in MODEL_CARD: events with undefined values included (erratum, Nov 17).
+const RECORDED = { includeUndefined: true };
+
 const SEASONS = [2024, 2023, 2022]; // 2023-24, 2022-23, 2021-22, by end year; priors one year earlier
 /** Six comparisons: Bonferroni for 95% overall. */
 const ALPHA = 0.05 / 6;
 
 async function main() {
   const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
-  const all = SEASONS.flatMap((s) => analyze(s, scoring));
+  const all = SEASONS.flatMap((s) => analyze(s, scoring, RECORDED));
   const sets: [string, Row[]][] = [
     ["1. All affected teammates", all],
     ["2. Same-position backups, minutes up ≥ 4", all.filter((r) => r.same)],

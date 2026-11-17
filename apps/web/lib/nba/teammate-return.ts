@@ -130,15 +130,13 @@ export function teammateEffects(
       const during = pLog.filter((g) => missed.has(g.sp));
       if (during.length < MIN_DURING) continue;
       const pre = pLog.filter((g) => g.sp < from);
-      const minShift =
-        mean(during.map((g) => g.min)) - (pre.length ? mean(pre.map((g) => g.min)) : 0);
+      const withHim = pLog.filter((g) => played.has(g.sp));
+      // Undefined without games before the absence (no minutes to rise from) or none with him
+      // (no "with him" projection): he keeps today's projection (MODEL_CARD erratum, Nov 17).
+      if (!pre.length || !withHim.length) continue;
+      const minShift = mean(during.map((g) => g.min)) - mean(pre.map((g) => g.min));
       if (minShift < MIN_SHIFT) continue;
-      const gap =
-        projectionFrom(p, pLog) -
-        projectionFrom(
-          p,
-          pLog.filter((g) => played.has(g.sp)),
-        );
+      const gap = projectionFrom(p, pLog) - projectionFrom(p, withHim);
       out.push({
         player: p.id,
         teammate: t.id,

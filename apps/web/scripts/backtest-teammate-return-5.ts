@@ -12,6 +12,9 @@ import { fetchLeague, parseSettings } from "@fantasy-copilot/espn";
 import { espnConfig } from "../lib/env";
 import { analyze, mean, type Row } from "./teammate-return-events";
 
+// As recorded in MODEL_CARD: events with undefined values included (erratum, Nov 17).
+const RECORDED = { includeUndefined: true };
+
 const TRAIN = [2018, 2019, 2020, 2021, 2022, 2023, 2024];
 const TEST = [2025, 2026];
 const MIN_SHIFT = 6;
@@ -108,7 +111,7 @@ async function main() {
   const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
   const rowsOf = (seasons: number[]) =>
     seasons
-      .flatMap((s) => analyze(s, scoring))
+      .flatMap((s) => analyze(s, scoring, RECORDED))
       .filter((r) => r.minShift >= MIN_SHIFT && (pairOf(r, primary) || pairOf(r, eligible)));
   const train = rowsOf(TRAIN);
   const test = rowsOf(TEST);

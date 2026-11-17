@@ -14,6 +14,9 @@ import { fetchLeague, parseSettings } from "@fantasy-copilot/espn";
 import { espnConfig } from "../lib/env";
 import { analyze, judge, mean, type Row } from "./teammate-return-events";
 
+// As recorded in MODEL_CARD: events with undefined values included (erratum, Nov 17).
+const RECORDED = { includeUndefined: true };
+
 const FORWARD = Boolean(process.env.FORWARD);
 /** Part 1: 2020-21, 2019-20, 2018-19, 2017-18 by end year; part 2: 2026-27. */
 const SEASONS = FORWARD ? [2027] : [2021, 2020, 2019, 2018];
@@ -32,7 +35,7 @@ async function main() {
   if (FORWARD && Date.now() < FORWARD_RUN_AFTER)
     throw new Error("Part 2 runs once, after the 2026-27 regular season (from Apr 20, 2027).");
   const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
-  const all = SEASONS.flatMap((s) => analyze(s, scoring)).filter(
+  const all = SEASONS.flatMap((s) => analyze(s, scoring, RECORDED)).filter(
     (r) => !FORWARD || r.at >= FORWARD_FROM,
   );
   const set = all.filter((r) => r.sameGroup && r.minShift >= MIN_SHIFT);

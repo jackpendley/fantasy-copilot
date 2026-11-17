@@ -7,6 +7,7 @@ import { CpuMeter, recordCpu } from "./cpu";
 import { minimalOn, saverOn } from "./cpu-saver";
 import { db, dbUse } from "./db";
 import { checkNeonUsage } from "./neon-usage";
+import { alertOnFailure, pruneLogs } from "./job-alerts";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
 import { gamedayAlerts } from "./nba/alerts";
@@ -44,6 +45,8 @@ import { refreshTeammateReturns, teammateReturnsDue } from "./nba/teammate-retur
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
+  // A failure Jack should hear about now (lib/job-alerts.ts); never stops the job.
+  if (status === "error") await alertOnFailure(job, detail).catch(() => false);
 }
 
 /** An error's message plus its cause, which fetch hides ("fetch failed: ECONNRESET"). */
@@ -426,6 +429,8 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     // Old simulation jobs (each holds its moves and chunks): the last two days are kept.
     const simJobsPruned = await metered("sim-prune", () => pruneSimJobs());
     const tasksPruned = await metered("task-prune", () => pruneTasks());
+    // The job log and sent alerts older than 60 days.
+    const logsPruned = await metered("log-prune", () => pruneLogs());
     const workerStarted = await metered("worker-check", () => ensureWorker(0));
     // The league's roster moves, for the team pages' move history (ADR-056).
     const transactions = await metered("transactions", () =>
@@ -451,6 +456,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       seasonBaselines: baselines,
       simJobsPruned,
       tasksPruned,
+      logsPruned,
       workerStarted,
       transactions,
       defense,

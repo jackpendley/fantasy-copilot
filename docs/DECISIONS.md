@@ -932,7 +932,8 @@
 - **Where it applies:** the season simulator (`SimPlayer.change`: a player's FP/G changes on a day; lineups re-solve), `teamValue` (trades, waivers, team strength), the week projection, and the card's projected points ("27.4/g now · 25.2/g once Duren is back (Nov 24)"). Not the daily start/sit values, which only look at today.
 - **How:** the nightly job (step `teammate-returns`, before the simulation job) fetches ESPN's public game logs for regulars who have missed 5+ team games and their position-mates (~150 logs on Nov 17), stores the effects in `view_cache` (`teammate-returns`), and clears the in-memory league so the simulations reload it. The league and free-agent loaders attach `teammateReturn: { day, shift, teammate }` to each affected player.
 - **Departures from the test, small and stated:** a regular with fewer than 5 games before his absence counts by ESPN's projected minutes (the test used this season's games only; Duren played 2); a completed absence keeps applying with current data, so the gap closes as the fill-in plays with the regular again; a player lifted by two returns takes the larger drop; an absence for the season changes nothing.
-- **Check:** MODEL_CARD's forward check (this season's returns, after Apr 20, 2027): if the model is worse than today's projection there, this comes out.
+- **Check:** MODEL_CARD's forward check (this season's returns, after Apr 20, 2027). Revised Nov 17 (Jack): its result feeds the between-seasons refit, not a mid- or post-season removal; models change deliberately from history and new data, not on a schedule.
+- **Freshness:** the nightly computes the effects; a gameday run computes them when none are stored or they're over 26 hours old (the first day after a deploy, or a failed nightly), once per instance a day.
 
 ## ADR-065: the season simulator streams by lineup fit (2026-11-17)
 

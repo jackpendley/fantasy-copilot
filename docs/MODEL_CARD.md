@@ -1090,6 +1090,7 @@ One evaluation (pre-registration on main at fc09d44). `DRY=1` first: guards/forw
 - **Set 1 passes, barely** (the interval's top is just below 0), so the model ships for every big-minute same-position backup, with the shares refitted on all seven seasons: **guards 0.23, forwards 0.07, centers 0.49**. Centers alone don't pass (41 events), but they carry most of the gain.
 - **Reading:** Jack's logic holds: the fill-in loses production when the regular returns. Today's projection already expected most of it for guards and forwards; for centers it expected too little, and the fitted share takes about half of the gap between today's projection and his projection from games with the regular.
 - **Forward check:** this season's returns from Nov 17, judged once after Apr 20, 2027; if the model's MAE is worse than today's there, it comes out.
+- **Consequence revised (2026-11-17, Jack; before any forward data):** no model is pulled mid-season or after it on a schedule. The forward check still runs once after Apr 20, 2027, as registered; its result feeds the between-seasons refit of the shares and position grouping (with the history), not a removal. The test itself is unchanged.
 
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 

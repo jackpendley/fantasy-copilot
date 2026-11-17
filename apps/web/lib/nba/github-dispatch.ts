@@ -32,6 +32,7 @@ export async function dispatchWorker(): Promise<boolean> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ ref: "main" }),
+      signal: AbortSignal.timeout(10_000),
     },
   );
   return res.status === 204;

@@ -63,6 +63,8 @@
 - **Audit:** writes require an audit sink. That's Supabase `espn_actions`, or a local JSONL file in development. Production without Supabase refuses writes.
 - **Disabled modes:** writes are disabled while `ESPN_LEAGUE_FILE` is set.
 - **No blind retries:** ESPN has no idempotency key. On a lost response, the UI refreshes and shows what ESPN actually has.
+  - **Nov 16:** a write waits 30 seconds for ESPN. With no answer (a timeout, a dropped connection) it returns `NO_RESPONSE` instead of throwing, so the attempt is audited like any other write; the page says the outcome is unknown and refreshes. Before, the route failed with a 500 and nothing was logged.
+- **Reads time out (Nov 16):** every ESPN and feed read gives up after 15 seconds (`READ_TIMEOUT_MS` in `packages/espn` and `packages/nba-data`), and the worker dispatch after 10. A request that hung held its page or job until Vercel's 300-second limit.
 - **Unverified:** whether ESPN accepts changes for future days. Football rejects non-current periods (`TRAN_INVALID_SCORINGPERIOD_NOT_CURRENT`). The UI surfaces ESPN's code if so.
 
 ## ADR-010: plain Postgres (Neon free) + an external scheduler; supersedes ADR-003 (2026-10-19)

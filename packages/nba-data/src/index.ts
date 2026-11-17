@@ -5,3 +5,4 @@ export * from "./gamelog";
 export * from "./odds";
 export * from "./darko";
 export * from "./injury-report";
+export * from "./timeout";

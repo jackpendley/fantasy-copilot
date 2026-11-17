@@ -4,6 +4,7 @@
 // so the history is point in time. Public files, read one at a time and cached by callers.
 
 import { getDocumentProxy } from "unpdf";
+import { readTimeout } from "./timeout";
 
 const BASE = "https://ak-static.cms.nba.com/referee/injury/";
 
@@ -260,7 +261,7 @@ export async function fetchInjuryReport(
   file: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<OfficialInjuryReport | null> {
-  const res = await fetchImpl(injuryReportUrl(file));
+  const res = await fetchImpl(injuryReportUrl(file), { signal: readTimeout() });
   if (res.status === 403 || res.status === 404) return null;
   if (!res.ok) throw new Error(`injury report ${file}: HTTP ${res.status}`);
   const data = new Uint8Array(await res.arrayBuffer());

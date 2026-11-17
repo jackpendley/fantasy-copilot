@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { addDropBody, lineupTransactionBody, submitAddDrop, submitLineup } from "../src/index";
+import {
+  NO_RESPONSE,
+  addDropBody,
+  lineupTransactionBody,
+  submitAddDrop,
+  submitLineup,
+} from "../src/index";
 
 // Synthetic config: no real credentials. These tests never reach ESPN (fetch is mocked).
 const cfg = { s2: "S2", swid: "{SWID}", leagueId: 1, season: 2027 };
@@ -110,5 +116,24 @@ describe("addDropBody", () => {
       fetchImpl as typeof fetch,
     );
     expect(res).toMatchObject({ ok: true, code: "PENDING" });
+  });
+});
+
+describe("a write ESPN doesn't answer", () => {
+  it("is a result with an unknown outcome, never thrown or retried", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+      throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    });
+    const res = await submitAddDrop(
+      cfg,
+      13,
+      4,
+      { addId: 10, dropId: 11, claim: false },
+      fetchImpl as unknown as typeof fetch,
+    );
+    expect(res).toMatchObject({ ok: false, httpStatus: 0, code: NO_RESPONSE, response: null });
+    expect(res.message).toMatch(/may or may not have gone through/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

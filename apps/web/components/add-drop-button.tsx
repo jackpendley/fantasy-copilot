@@ -63,6 +63,9 @@ export function AddDropButton({
       } else if (res.status === 409) {
         toast.info(out.message ?? out.error);
         setOpen(false);
+      } else if (out.code === "NO_RESPONSE") {
+        // Unknown outcome (the server got no answer from ESPN): the refresh shows what ESPN has.
+        toast.error(out.message);
       } else {
         toast.error(
           `ESPN rejected it: ${out.code ?? res.status} ${out.message ?? out.error ?? ""}`,

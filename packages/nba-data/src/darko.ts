@@ -2,6 +2,8 @@
 // projected minutes and pace. Read from the projections page's data endpoint (SvelteKit
 // "devalue" JSON), once a day. No stated terms; snapshots are kept with DARKO's own as-of date.
 
+import { readTimeout } from "./timeout";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
 
@@ -94,7 +96,10 @@ export function parseDarko(data: Json): { asOf: string | null; players: DarkoPla
 }
 
 export async function fetchDarko(fetchImpl: typeof fetch = fetch) {
-  const res = await fetchImpl(URL_DATA, { headers: { Accept: "application/json" } });
+  const res = await fetchImpl(URL_DATA, {
+    headers: { Accept: "application/json" },
+    signal: readTimeout(),
+  });
   if (!res.ok) throw new Error(`DARKO ${res.status}`);
   return parseDarko(await res.json());
 }

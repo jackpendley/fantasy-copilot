@@ -11,6 +11,12 @@ export interface EspnConfig {
   game?: "fba";
 }
 
+/**
+ * Every read gives up after this long: a request that hangs would otherwise hold its page or
+ * scheduled job until the platform's limit (300 s on Vercel).
+ */
+export const READ_TIMEOUT_MS = 15_000;
+
 export class EspnError extends Error {
   constructor(
     readonly status: number,
@@ -45,7 +51,10 @@ export async function fetchLeague(
     Accept: "application/json",
   };
   if (opts.filter) headers["X-Fantasy-Filter"] = JSON.stringify(opts.filter);
-  const res = await (opts.fetchImpl ?? fetch)(url, { headers });
+  const res = await (opts.fetchImpl ?? fetch)(url, {
+    headers,
+    signal: AbortSignal.timeout(READ_TIMEOUT_MS),
+  });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     const hint = res.status === 401 ? " (espn_s2/SWID cookies missing or expired)" : "";
@@ -61,6 +70,7 @@ export async function fetchProSchedule(
 ): Promise<unknown> {
   const res = await fetchImpl(
     `${READ_HOST}/apis/v3/games/fba/seasons/${season}?view=proTeamSchedules_wl`,
+    { signal: AbortSignal.timeout(READ_TIMEOUT_MS) },
   );
   if (!res.ok) throw new EspnError(res.status, `ESPN pro schedule ${res.status}`);
   return res.json();
@@ -88,6 +98,7 @@ export async function fetchSeasonPool(
         },
       }),
     },
+    signal: AbortSignal.timeout(READ_TIMEOUT_MS),
   });
   if (!res.ok) throw new EspnError(res.status, `ESPN ${res.status} (season pool ${season})`);
   return res.json();

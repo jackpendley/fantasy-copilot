@@ -2,6 +2,8 @@
 // A static JSON file on stats.nba.com (works from servers, unlike the /stats API),
 // published for past dates too, which makes it usable as ML history.
 
+import { readTimeout } from "./timeout";
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Json = any;
 
@@ -67,6 +69,7 @@ export async function fetchDailyLineups(yyyymmdd: string, fetchImpl: typeof fetc
       "User-Agent": "Mozilla/5.0",
       Accept: "application/json",
     },
+    signal: readTimeout(),
   });
   if (res.status === 403 || res.status === 404) return null;
   if (!res.ok) throw new Error(`NBA lineups ${res.status}`);

@@ -3,6 +3,7 @@ import type { RosterPlayer } from "@fantasy-copilot/espn";
 import {
   SHARE,
   afterReturn,
+  returnsStale,
   teammateEffects,
   withTeammateReturns,
   type LogGame,
@@ -113,5 +114,14 @@ describe("teammate returns", () => {
   it("never projects below zero", () => {
     expect(afterReturn(3, { day: 1, shift: -5, teammate: "x" })).toBe(0);
     expect(afterReturn(20, { day: 1, shift: -5, teammate: "x" })).toBe(15);
+  });
+});
+
+describe("teammate returns due", () => {
+  it("recomputes when none are stored or they're over a day old", () => {
+    const now = Date.parse("2026-11-17T22:00:00Z");
+    expect(returnsStale(null, now)).toBe(true);
+    expect(returnsStale(new Date("2026-11-17T11:00:00Z"), now)).toBe(false);
+    expect(returnsStale(new Date("2026-11-16T11:00:00Z"), now)).toBe(true);
   });
 });

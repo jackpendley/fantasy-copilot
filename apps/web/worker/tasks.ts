@@ -34,7 +34,8 @@ const HANDLERS: Record<string, (input: never) => unknown> = {
 const POLL_MS = 15_000;
 // Short: each ask is a query, and a new task dispatches a run anyway (Neon sleeps sooner).
 const IDLE_MS = 30_000;
-const STAY_MS = 30_000;
+// While simulations run, a job's build (a new trigger) shouldn't wait long to be picked up.
+const STAY_MS = 5_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

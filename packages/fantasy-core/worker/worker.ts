@@ -66,7 +66,8 @@ async function main() {
   let posted = 0;
   const t0 = Date.now();
   // While a job is being built (the app answers "wait"), ask again this often, up to WAIT_MS.
-  const WAIT_EVERY_MS = 20_000;
+  // Short: a triggered job's runners are waiting on it (the app only answers; Neon is awake).
+  const WAIT_EVERY_MS = 5_000;
   const WAIT_MS = 3 * 60_000;
   let waitingSince: number | null = null;
   // Two chunks per core per request: half the requests the app answers.

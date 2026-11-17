@@ -122,7 +122,8 @@ export async function claimTask(): Promise<{ id: number; kind: TaskKind; input: 
       where status = 'queued'
         or (status = 'running' and started_at < now() - ${LEASE}::interval
             and attempts < ${MAX_ATTEMPTS})
-      order by created_at limit 1
+      -- A job's build first: simulation runners wait on it; a trade search can wait.
+      order by kind in ('sim-build', 'sim-asked') desc, created_at limit 1
       for update skip locked
     )
     returning id, kind, input, input_gz

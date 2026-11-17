@@ -53,12 +53,12 @@ Written 2026-11-05. It is updated as measurements come in; the measured facts ar
 
 ## 2. How work flows today
 
-| Scheduler                     | What it calls                    | How often                                           |
-| ----------------------------- | -------------------------------- | --------------------------------------------------- |
-| cron-job.org (job 8752774)    | `/api/cron/gameday`              | every 5 min, all day                                |
-| Vercel cron                   | `/api/cron/nightly`              | 11:00 UTC                                           |
-| Vercel cron                   | `/api/cron/pregame`              | 22:00 UTC                                           |
-| GitHub Actions `simulate.yml` | `/api/worker/{peek,next,result}` | on dispatch (a roster move), plus a `*/15` fallback |
+| Scheduler                     | What it calls                    | How often                                                   |
+| ----------------------------- | -------------------------------- | ----------------------------------------------------------- |
+| cron-job.org (job 8752774)    | `/api/cron/gameday`              | every 5 min, all day                                        |
+| Vercel cron                   | `/api/cron/nightly`              | 11:00 UTC                                                   |
+| Vercel cron                   | `/api/cron/pregame`              | 22:00 UTC                                                   |
+| GitHub Actions `simulate.yml` | `/api/worker/{next,result,task}` | on dispatch (a roster move); no schedule since Nov 16 (§10) |
 
 **The gameday job, every 5 minutes** (`lib/jobs.ts gamedayRun`):
 
@@ -333,3 +333,68 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 - **Unchanged:** every page reads ESPN live when opened; Jack's own moves and asked deep checks get full simulations; the nightly job.
 - **Tripwire:** if a morning total is **3 h 56 m or more** before Nov 18, Jack pays for one month of Pro that day. (Corrected Nov 10: Pro has no CPU-hour cap; 16 h was the trial's. A later downgrade to Hobby re-applies the 4 h rolling window, which would then hold Pro-month usage.)
 - **After Nov 29:** the steady state must stay ≤ ~7 min a day for all projects (Hobby averages 8). The worker writing to Neon directly (planned ~Nov 21) is the main lever.
+
+## 10. Database transfer (Neon egress)
+
+**Nov 16:** Neon emailed that the Free plan's 5 GB of public network transfer for the month was used up. On Free, Neon then suspends compute until the next billing period or an upgrade. We had budgeted Vercel CPU, never database transfer: every byte a query returns to Vercel counts.
+
+**Sizes measured locally** (ESPN reads, database off; before → after #162):
+
+| Payload                      | Read                                      | Before                                               | After                                            |
+| ---------------------------- | ----------------------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
+| sim-build task input         | once per job, by the worker               | 1,859 KB                                             | 375 KB (gzip)                                    |
+| job setup                    | each runner (16)                          | 41 KB                                                | 11 KB, once per server instance                  |
+| job moves                    | each runner (16)                          | 836 KB (492 moves; ~115 in production)               | 18 KB, once per server instance                  |
+| trade-search task input      | each search (~15–30 a day)                | 1,013 KB                                             | 200 KB                                           |
+| racing refresh: head to head | every 20 s while a job runs               | every live move's per-chunk means (tens of MB a job) | one row per pair (~120)                          |
+| P(best) chunk means          | was every refresh                         | ≤12 contenders × chunks                              | once, when the job is done                       |
+| Moves poll                   | every 10 s while a job runs (visible tab) | ~100 KB                                              | 20 s; 204 with no body unless the checks changed |
+| card percentiles             | per server instance's first card          | every player's PBP stats, two seasons                | the stored distributions (nightly)               |
+| Outlook history              | League page, 5-min cache                  | every run's full results (~3 KB a run)               | four fields per team                             |
+
+**Rules from here:**
+
+- Payloads over ~50 KB are stored compressed (`lib/gz.ts`), not as jsonb.
+- Aggregate in SQL; don't fetch per-chunk rows.
+- Polls skip unchanged data.
+- Check the Neon usage panel weekly.
+
+### Budget and the Nov 16 cuts
+
+**Neon's console, Nov 16** (period from Nov 1): transfer **5.03 GB** (Free: 5), compute **51.97 CU-hours** (Free: 100) at a fixed **0.25 CU**, so the database was awake about **13 hours a day**. Jack moved to Launch the same day (pay-as-you-go: $0.106 per CU-hour, 500 GB of transfer included); the goal is to fit back under Free.
+
+| Per month | Neon Free | Budget  |
+| --------- | --------- | ------- |
+| Transfer  | 5 GB      | 2 GB    |
+| Compute   | 100 CU-h  | 60 CU-h |
+
+- **Measured, not guessed:** Settings → "Database this month" reads Neon's API (`NEON_API_KEY`, a project-scoped key, Production only; `lib/neon-usage.ts`): transfer, CU-hours, hours awake and the month's pace. The nightly and pregame jobs push an alert at 60% and 85% of Free, and when a month at this rate passes the budget (once each per period). "A month at this rate" scales the period's use to 30.4 days, so the short Nov 16–30 period (the upgrade restarted it) compares fairly.
+- **The plan check:** in a period's last 36 hours (Neon bills by calendar month, so Nov 30's nightly and pregame runs), a push says whether a month at this rate fits Free with 15% to spare, with the steps to switch in Vercel. That's the reminder for Jack's Dec 1 decision between Launch and Free, and it repeats every month.
+- **Which reads:** `DB_TRAFFIC_LOG=1` logs each query's result size by its SQL, once a minute (`[db-traffic]` in Vercel's runtime logs). On for a day at a time only: it costs CPU.
+- **Compute is awake time.** Neon suspends after 5 idle minutes, so any query every few minutes keeps it up. Cuts (Nov 16):
+  - **No `*/15` schedule** for the worker: its peek woke Neon 96 times a day. A missed dispatch is caught by `ensureWorker` in the gameday job (only when that run touched the database anyway), the nightly job, and the Moves poll while a job is live.
+  - **Gameday runs skip writes they already made:** status events (`insertStatusEvents`) and official-report statuses (`logOfficialReport`) are remembered per instance, and an unchanged report needs no query. The data logged is the same; only repeat queries are skipped.
+  - **The run's own logs** (`gameday` in refresh_log, its cpu_log row) are written only when the run queried the database anyway (`dbUse.queries`).
+  - **Closing lines** are captured inside 20 minutes of tip, not 90. Each capture overwrote the last, so only the final one ever counted.
+  - **The lock job's check** runs once per first tip per instance, not every 5 minutes for an hour.
+  - **Trade ideas after injury news or other teams' moves:** at most hourly on the worker (was every 15 minutes). On Nov 16 news launched the worker every 20 minutes from mid-afternoon, one 8-second trade search each, and each run kept Neon awake ~7 minutes. Jack's own moves and the nightly job still refresh right away.
+  - **The task runner leaves after 30 s idle** (was 2 minutes of asks every 15 s); a new task dispatches a run anyway.
+
+**Transfer cuts (Nov 16, second PR):**
+
+| Read                                                         | Before                                                                         | After                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Moves poll, Moves page, trade simulate poll, Free agents tab | the whole deep-checks row (~100 KB, every move)                                | only the moves shown, cut in SQL (`liveJob(…, { keys })`)                                      |
+| Job refresh (every 20 s per job)                             | every move's sums (~270 B each)                                                | only moves still racing; settled ones remembered per instance, all re-read on the last refresh |
+| League page while a run updates                              | full page every 5 s; every final run's history and every league move each time | every 15 s; history and moves kept a minute per instance                                       |
+| Trends (and Draft)                                           | prior seasons' ~1 MB row per view                                              | six hours per instance                                                                         |
+| Nightly freshness checks (season baselines, trade ideas)     | the whole row                                                                  | fingerprint and time only                                                                      |
+| A job's trade ideas                                          | the whole stored list                                                          | its first `TRADE_MOVES`, cut in SQL                                                            |
+
+Not yet cut, small this early in the season and measured with the traffic log before deciding: the Model page's and the nightly blend/defense reads of every logged game (they grow all season).
+
+**Rules from here (adding to the ones above):**
+
+- Every new scheduled step says how often it queries the database; a run with nothing new sends no query.
+- Fallbacks run inside work that already has the database awake, never on a timer of their own.
+- Check Settings' "Database this month" line weekly; the alerts cover the rest.

@@ -18,7 +18,7 @@ import {
   type WireMove,
 } from "@fantasy-copilot/fantasy-core";
 import { db, dbConfigured } from "@/lib/db";
-import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
+import { fingerprintOf, readView, readViewHead, writeView } from "@/lib/view-cache";
 import {
   DECISION_TIER,
   MIN_BASE_SEASONS,
@@ -27,10 +27,13 @@ import {
   addOf,
   contendersOf,
   effectsFromSums,
+  headToHeadFromSums,
   markPicks,
+  pairsNeeded,
   promotions,
+  racingTargets,
   withPBest,
-  type ChunkMeans,
+  type PairSums,
   type DeepEffect,
   type MoveSums,
   type Tier,
@@ -64,9 +67,10 @@ import {
   type TradeSpec,
 } from "./sim-moves";
 import { loadWaiverInputs } from "./waivers-view";
-import { SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
+import { POLL_LOCK, SIM_LOCK, enqueueTask, hasTasks, heartbeat } from "./worker-tasks";
 import { saverOn } from "@/lib/cpu-saver";
 import { decodeWire, encodeWire } from "@/lib/wire-json";
+import { pack, unpack } from "@/lib/gz";
 
 /**
  * Seasons per chunk. Each runner request carries 2 chunks per core, so bigger chunks mean fewer
@@ -80,7 +84,7 @@ const MIN_BASE_CHUNKS = MIN_BASE_SEASONS / CHUNK_SEASONS;
 /**
  * Runners' posts recompute the checks at most this often (and whenever all are back): each
  * recompute rewrites every move's numbers, the biggest part of a post's Vercel CPU (Nov 5:
- * ~10 s of a job's ~15 s). Numbers on the page lag by at most this plus its 10 s poll.
+ * ~10 s of a job's ~15 s). Numbers on the page lag by at most this plus its 20 s poll.
  */
 const REFRESH_GAP_S = 20;
 /** Under the CPU saver (lib/cpu-saver.ts). */
@@ -129,6 +133,7 @@ type GroupRow = SimGroup & {
   target_2se: number;
   min_seasons: number;
   max_seasons: number;
+  promoted: boolean;
 };
 
 const groupHasWork = (g: SimGroup) => hasChunksLeft(g, MIN_BASE_CHUNKS);
@@ -149,9 +154,13 @@ export async function enqueueSimJob(
   if (process.env.WORKER_SECRET) {
     // The worker runs the analysis and builds the moves (docs/COMPUTE.md); the job is stored
     // when it posts them (storeBuiltJob).
-    const input = { build: encodeWire(build), ctx };
+    const encoded = encodeWire(build) as { base: unknown };
+    const input = { build: encoded, ctx };
     const kind = askedOnly ? "sim-asked" : "sim-build";
-    await m.step("queue-build", () => enqueueTask(kind, fingerprintOf(input), input));
+    // Kept once it's built: the job's context and base season (storeBuiltJob).
+    await m.step("queue-build", () =>
+      enqueueTask(kind, fingerprintOf(input), input, { ctx, base: encoded.base }),
+    );
     return null;
   }
   const built = await m.step("build-moves", () =>
@@ -214,10 +223,7 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     seasons: 0,
   });
   // The best stored trade ideas too, checked after the Moves page's drops.
-  const ideas = ((await readView<StoredIdea[]>(TRADE_VIEW).catch(() => null))?.value ?? []).slice(
-    0,
-    TRADE_MOVES,
-  );
+  const ideas = await readViewHead<StoredIdea>(TRADE_VIEW, TRADE_MOVES).catch(() => []);
   // Trades Jack asked to check, until each has a result.
   const pending = await pendingAskedTrades().catch(() => []);
   const asked = {
@@ -328,8 +334,12 @@ async function storeJob(
       scoring_period: ctx.scoringPeriod,
       read_at: new Date(ctx.readAt),
       fingerprint,
-      setup: db().json(wire as never),
-      moves: db().json(moves as never),
+      // Compressed (each runner reads them; database transfer): the jsonb columns stay empty.
+      setup: db().json({} as never),
+      moves: db().json([] as never),
+      setup_gz: pack(wire),
+      moves_gz: pack(moves),
+      n_moves: moves.length,
       waiver_fingerprint: ctx.waiverFingerprint,
       roster_key: ctx.rosterKey,
       watch_key: ctx.watchKey ?? null,
@@ -382,6 +392,27 @@ async function startWorker() {
     limit 1
   `;
   if (!busy) await dispatchWorker().catch(() => false);
+}
+
+/** When this instance last looked for work waiting without a runner (ms). */
+let ensuredAt = 0;
+
+/**
+ * The fallback for a missed dispatch (the workflow has no schedule: it woke Neon 96 times a
+ * day, docs/COMPUTE.md §10): work waiting with no runner up starts a run. Callers already have
+ * the database awake; at most every `everyMs` per instance. True when it dispatched.
+ */
+export async function ensureWorker(everyMs = 10 * 60_000): Promise<boolean> {
+  if (Date.now() - ensuredAt < everyMs) return false;
+  ensuredAt = Date.now();
+  if (!(await hasWork()) && !(await hasTasks())) return false;
+  const [busy] = await db()`
+    select 1 from sim_jobs where last_worker_at > now() - interval '45 seconds'
+    union all
+    select 1 from job_locks where name in (${SIM_LOCK}, ${POLL_LOCK}) and until > now()
+    limit 1
+  `;
+  return busy ? false : dispatchWorker().catch(() => false);
 }
 
 /** Is there work for a runner? (Cheap: one query.) */
@@ -457,11 +488,7 @@ export async function nextAssignment(
   );
   const nMoves = groups.reduce((a, x) => a + x.n_keys, 0);
   const fresh = have !== job.id || (haveMoves != null && haveMoves !== nMoves);
-  const [input] = fresh
-    ? await db()<{ setup: WireInput; moves: WireMove[] }[]>`
-        select setup, moves from sim_jobs where id = ${job.id}
-      `
-    : [];
+  const input = fresh ? await jobPayload(job.id) : null;
   return {
     jobId: job.id,
     group: g.grp,
@@ -472,6 +499,28 @@ export async function nextAssignment(
     active: taken.active,
     ...(input ? { setup: input.setup, moves: input.moves } : {}),
   };
+}
+
+/**
+ * A job's setup and moves, unpacked; kept per server instance (runners ask for the same job at
+ * once), so most of a job's runners cost no database read.
+ */
+const payloads = new Map<number, Promise<{ setup: WireInput; moves: WireMove[] }>>();
+function jobPayload(jobId: number): Promise<{ setup: WireInput; moves: WireMove[] }> {
+  let p = payloads.get(jobId);
+  if (!p) {
+    p = db()<
+      { setup: WireInput; moves: WireMove[]; setup_gz: string | null; moves_gz: string | null }[]
+    >`select setup, moves, setup_gz, moves_gz from sim_jobs where id = ${jobId}`.then(([r]) => ({
+      // Jobs stored before compression keep jsonb.
+      setup: r!.setup_gz ? unpack<WireInput>(r!.setup_gz) : r!.setup,
+      moves: r!.moves_gz ? unpack<WireMove[]>(r!.moves_gz) : r!.moves,
+    }));
+    p.catch(() => payloads.delete(jobId));
+    payloads.set(jobId, p);
+    for (const id of payloads.keys()) if (payloads.size > 2 && id !== jobId) payloads.delete(id);
+  }
+  return p;
 }
 
 /**
@@ -580,7 +629,14 @@ export async function postChunks(
 }
 
 /** Every move's summed differences so far (summed in the database: one row per move). */
-async function moveSums(jobId: number): Promise<Map<string, MoveSums>> {
+/**
+ * Sums of moves this instance saw settled, per job (Neon transfer, Nov 16): later refreshes read
+ * only the rest. A chunk still in flight may add to a settled move, so a job's last refresh reads
+ * everything again.
+ */
+const settledSums: { jobId: number; sums: Map<string, MoveSums> } = { jobId: 0, sums: new Map() };
+
+async function moveSums(jobId: number, skip: string[] = []): Promise<Map<string, MoveSums>> {
   const rows = await db()<
     {
       key: string;
@@ -603,7 +659,7 @@ async function moveSums(jobId: number): Promise<Map<string, MoveSums>> {
       sum(seed1_s) as seed1_s, sum(seed1_q) as seed1_q,
       sum(bye_s) as bye_s, sum(bye_q) as bye_q,
       sum(wins_s) as wins_s, sum(wins_q) as wins_q
-    from sim_move_sums where job_id = ${jobId} group by key
+    from sim_move_sums where job_id = ${jobId} and key <> all(${skip}) group by key
   `;
   const m = (n: number, sum: number, sumsq: number) => ({ n, sum, sumsq });
   return new Map(
@@ -621,19 +677,37 @@ async function moveSums(jobId: number): Promise<Map<string, MoveSums>> {
 }
 
 /**
- * Each move's mean title and wins difference in each of its chunks: head-to-head comparisons
- * (racing, the cards' picks) and P(best).
+ * Head to head for these pairs, summed in the database over each pair's shared chunks: one
+ * small row per pair (Nov 16: fetching every move's per-chunk means each refresh cost tens of
+ * MB of database transfer per job).
  */
-async function chunkMeans(jobId: number, keys: string[]): Promise<ChunkMeans> {
-  const out: ChunkMeans = new Map();
-  if (!keys.length) return out;
-  const rows = await db()<{ key: string; chunk: number; t: number; w: number }[]>`
-    select key, chunk, title_s / n as t, wins_s / n as w from sim_move_sums
+async function pairSums(jobId: number, pairs: [string, string][]): Promise<PairSums[]> {
+  if (!pairs.length) return [];
+  return db()<PairSums[]>`
+    select p.a, p.b, count(*)::int as n,
+      sum(x.title_s / x.n - y.title_s / y.n) as s,
+      sum((x.title_s / x.n - y.title_s / y.n) ^ 2) as q
+    from unnest(${pairs.map(([a]) => a)}::text[], ${pairs.map(([, b]) => b)}::text[]) as p(a, b)
+    join sim_move_sums x on x.job_id = ${jobId} and x.key = p.a and x.n > 0
+    join sim_move_sums y on y.job_id = ${jobId} and y.key = p.b and y.chunk = x.chunk and y.n > 0
+    group by p.a, p.b
+  `;
+}
+
+/** Each contender's mean title difference in each of its chunks (for P(best), at the end). */
+async function titleMeans(
+  jobId: number,
+  keys: string[],
+): Promise<Map<string, Map<number, number>>> {
+  const out = new Map<string, Map<number, number>>();
+  if (keys.length < 2) return out;
+  const rows = await db()<{ key: string; chunk: number; m: number }[]>`
+    select key, chunk, title_s / n as m from sim_move_sums
     where job_id = ${jobId} and key = any(${keys}) and n > 0
   `;
   for (const r of rows) {
     if (!out.has(r.key)) out.set(r.key, new Map());
-    out.get(r.key)!.set(r.chunk, { title: r.t, wins: r.w });
+    out.get(r.key)!.set(r.chunk, r.m);
   }
   return out;
 }
@@ -643,18 +717,24 @@ async function chunkMeans(jobId: number, keys: string[]): Promise<ChunkMeans> {
  * job (a lock), reading the groups again inside it, so two refreshes never move a move twice.
  * Returns whether any moved.
  */
-async function promote(jobId: number, promo: Map<string, Tier>): Promise<boolean> {
+async function promote(
+  jobId: number,
+  promo: Map<string, Tier>,
+  chunkSeasons: number,
+): Promise<boolean> {
   return db().begin(async (sql) => {
     await sql`select pg_advisory_xact_lock(${jobId})`;
     const groups = await sql<GroupKeys[]>`
-      select grp, keys, active, next_chunk, max_seasons from sim_groups where job_id = ${jobId}
+      select grp, keys, active, next_chunk, max_seasons, promoted
+      from sim_groups where job_id = ${jobId}
     `;
-    const { update, add } = promoteGroups(groups, promo);
-    if (!add.length) return false;
+    const { update, add } = promoteGroups(groups, promo, chunkSeasons);
+    if (!update.length && !add.length) return false;
     for (const g of update)
       await sql`update sim_groups set keys = ${g.keys}, active = ${g.active}
         where job_id = ${jobId} and grp = ${g.grp}`;
-    await sql`insert into sim_groups ${sql(add.map((g) => ({ job_id: jobId, ...g })))}`;
+    if (add.length)
+      await sql`insert into sim_groups ${sql(add.map((g) => ({ job_id: jobId, ...g })))}`;
     return true;
   });
 }
@@ -712,62 +792,69 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   if (!job) return { done: true };
   const loadGroups = () => db()<GroupRow[]>`
     select grp, prio, keys, active, cardinality(active) as n_active, next_chunk, posted,
-      target_2se, min_seasons, max_seasons, min_seasons / ${job.chunk_seasons} as min_chunks,
+      target_2se, min_seasons, max_seasons, promoted, min_seasons / ${job.chunk_seasons} as min_chunks,
       max_seasons / ${job.chunk_seasons} as max_chunks
     from sim_groups where job_id = ${jobId} order by prio, grp
   `;
   let groups = await loadGroups();
   const { outlook, base } = await baseRun(jobId);
   if (!base.seasons) return { done: job.status === "done" };
-  const sums = await moveSums(jobId);
-  // Each move is checked to its group's precision (ADR-060).
-  const tierOf = (gs: GroupRow[]) => {
+  if (settledSums.jobId !== jobId) Object.assign(settledSums, { jobId, sums: new Map() });
+  const known = settledSums.sums;
+  let sums = new Map([...known, ...(await moveSums(jobId, [...known.keys()]))]);
+  // Each move is checked to its group's precision (ADR-060), or to less once it's out of its
+  // race (`lowered`: ADR-063 racing elimination).
+  const tierOf = (gs: GroupRow[], lowered = new Map<string, Tier>()) => {
     const tiers = new Map<string, Tier>(
       gs.flatMap((g) =>
         g.keys.map((k) => [
           k,
-          { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
+          {
+            target2se: lowered.get(k)?.target2se ?? g.target_2se,
+            minSeasons: g.min_seasons,
+            maxSeasons: g.max_seasons,
+          },
         ]),
       ),
     );
     return (k: string) => tiers.get(k) ?? TOP_TIER;
   };
-  const effectsOf = (gs: GroupRow[]) =>
+  const effectsOf = (gs: GroupRow[], lowered?: Map<string, Tier>) =>
     effectsFromSums(
       gs.flatMap((g) => g.keys),
       sums,
-      tierOf(gs),
+      tierOf(gs, lowered),
     );
   let effects = effectsOf(groups);
   // Waiver moves still in play, compared head to head (trade ideas are compared on their own).
-  const means = await chunkMeans(
-    jobId,
-    effects.filter((e) => addOf(e.key) != null && !e.dropped && e.seasons > 0).map((e) => e.key),
-  );
+  let h2h = headToHeadFromSums(await pairSums(jobId, pairsNeeded(effects)));
   // Racing (ADR-063): moves still in reach of a card's best drop, or of Jack's best move, go
   // deeper. Not while closing a job whose runners went quiet (it would never finish).
   if (job.status === "running" && !job.asked_only && !closing) {
-    const promo = promotions(effects, tierOf(groups), means);
-    if (promo.size && (await promote(jobId, promo))) {
+    const promo = promotions(effects, tierOf(groups), h2h);
+    if (promo.size && (await promote(jobId, promo, job.chunk_seasons))) {
       groups = await loadGroups();
       effects = effectsOf(groups);
+      h2h = headToHeadFromSums(await pairSums(jobId, pairsNeeded(effects)));
       await startWorker();
     }
   }
-  // "Best" is among waiver moves (trade ideas are checked too, but compared on their own).
-  const contenders = contendersOf(
-    effects,
-    new Set(effects.filter((e) => addOf(e.key) != null).map((e) => e.key)),
+  // Racing elimination: a promoted move clearly behind its race's leader stops needing that
+  // race's precision.
+  const racing = new Map(
+    groups
+      .filter((g) => g.promoted)
+      .flatMap((g) =>
+        g.keys.map((k) => [
+          k,
+          { target2se: g.target_2se, minSeasons: g.min_seasons, maxSeasons: g.max_seasons },
+        ]),
+      ),
   );
-  const titleMeans = new Map(
-    contenders.map((e) => [
-      e.key,
-      new Map([...(means.get(e.key) ?? [])].map(([c, m]) => [c, m.title])),
-    ]),
-  );
-  withPBest(effects, contenders, contenders.length < 2 ? new Map() : titleMeans);
+  const lowered = racingTargets(effects, (k) => racing.get(k) ?? null, h2h);
+  if (lowered.size) effects = effectsOf(groups, lowered);
   // The drop each card opens on.
-  markPicks(effects, means);
+  markPicks(effects, h2h);
 
   // Each group keeps only its moves still getting seasons.
   const active = new Set(effects.filter((e) => e.active).map((e) => e.key));
@@ -784,6 +871,31 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   const noMoreToIssue = next.every((g) => !groupHasWork(g));
   const allBack = next.every((g) => g.posted >= Math.min(g.next_chunk, g.max_chunks));
   const done = job.status !== "superseded" && noMoreToIssue && (allBack || closing);
+  // The last refresh reads every move's sums again (a chunk in flight may have added to one
+  // remembered as settled); until then, settled moves' sums are remembered.
+  if (done && known.size) {
+    sums = await moveSums(jobId);
+    effects = effectsOf(groups, lowered);
+    markPicks(effects, h2h);
+  } else
+    for (const e of effects) if (!e.active && sums.has(e.key)) known.set(e.key, sums.get(e.key)!);
+
+  // "Best" is among waiver moves (trade ideas are checked too, but compared on their own),
+  // computed once the job is done (each contender's every chunk: kept off the refreshes).
+  if (done) {
+    const contenders = contendersOf(
+      effects,
+      new Set(effects.filter((e) => addOf(e.key) != null).map((e) => e.key)),
+    );
+    withPBest(
+      effects,
+      contenders,
+      await titleMeans(
+        jobId,
+        contenders.map((e) => e.key),
+      ),
+    );
+  }
 
   // The Outlook: every team's odds from the base run so far.
   const meta = new Map(job.meta.map((t) => [t.teamId, t]));
@@ -871,7 +983,10 @@ export async function addJobCpu(jobId: number, since: NodeJS.CpuUsage): Promise<
   );
 }
 
-/** Delete jobs older than two days and their chunks (nightly), keeping the last finished one. */
+/**
+ * Delete jobs older than two days and their chunks (nightly), keeping the last finished one,
+ * and moves' results not settled in two weeks.
+ */
 export async function pruneSimJobs(): Promise<number> {
   if (!dbConfigured()) return 0;
   const rows = await db()`
@@ -881,6 +996,8 @@ export async function pruneSimJobs(): Promise<number> {
   `;
   // CPU measurements are kept for 30 days (Vercel's window).
   await db()`delete from cpu_log where ran_at < now() - interval '30 days'`;
+  // Moves not checked in two weeks (gone from every list; the Free agents tab reads them all).
+  await db()`delete from move_results where settled_at < now() - interval '14 days'`;
   return rows.length;
 }
 
@@ -906,10 +1023,50 @@ async function storeSettled(jobId: number, rosterKey: string, effects: DeepEffec
  * The latest worker job, with its results when the stored deep checks are this job's. Asked
  * jobs only with `withAsked` (the simulate buttons): the pages follow the full job.
  */
+/**
+ * A deep-checks row cut in the database (Neon transfer, Nov 16): the job id, only the effects
+ * for these move keys (or these adds' moves), and how many effects have settled.
+ */
+async function deepRow(
+  viewKey: string,
+  only?: { keys?: string[]; adds?: string[] },
+): Promise<{ jobId: number; effects: DeepEffect[]; settled: number } | null> {
+  if (!only) {
+    const v = await readView<Pick<DeepChecks, "jobId" | "effects">>(viewKey);
+    if (!v) return null;
+    const effects = v.value.effects;
+    return { jobId: v.value.jobId, effects, settled: effects.filter((e) => !e.active).length };
+  }
+  const match = only.keys
+    ? db()`e->>'key' = any(${only.keys})`
+    : db()`split_part(e->>'key', ':', 1) = any(${only.adds ?? []})`;
+  const [r] = await db()<{ job_id: number; effects: DeepEffect[]; settled: number }[]>`
+    select (value->>'jobId')::int as job_id,
+      coalesce((select jsonb_agg(e) from jsonb_array_elements(value->'effects') e
+        where ${match}), '[]'::jsonb) as effects,
+      (select count(*) from jsonb_array_elements(value->'effects') e
+        where (e->>'active') is distinct from 'true')::int as settled
+    from view_cache where key = ${viewKey}
+  `;
+  return r ? { jobId: r.job_id, effects: r.effects, settled: r.settled } : null;
+}
+
+/**
+ * The latest job and its deep checks. `only`: just these move keys (or adds), cut in the
+ * database; polls and cards pass it (the full row is ~100 KB).
+ */
 export async function liveJob(
   withAsked = false,
+  only?: { keys?: string[]; adds?: string[] },
 ): Promise<
-  (LiveJob & { trigger: string | null; createdAt: Date; settled: number; total: number }) | null
+  | (LiveJob & {
+      trigger: string | null;
+      createdAt: Date;
+      settled: number;
+      total: number;
+      version: string;
+    })
+  | null
 > {
   if (!dbConfigured()) return null;
   const [[j], deep, asked] = await Promise.all([
@@ -920,17 +1077,14 @@ export async function liveJob(
         trigger: string | null;
         roster_key: string | null;
         created_at: Date;
+        refreshed_at: Date | null;
       }[]
     >`
-      select id, status, trigger, roster_key, created_at from sim_jobs
+      select id, status, trigger, roster_key, created_at, refreshed_at from sim_jobs
       where status <> 'superseded' and (${withAsked} or not asked_only) order by id desc limit 1
     `,
-    latestDeepChecks(),
-    withAsked
-      ? readView<Pick<DeepChecks, "jobId" | "effects">>(ASKED_KEY)
-          .then((v) => v?.value ?? null)
-          .catch(() => null)
-      : null,
+    deepRow(DEEP_KEY, only),
+    withAsked ? deepRow(ASKED_KEY, only).catch(() => null) : null,
   ]);
   if (!j) return null;
   const mine = [deep, asked].find((d) => d?.jobId === j.id) ?? null;
@@ -946,9 +1100,27 @@ export async function liveJob(
     effects,
     trigger: j.trigger,
     createdAt: j.created_at,
-    settled: mine ? mine.effects.filter((e) => !e.active).length : 0,
+    settled: mine?.settled ?? 0,
     total: keys[0]?.n ?? 0,
+    version: versionOf(j),
   };
+}
+
+/** What a page's deep checks were read at: the latest job and when it last refreshed. */
+const versionOf = (j: { id: number; status: string; refreshed_at: Date | null }) =>
+  `${j.id}:${j.status}:${j.refreshed_at?.getTime() ?? 0}`;
+
+/**
+ * The deep checks' version now (one small row): a poll whose page already has it skips the
+ * numbers (database transfer, Nov 16).
+ */
+export async function deepVersion(): Promise<string | null> {
+  if (!dbConfigured()) return null;
+  const [j] = await db()<{ id: number; status: string; refreshed_at: Date | null }[]>`
+    select id, status, refreshed_at from sim_jobs
+    where status <> 'superseded' and not asked_only order by id desc limit 1
+  `;
+  return j ? versionOf(j) : null;
 }
 
 /**
@@ -967,7 +1139,7 @@ export async function bestChecksByAdd(
   if (!dbConfigured() || !addIds.length) return { byAdd, live: false };
   const ids = new Set(addIds.map(String));
   const [job, rows] = await Promise.all([
-    liveJob(),
+    liveJob(false, { adds: [...ids] }),
     db()<{ key: string; roster_key: string; effect: DeepEffect }[]>`
       select key, roster_key, effect from move_results
       where split_part(key, ':', 1) = any(${[...ids]})
@@ -994,7 +1166,7 @@ export async function bestChecksByAdd(
 
 /** Deep checks for these move keys as a page shows them (lib/nba/move-shown.ts). */
 export async function deepChecksFor(keys: string[], rosterNow: string): Promise<DeepView> {
-  const [job, last] = await Promise.all([liveJob(), settledResults(keys)]);
+  const [job, last] = await Promise.all([liveJob(false, { keys }), settledResults(keys)]);
   return deepView(keys, job, last, rosterNow);
 }
 
@@ -1005,15 +1177,6 @@ export async function settledResults(keys: string[]): Promise<Map<string, Settle
     select key, roster_key, effect from move_results where key = any(${keys})
   `;
   return new Map(rows.map((r) => [r.key, { rosterKey: r.roster_key, effect: r.effect }]));
-}
-
-/** The latest deep checks (for the Moves page). */
-export async function latestDeepChecks(): Promise<DeepChecks | null> {
-  if (!dbConfigured()) return null;
-  const [r] = await db()<
-    { value: DeepChecks }[]
-  >`select value from view_cache where key = ${DEEP_KEY}`;
-  return r?.value ?? null;
 }
 
 /**

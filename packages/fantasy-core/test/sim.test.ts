@@ -530,6 +530,60 @@ describe("roster size", { timeout: 30_000 }, () => {
   });
 });
 
+describe(
+  "a player's points per game changing on a later day (a teammate returns)",
+  { timeout: 60_000 },
+  () => {
+    // Team 1's best player (100) drops to 20 FP/G from `day` on.
+    const withChange = (input: SimInput, day: number): SimInput => ({
+      ...input,
+      teams: input.teams.map((t) =>
+        t.id === 1
+          ? {
+              ...t,
+              roster: t.roster.map((r) => (r.id === 100 ? { ...r, change: { day, fppg: 20 } } : r)),
+            }
+          : t,
+      ),
+    });
+    const weekPoints = (input: SimInput) => {
+      const out: number[][][] = [];
+      simulateSeason({ ...input, inspect: (_s, o) => out.push(o.points) });
+      return out;
+    };
+
+    it("from the first day plays exactly like the lower projection", () => {
+      const input = goldenInput();
+      const lower: SimInput = {
+        ...input,
+        teams: input.teams.map((t) =>
+          t.id === 1
+            ? { ...t, roster: t.roster.map((r) => (r.id === 100 ? { ...r, fppg: 20 } : r)) }
+            : t,
+        ),
+      };
+      expect(weekPoints(withChange(input, input.fromDay))).toEqual(weekPoints(lower));
+    });
+
+    it("after the last day changes nothing", () => {
+      const input = goldenInput();
+      expect(weekPoints(withChange(input, input.lastDay + 1))).toEqual(weekPoints(input));
+    });
+
+    it("mid-season leaves the weeks before it as they were and lowers the team's after", () => {
+      const input = goldenInput();
+      const base = weekPoints(input);
+      const changed = weekPoints(withChange(input, 22)); // the first day of week 4
+      for (const [s, season] of changed.entries())
+        for (const [i, pts] of season.entries())
+          expect(pts.slice(0, 4)).toEqual(base[s]![i]!.slice(0, 4));
+      const later = (out: number[][][]) =>
+        out.reduce((a, season) => a + season[0]!.slice(4, 7).reduce((x, y) => x + y, 0), 0);
+      expect(later(changed)).toBeLessThan(later(base));
+    });
+  },
+);
+
 describe("a roster change on a later day (a claim that clears then)", { timeout: 60_000 }, () => {
   // Team 1 streams (addsPerWeek 1.5); 109 is its 10th man, 6000 a new player.
   const add: SimPlayer = { id: 6000, eligible: ["SF"], proTeamId: 3, fppg: 25, gp: 75, sd: 0.12 };

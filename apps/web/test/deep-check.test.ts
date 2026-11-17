@@ -7,9 +7,13 @@ import {
   contendersOf,
   markPicks,
   needsMore,
+  headToHeadFromSums,
+  headToHeadOf,
   pairedDiff,
+  pairsNeeded,
   pickDrop,
   promotions,
+  racingTargets,
   DECISION_TIER,
   EARLY_SEASONS,
   REST_TIER,
@@ -247,7 +251,7 @@ describe("racing and each card's pick (ADR-063)", () => {
     const means = meansOf({ "1:a:": 0.006, "1:b:": 0.005 });
     means.get("1:b:")!.set(0, { title: 0.004, wins: 0 }); // not quite steady
     expect(pickDrop([a, b])!.key).toBe("1:b:"); // without head to head: a tie, b has more wins
-    expect(pickDrop([a, b], means)!.key).toBe("1:a:");
+    expect(pickDrop([a, b], headToHeadOf(means))!.key).toBe("1:a:");
   });
 
   it("promotes a card's rivals to the top tier and the best move's to the decision tier", () => {
@@ -260,7 +264,7 @@ describe("racing and each card's pick (ADR-063)", () => {
     const promo = promotions(
       [opening, rival, far, gone, other],
       (k) => tiers.get(k) ?? REST_TIER,
-      meansOf({ "1:reid:": 0.005, "1:allen:": -0.01 }),
+      headToHeadOf(meansOf({ "1:reid:": 0.005, "1:allen:": -0.01 })),
     );
     // Reid's and Dunn's drops race for Jack's best move (both gain title odds).
     expect(promo.get("1:reid:")).toBe(DECISION_TIER);
@@ -291,5 +295,69 @@ describe("racing and each card's pick (ADR-063)", () => {
       fx("trade:9:1:2", 0.02, 0.001),
     ]);
     expect(effects.filter((e) => e.pick).map((e) => e.key)).toEqual(["1:reid:", "2:b:"]);
+  });
+  it("per-pair sums from the database give the same head to head as the chunks", () => {
+    const means = meansOf({ "1:a:": 0.006, "1:b:": 0.005 });
+    means.get("1:b:")!.set(0, { title: 0.004, wins: 0 });
+    const diffs = [...means.get("1:a:")!].map(
+      ([c, x]) => x.title - means.get("1:b:")!.get(c)!.title,
+    );
+    const h2h = headToHeadFromSums([
+      {
+        a: "1:a:",
+        b: "1:b:",
+        n: diffs.length,
+        s: diffs.reduce((t, x) => t + x, 0),
+        q: diffs.reduce((t, x) => t + x * x, 0),
+      },
+    ]);
+    const want = pairedDiff("1:a:", "1:b:", means)!;
+    expect(h2h("1:a:", "1:b:")!.d).toBeCloseTo(want.d, 12);
+    expect(h2h("1:a:", "1:b:")!.se).toBeCloseTo(want.se, 12);
+    // Asked the other way round, it flips.
+    expect(h2h("1:b:", "1:a:")!.d).toBeCloseTo(-want.d, 12);
+    // Too few shared chunks: unknown.
+    expect(headToHeadFromSums([{ a: "x", b: "y", n: 5, s: 1, q: 1 }])("x", "y")).toBeNull();
+  });
+
+  it("asks only for each add's leader against its drops, and the best move against the gainers", () => {
+    const pairs = pairsNeeded([
+      fx("1:reid:", 0.005, 0.001),
+      fx("1:dunn:", 0.003, 0.001),
+      fx("1:gone:", -0.03, 0.001, -0.5, { dropped: true }),
+      fx("2:a:", 0.004, 0.001),
+      fx("2:b:", -0.002, 0.001),
+      fx("trade:9:1:2", 0.02, 0.001),
+    ]);
+    expect(pairs).toEqual([
+      ["1:reid:", "1:dunn:"],
+      ["2:a:", "2:b:"],
+      ["1:reid:", "2:a:"],
+    ]);
+  });
+  it("racing elimination: a promoted move clearly behind its race's leader stops racing", () => {
+    const best = fx("1:reid:", 0.006, 0.0005, 0.17);
+    const close = fx("1:dunn:", 0.0058, 0.0005, 0.11);
+    const behind = fx("2:x:", 0.002, 0.0005, 0.05); // out of the race for the best move
+    const card = fx("3:a:", -0.002, 0.0005);
+    const cardBehind = fx("3:b:", -0.006, 0.0005); // behind his card's best
+    const racing = new Map([
+      ["1:reid:", DECISION_TIER],
+      ["1:dunn:", DECISION_TIER],
+      ["2:x:", DECISION_TIER],
+      ["3:b:", TOP_TIER],
+    ]);
+    const lowered = racingTargets(
+      [best, close, behind, card, cardBehind],
+      (k) => racing.get(k) ?? null,
+    );
+    // Still in reach: no change. Out of the best-move race but his card's best: a card's ±0.2.
+    expect(lowered.has("1:reid:")).toBe(false);
+    expect(lowered.has("1:dunn:")).toBe(false);
+    expect(lowered.get("2:x:")).toBe(TOP_TIER);
+    // Behind his card's best drop: the rest tier (stops).
+    expect(lowered.get("3:b:")).toBe(REST_TIER);
+    // Never promoted: untouched.
+    expect(lowered.has("3:a:")).toBe(false);
   });
 });

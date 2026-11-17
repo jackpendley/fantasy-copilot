@@ -350,7 +350,7 @@ export default async function MovesPage({
   const [checks, outlookRun, job, last] = await Promise.all([
     worker ? Promise.resolve(null) : moveChecks(v).catch(() => null),
     dbConfigured() ? latestOutlook().catch(() => null) : Promise.resolve(null),
-    worker ? liveJob().catch(() => null) : Promise.resolve(null),
+    worker ? liveJob(false, { keys }).catch(() => null) : Promise.resolve(null),
     worker ? settledResults(keys).catch(() => new Map()) : Promise.resolve(new Map()),
   ]);
   const deep = deepView(keys, job, last, roster);

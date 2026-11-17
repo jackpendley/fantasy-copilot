@@ -20,6 +20,7 @@ import {
   type PlayerMetric,
 } from "./pbp-metrics";
 import { db, dbConfigured } from "@/lib/db";
+import { readView, writeView } from "@/lib/view-cache";
 import { nameKey } from "@/lib/name-key";
 
 export { nameKey };
@@ -161,8 +162,23 @@ export async function refreshPbpPlayers(seasons: number[]): Promise<Record<numbe
       }
     });
     out[season] = rows.length;
+    // The league distributions the cards' percentiles use, stored small (Nov 16: computing them
+    // read every player's stats per server instance, megabytes of database transfer).
+    await storeDistributions(season, distributions(rows.map((r) => r.stats)));
   }
   return out;
+}
+
+const distKey = (season: number) => `pbp-distributions-${season}`;
+
+interface StoredDistributions {
+  minGames: number;
+  values: Record<string, number[]>;
+}
+
+async function storeDistributions(season: number, d: Distributions) {
+  const value: StoredDistributions = { minGames: d.minGames, values: Object.fromEntries(d.values) };
+  await writeView(distKey(season), String(season), value, 0);
 }
 
 let filling: Promise<unknown> | null = null;
@@ -188,9 +204,20 @@ const leagueCache = new Map<number, { at: number; dist: Promise<Distributions> }
 function leagueDistributions(season: number) {
   const hit = leagueCache.get(season);
   if (hit && Date.now() - hit.at < 6 * 3600_000) return hit.dist;
-  const dist = db()<{ stats: PbpStats | null }[]>`
-    select stats from pbp_players where season = ${season} and stats is not null
-  `.then((rows) => distributions(rows.map((r) => r.stats!)));
+  // Stored nightly; computed from every player's stats only until the first nightly run.
+  const dist = readView<StoredDistributions>(distKey(season)).then(async (stored) => {
+    if (stored)
+      return {
+        minGames: stored.value.minGames,
+        values: new Map(Object.entries(stored.value.values)),
+      };
+    const rows = await db()<{ stats: PbpStats | null }[]>`
+      select stats from pbp_players where season = ${season} and stats is not null
+    `;
+    const d = distributions(rows.map((r) => r.stats!));
+    await storeDistributions(season, d).catch(() => {});
+    return d;
+  });
   leagueCache.set(season, { at: Date.now(), dist });
   dist.catch(() => leagueCache.delete(season));
   return dist;

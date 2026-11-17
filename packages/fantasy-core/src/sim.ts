@@ -29,6 +29,11 @@ export interface SimPlayer {
   outUntil?: number;
   /** He's in the IR slot now: activating him later costs the roster its weakest player. */
   reserve?: boolean;
+  /**
+   * His expected points per game change from `day` on: a fill-in once the regular he replaced
+   * returns (MODEL_CARD, teammate returns test 4).
+   */
+  change?: { day: number; fppg: number };
 }
 
 export interface SimTeam {
@@ -287,6 +292,21 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const healthIndex = new Map<number, number>();
   const idOf: number[] = [];
   const wrapped = new Map<SimPlayer, P>();
+  /** Players whose points per game change on a later day (`SimPlayer.change`). */
+  const changing: P[] = [];
+  /** Sets their points per game as of day `d`; whether any changed. */
+  const pointsAsOf = (d: number) => {
+    let changed = false;
+    for (const x of changing) {
+      const c = x.src.change!;
+      const v = d >= c.day ? c.fppg : x.src.fppg;
+      if (x.fppg !== v) {
+        x.fppg = v;
+        changed = true;
+      }
+    }
+    return changed;
+  };
   const wrap = (sp: SimPlayer): P => {
     let x = wrapped.get(sp);
     if (!x) {
@@ -302,6 +322,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       });
       x = { src: sp, fppg: sp.fppg, h, ...tablesOf(sp.proTeamId), elig };
       wrapped.set(sp, x);
+      if (sp.change) changing.push(x);
     }
     return x;
   };
@@ -805,6 +826,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
 
     const faList = [...inputFAs];
     const inFaList = new Set(faList);
+    pointsAsOf(fromDay);
     const st = rosters.map((roster, i) => {
       // A player already in the IR slot comes back in place of the team's designated cut, or
       // else the roster's weakest player.
@@ -832,6 +854,8 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id));
 
     const playDay = (d: number) => {
+      // Points per game as of this day; a change re-solves every team's lineups.
+      if (pointsAsOf(d)) for (const x of st) setRoster(x, x.roster);
       const p = period[d]!;
       if (p !== curP) {
         curP = p;

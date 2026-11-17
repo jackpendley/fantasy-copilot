@@ -5,7 +5,8 @@ import { EspnError } from "@fantasy-copilot/espn";
 import { fetchDarko } from "@fantasy-copilot/nba-data";
 import { CpuMeter, recordCpu } from "./cpu";
 import { minimalOn, saverOn } from "./cpu-saver";
-import { db } from "./db";
+import { db, dbUse } from "./db";
+import { checkNeonUsage } from "./neon-usage";
 import { fmtTip } from "./format";
 import { sendAlertOnce } from "./push";
 import { gamedayAlerts } from "./nba/alerts";
@@ -32,12 +33,14 @@ import {
   recordTimeline,
 } from "./nba/matchup-snapshots";
 import { latestOutlook, runOutlook } from "./nba/outlook-run";
-import { enqueueSimJob, pruneSimJobs } from "./nba/sim-jobs";
+import { enqueueSimJob, ensureWorker, pruneSimJobs } from "./nba/sim-jobs";
 import { refreshMoveChecks, watchedFreeAgents } from "./nba/move-checks";
 import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
 import { pruneTasks } from "./nba/worker-tasks";
 import { fingerprintOf } from "./view-cache";
+import { forgetResponses } from "./fetch-memo";
+import { refreshTeammateReturns } from "./nba/teammate-return-run";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -79,8 +82,12 @@ async function step<T>(
   }
 }
 
-/** Games tipping within this window get their props captured as the closing line. */
-const CLOSE_WINDOW_MS = 90 * 60_000;
+/**
+ * Games tipping within this window get their props captured as the closing line. Each capture
+ * overwrites the last, so only the final one counts; 20 minutes leaves a few tries (it was 90,
+ * which kept Neon awake through every evening for captures that were overwritten).
+ */
+const CLOSE_WINDOW_MS = 20 * 60_000;
 /** The lock job is queued by the first gameday run within this long after the first tip. */
 const LOCK_JOB_WINDOW_MS = 60 * 60_000;
 
@@ -91,20 +98,17 @@ const LOCK_JOB_WINDOW_MS = 60 * 60_000;
  */
 export async function gamedayJob(now = new Date()): Promise<Record<string, unknown>> {
   const m = new CpuMeter();
+  const queries = dbUse.queries;
   let result: Record<string, unknown> = {};
   try {
     result = await gamedayRun(now, m);
     return result;
   } finally {
-    // A quiet run (no move, no news logging, outside the game window) leaves Neon asleep: its
-    // CPU joins the next stored row.
-    const quiet =
-      result.watch === "quiet" &&
-      result.simRoster == null &&
-      !result.availability &&
-      !result.timeline &&
-      !result.darko &&
-      result.skipped != null;
+    // Work waiting with no runner (a missed dispatch) starts one, while the database is awake.
+    if (dbUse.queries > queries) await ensureWorker().catch(() => false);
+    // A run that sent no query left Neon asleep (its compute bills by the minute awake): its
+    // CPU joins the next stored row instead of waking it.
+    const quiet = dbUse.queries === queries;
     await recordCpu(
       "gameday",
       m,
@@ -114,10 +118,14 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
   }
 }
 
+/** The first tip whose lock job this instance already queued or found (no query again). */
+let lockChecked: number | null = null;
+
 /** The league's fingerprint at the last gameday run on this instance (did anything change?). */
 let lastLeague: string | null = null;
 
 async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknown>> {
+  const queries = dbUse.queries;
   const date = gameDate(now);
   const sp = scoringPeriodForDate(date);
   if (sp < 1 || sp > LAST_SCORING_PERIOD) return { skipped: "outside the season" };
@@ -271,12 +279,15 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     workerEnabled() &&
     data.settings.rosterLock === "FIRSTGAME_SCORINGPERIOD" &&
     t >= first &&
-    t < first + LOCK_JOB_WINDOW_MS
+    t < first + LOCK_JOB_WINDOW_MS &&
+    lockChecked !== first
       ? await m.step("lock-job", () =>
-          queueLockJob(first).catch(async (e: Error) => {
-            await log("lock-job", "error", errorText(e)).catch(() => {});
-            return null;
-          }),
+          queueLockJob(first)
+            .then((r) => ((lockChecked = first), r))
+            .catch(async (e: Error) => {
+              await log("lock-job", "error", errorText(e)).catch(() => {});
+              return null;
+            }),
         )
       : null;
 
@@ -336,7 +347,8 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     alerts: alerts.length,
     sent,
   };
-  await log("gameday", "ok", JSON.stringify(result));
+  // Logged only when the run did database work anyway (a log alone would wake Neon).
+  if (dbUse.queries > queries) await log("gameday", "ok", JSON.stringify(result));
   return result;
 }
 
@@ -357,6 +369,20 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     );
     // Every league matchup's state, for calibrating the weekly win probability.
     const states = await metered("matchup-states", () => recordMatchupStates(), [20_000]);
+    // Fill-ins whose regular is out or back (ADR-064), before the simulations read the league.
+    const returns = await metered("teammate-returns", async () => {
+      const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
+      const [league, free] = await Promise.all([loadLeague(sp, gameDate()), loadFreeAgents(sp)]);
+      const r = await refreshTeammateReturns(
+        [...league.ahead.teams.flatMap((t) => t.roster), ...free.map((f) => f.player)],
+        league.games,
+        league.settings.scoring,
+        sp,
+      );
+      // The league as loaded carries the old effects: the simulations reload it.
+      forgetResponses();
+      return r;
+    });
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
     // deep move checks arrive within minutes), otherwise here.
     const queued = workerEnabled()
@@ -379,6 +405,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     // Old simulation jobs (each holds its moves and chunks): the last two days are kept.
     const simJobsPruned = await metered("sim-prune", () => pruneSimJobs());
     const tasksPruned = await metered("task-prune", () => pruneTasks());
+    const workerStarted = await metered("worker-check", () => ensureWorker(0));
     // The league's roster moves, for the team pages' move history (ADR-056).
     const transactions = await metered("transactions", () =>
       syncTransactions(
@@ -389,6 +416,8 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     const market = await metered("market-data", () => collectToday("morning", true));
     // Opponent defense by position from every result so far (after yesterday's box scores).
     const defense = await metered("defense", () => refreshDefense());
+    // The database's usage this month: an alert as transfer or compute nears a limit.
+    const neon = await metered("neon-usage", () => checkNeonUsage());
     const me = teams.find((t) => t.teamId === Number(process.env.ESPN_TEAM_ID));
     const result = {
       scoringPeriod,
@@ -401,8 +430,11 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       seasonBaselines: baselines,
       simJobsPruned,
       tasksPruned,
+      workerStarted,
       transactions,
       defense,
+      neon,
+      teammateReturns: returns,
       ...states,
       ...market,
     };
@@ -491,7 +523,8 @@ async function darkoCheck(now: Date, data: Awaited<ReturnType<typeof loadLeague>
 export async function pregameJob(): Promise<Record<string, unknown>> {
   try {
     const result = await collectToday("pregame");
-    await log("pregame", "ok", JSON.stringify(result));
+    const neon = await step("neon-usage", () => checkNeonUsage());
+    await log("pregame", "ok", JSON.stringify({ ...result, neon }));
     return result;
   } catch (e) {
     await log("pregame", "error", errorText(e));
@@ -559,8 +592,11 @@ async function logStatusEvents(
  * players with a new one.
  */
 async function insertStatusEvents(events: StatusEvent[]): Promise<number[]> {
-  if (!events.length) return [];
-  const rows = events.map((e) => ({
+  // Statuses this instance has already stored skip the database (the 5-minute job sees the
+  // same ones all day; a query would keep Neon awake for nothing).
+  const unseen = events.filter((e) => !storedEvents.has(eventKey(e)));
+  if (!unseen.length) return [];
+  const rows = unseen.map((e) => ({
     player_id: e.playerId,
     source: e.source,
     status: e.status,
@@ -583,5 +619,13 @@ async function insertStatusEvents(events: StatusEvent[]): Promise<number[]> {
     on conflict do nothing
     returning player_id
   `;
+  // Inserted or already there: either way it's stored now.
+  if (storedEvents.size > 20_000) storedEvents.clear();
+  for (const e of unseen) storedEvents.add(eventKey(e));
   return inserted.map((r) => r.player_id as number);
 }
+
+/** Status events known to be stored, by the table's dedupe key (per server instance). */
+const storedEvents = new Set<string>();
+const eventKey = (e: StatusEvent) =>
+  [e.playerId, e.source, e.status, e.gameDate, e.returnDate ?? ""].join("|");

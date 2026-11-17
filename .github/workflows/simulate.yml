@@ -1,8 +1,11 @@
 # Season simulations for the app (ADR-053): the Outlook and deep checks of waiver moves, run
 # here instead of on Vercel (whose free plan has 4 CPU-hours a month); and other tasks the app
 # hands off, like the trade idea search (docs/COMPUTE.md). The app starts this
-# workflow when rosters change (workflow_dispatch); the schedule is a fallback. Sixteen runners
-# take chunks of seasons from the app until every move's title change is known to ±0.5 points
+# workflow when rosters change (workflow_dispatch); its 5-minute game-day job and nightly job
+# re-dispatch it if work waits with no runner (a schedule here woke the database 96 times a day,
+# docs/COMPUTE.md §10). Eighteen runners
+# (GitHub Free runs 20 jobs at once: these and the task runner) take chunks of seasons
+# from the app until every move's title change is known to its tier's precision
 # (ADR-058: every candidate move, most important first).
 # Secrets: WORKER_SECRET only (the app's /api/worker key). No ESPN or database credentials.
 
@@ -10,8 +13,6 @@ name: Simulate
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
@@ -24,30 +25,13 @@ env:
   APP_URL: ${{ vars.APP_URL || 'https://fantasycopilot.vercel.app' }}
 
 jobs:
-  peek:
-    # Scheduled runs first ask whether there's anything to do.
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    outputs:
-      work: ${{ steps.peek.outputs.work }}
-    steps:
-      - id: peek
-        env:
-          WORKER_SECRET: ${{ secrets.WORKER_SECRET }}
-        run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $WORKER_SECRET" "$APP_URL/api/worker/peek")
-          echo "work=$([ "$code" = 200 ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
-
   simulate:
-    needs: peek
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.peek.outputs.work == 'yes') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        runner: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,8 +51,6 @@ jobs:
 
   tasks:
     # Other computation the app hands off (docs/COMPUTE.md), e.g. the trade idea search.
-    needs: peek
-    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.peek.outputs.work == 'yes') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

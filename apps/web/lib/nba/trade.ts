@@ -9,7 +9,6 @@
 
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import {
-  SLOT_ACCEPTS,
   expandSlots,
   greedyLineup,
   irEligible,
@@ -19,6 +18,7 @@ import {
 import { matchupPeriodOf } from "./calendar";
 import { acceptance, marketValue, type Acceptance, type MarketContext } from "./market";
 import { perGameProjection } from "./projection";
+import { afterReturn } from "./teammate-return";
 
 export interface ValueContext {
   /** proTeamId -> days with a game, from `fromDay` to `lastDay`. */
@@ -86,6 +86,14 @@ export function perGameValue(p: RosterPlayer): number {
   return v;
 }
 
+/** His per-game value after a teammate's return (ADR-064): the same discount on the lower FP/G. */
+function valueAfter(p: RosterPlayer, v: number): number {
+  const c = p.teammateReturn;
+  if (!c) return v;
+  const fppg = perGameProjection(p).fppg;
+  return fppg > 0 ? v * (afterReturn(fppg, c) / fppg) : v;
+}
+
 export interface TeamValue {
   regular: number;
   playoffs: number;
@@ -93,20 +101,14 @@ export interface TeamValue {
   activations: Activation[];
   /** Per player id: games he's available for and how many he'd start, rest of season. */
   usage: Map<number, { games: number; starts: number }>;
-  /** Starting slots left empty, rest of season (slot-days), by the positions they take. */
+  /**
+   * Room in the lineup, rest of season: on how many days one more guard, forward or center
+   * would have started (counted per extra player: two open guard spots on a day count 2).
+   */
   holes: Holes;
 }
 
-/**
- * Empty starting slot-days by kind: guard (PG, SG, G), forward (SF, PF, F), center (C), and any
- * (UTIL and other mixed slots: no one at all was free).
- */
-export interface Holes {
-  guard: number;
-  forward: number;
-  center: number;
-  any: number;
-}
+export type Holes = Record<"guard" | "forward" | "center", number>;
 
 /** Days with any NBA game (cached per schedule: teamValue runs for every move). */
 const leagueDaysCache = new WeakMap<ValueContext["gameDays"], Set<number>>();
@@ -117,16 +119,6 @@ const leagueDaysOf = (gameDays: ValueContext["gameDays"]) => {
     leagueDaysCache.set(gameDays, days);
   }
   return days;
-};
-
-const GUARDS = new Set(["PG", "SG"]);
-const FORWARDS = new Set(["SF", "PF"]);
-const holeKind = (slot: string): keyof Holes => {
-  const takes = SLOT_ACCEPTS[slot] ?? [];
-  if (takes.every((p) => GUARDS.has(p))) return "guard";
-  if (takes.every((p) => FORWARDS.has(p))) return "forward";
-  if (takes.every((p) => p === "C")) return "center";
-  return "any";
 };
 
 export interface Activation {
@@ -147,6 +139,22 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   const players = roster
     .map((p) => ({ p, v: perGameValue(p) }))
     .filter((x) => x.v > 0 || x.p.slot !== "IR");
+  // A fill-in's value drops from the day the regular he replaced returns (ADR-064): the day's
+  // lineups are then keyed by which drops have happened too.
+  const changes = players
+    .map(({ p, v }, k) => ({ k, day: p.teammateReturn?.day ?? Infinity, after: valueAfter(p, v) }))
+    .filter((c) => c.day <= ctx.lastDay);
+  const vOn = (k: number, d: number) => {
+    for (const c of changes) if (c.k === k && d >= c.day) return c.after;
+    return players[k]!.v;
+  };
+  const phaseOf = (d: number) => {
+    let ph = 0;
+    changes.forEach((c, j) => {
+      if (d >= c.day) ph |= 1 << j;
+    });
+    return ph;
+  };
   const first = players.map(({ p }) =>
     Math.max(ctx.fromDay, ctx.outUntil.get(p.id) ?? ctx.fromDay),
   );
@@ -156,24 +164,28 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   players.forEach(({ p }, i) => {
     for (const d of ctx.gameDays.get(p.proTeamId) ?? []) if (d >= first[i]!) mask[d]! |= 1 << i;
   });
-  // The day's starters (exact greedy) and empty slots, solved once per set of players.
-  const memo = new Map<number, { starters: number[]; empty: string[] }>();
-  const lineupOf = (mask: number) => {
-    let s = memo.get(mask);
-    if (!s) {
+  // The day's starters (exact greedy), solved once per set of players; with the room for more
+  // (roster fit) where the season's days are counted.
+  const memo = new Map<number, { starters: number[]; room?: Holes }>();
+  const lineupOf = (mask: number, d: number, withRoom = false) => {
+    const ph = changes.length ? phaseOf(d) : 0;
+    const key = mask + ph * 2 ** 31;
+    let s = memo.get(key);
+    if (!s || (withRoom && !s.room)) {
       const playing: number[] = [];
       for (let i = 0; i < players.length; i++) if (mask & (1 << i)) playing.push(i);
       s = greedyLineup(
         playing,
-        (i) => players[i]!.v,
+        (i) => vOn(i, d),
         (i) => players[i]!.p.positions as Position[],
         ctx.openSlots,
+        withRoom,
       );
-      memo.set(mask, s);
+      memo.set(key, s);
     }
     return s;
   };
-  const starters = (mask: number) => lineupOf(mask).starters;
+  const starters = (mask: number, d: number) => lineupOf(mask, d).starters;
   const playoffDay = (day: number) => matchupPeriodOf(day) > ctx.regularWeeks;
 
   const activations: Activation[] = [];
@@ -196,16 +208,16 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
     for (let d = day; d <= ctx.lastDay; d++) {
       if (!mask[d]) continue;
       const w = playoffDay(d) ? PLAYOFF_WEIGHT : 1;
-      for (const k of starters(mask[d]!)) pts[k]! += w * players[k]!.v;
+      for (const k of starters(mask[d]!, d)) pts[k]! += w * vOn(k, d);
     }
-    const lineup = (m: number) => starters(m).reduce((s, k) => s + players[k]!.v, 0);
+    const lineup = (m: number, d: number) => starters(m, d).reduce((s, k) => s + vOn(k, d), 0);
     const cost = (k: number) => {
       let c = 0;
       for (let d = day; d <= ctx.lastDay; d++) {
         const m = mask[d]!;
         if (!(m & (1 << k))) continue;
         const w = playoffDay(d) ? PLAYOFF_WEIGHT : 1;
-        c += w * (lineup(m) - lineup(m & ~(1 << k)));
+        c += w * (lineup(m, d) - lineup(m & ~(1 << k), d));
       }
       return c;
     };
@@ -237,22 +249,27 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   let playoffs = 0;
   const games = new Array<number>(players.length).fill(0);
   const starts = new Array<number>(players.length).fill(0);
-  const holes: Holes = { guard: 0, forward: 0, center: 0, any: 0 };
+  const holes: Holes = { guard: 0, forward: 0, center: 0 };
+  const addRoom = (room: Holes) => {
+    holes.guard += room.guard;
+    holes.forward += room.forward;
+    holes.center += room.center;
+  };
   // Days with NBA games only: a day off for the whole league has nothing to fill.
   const leagueDays = leagueDaysOf(ctx.gameDays);
   for (let day = ctx.fromDay; day <= ctx.lastDay; day++) {
     if (!mask[day]) {
-      if (leagueDays.has(day)) for (const slot of ctx.openSlots) holes[holeKind(slot)]++;
+      if (leagueDays.has(day)) addRoom(lineupOf(0, day, true).room!);
       continue;
     }
     for (let k = 0; k < players.length; k++) if (mask[day]! & (1 << k)) games[k]!++;
-    const l = lineupOf(mask[day]!);
+    const l = lineupOf(mask[day]!, day, true);
     let pts = 0;
     for (const k of l.starters) {
-      pts += players[k]!.v;
+      pts += vOn(k, day);
       starts[k]!++;
     }
-    for (const slot of l.empty) holes[holeKind(slot)]++;
+    addRoom(l.room!);
     if (playoffDay(day)) playoffs += pts;
     else regular += pts;
   }

@@ -91,13 +91,22 @@ export interface DeepView {
   sims: Record<string, ShownSim>;
   states: Record<string, ShownState>;
   job: JobStatus | null;
+  /** The latest job and its last refresh, as read (polls skip the numbers while it's the same). */
+  version?: string | null;
 }
 
 /** Every key's numbers and state, and the job's status. */
 export function deepView(
   keys: string[],
   job:
-    (LiveJob & { trigger: string | null; createdAt: Date; settled: number; total: number }) | null,
+    | (LiveJob & {
+        trigger: string | null;
+        createdAt: Date;
+        settled: number;
+        total: number;
+        version?: string;
+      })
+    | null,
   last: Map<string, SettledResult>,
   rosterNow: string,
 ): DeepView {
@@ -125,6 +134,7 @@ export function deepView(
   return {
     sims,
     states,
+    version: job?.version ?? null,
     job: job && {
       live: job.live,
       trigger: job.trigger,

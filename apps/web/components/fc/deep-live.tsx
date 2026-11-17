@@ -1,7 +1,7 @@
 "use client";
 
 // The Moves page's deep checks, kept current while the worker re-checks moves (ADR-058): the
-// page renders the numbers as they are, and this polls /api/moves/status every 10 seconds
+// page renders the numbers as they are, and this polls /api/moves/status every 20 seconds
 // while a job runs (visible tabs only), so cards swap in new numbers without a reload. A tab
 // shown again (a phone app reopened) asks once, and after a long time away reloads the page.
 
@@ -15,7 +15,8 @@ const Ctx = createContext<DeepView | null>(null);
 /** The page's deep checks (null when the page has none, e.g. without the worker). */
 export const useDeepView = () => useContext(Ctx);
 
-const POLL_MS = 10_000;
+/** The checks refresh at most every 20 s (lib/nba/sim-jobs.ts REFRESH_GAP_S). */
+const POLL_MS = 20_000;
 /** How long a check the page queued is waited for (its job is built first, ~1-2 minutes). */
 const WAIT_MS = 10 * 60_000;
 /** Hidden this long, a tab reloads the page when shown again (the day or the moves may differ). */
@@ -66,9 +67,10 @@ export function DeepLive({
       const res = await fetch("/api/moves/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roster, keys }),
+        body: JSON.stringify({ roster, keys, version: view.version }),
       }).catch(() => null);
-      if (!res?.ok) return;
+      // 204: nothing new since the numbers on the page.
+      if (!res?.ok || res.status === 204) return;
       const next = (await res.json()) as DeepView;
       // The queued job is under way: from here its own state shows.
       if (next.job?.live) setWaiting(false);
@@ -96,7 +98,7 @@ export function DeepLive({
       document.removeEventListener("visibilitychange", onVisible);
       if (id) clearInterval(id);
     };
-  }, [live, waiting, roster, keys, router]);
+  }, [live, waiting, roster, keys, router, view.version]);
   return <Ctx.Provider value={view}>{children}</Ctx.Provider>;
 }
 

@@ -72,26 +72,39 @@ export const syncTransactions = memoAsync(
   },
 );
 
-async function storedMoves(): Promise<StoredMove[]> {
-  const rows = await db()<
-    { team_id: number; type: StoredMove["type"]; at: Date; adds: number[]; drops: number[] }[]
-  >`select team_id, type, at, adds, drops from league_transactions order by at`;
-  return rows.map((r) => ({
-    teamId: r.team_id,
-    type: r.type,
-    at: r.at.getTime(),
-    adds: r.adds,
-    drops: r.drops,
-  }));
-}
+/** Every stored league move, oldest first (a minute per instance: the League page reloads). */
+const storedMoves = memoAsync(
+  60_000,
+  () => "all",
+  async (): Promise<StoredMove[]> => {
+    const rows = await db()<
+      { team_id: number; type: StoredMove["type"]; at: Date; adds: number[]; drops: number[] }[]
+    >`select team_id, type, at, adds, drops from league_transactions order by at`;
+    return rows.map((r) => ({
+      teamId: r.team_id,
+      type: r.type,
+      at: r.at.getTime(),
+      adds: r.adds,
+      drops: r.drops,
+    }));
+  },
+);
 
 /** Every final Outlook run's odds, oldest first (5 minutes per instance). */
 const outlookOdds = memoAsync(
   5 * 60_000,
   () => "all",
   async (): Promise<RunOdds[]> => {
-    const rows = await db()<{ run_at: Date; results: OutlookTeam[] }[]>`
-      select run_at, results from outlook_runs where status = 'final' order by run_at
+    // Only the fields used, cut in the database (every run's full results was ~3 KB a run).
+    const rows = await db()<
+      { run_at: Date; results: Pick<OutlookTeam, "teamId" | "champ" | "playoffs" | "expWins">[] }[]
+    >`
+      select run_at, (
+        select jsonb_agg(jsonb_build_object('teamId', t->'teamId', 'champ', t->'champ',
+          'playoffs', t->'playoffs', 'expWins', t->'expWins'))
+        from jsonb_array_elements(results) t
+      ) as results
+      from outlook_runs where status = 'final' order by run_at
     `;
     return rows.map((r) => ({
       runAt: r.run_at.getTime(),

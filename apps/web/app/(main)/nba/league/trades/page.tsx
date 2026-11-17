@@ -396,7 +396,7 @@ async function Targets({
         ) : (
           <p className="px-1 text-xs text-muted-foreground">
             Searched {fmtDayTime(computedAt)}. Ideas whose players have moved are hidden; the search
-            reruns at most every 15 minutes, and right away after your own moves.
+            reruns at most hourly, and right away after your own moves.
           </p>
         ))}
       <div className="flex flex-wrap gap-1.5">

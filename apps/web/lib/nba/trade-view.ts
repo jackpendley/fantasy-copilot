@@ -9,14 +9,14 @@ import "server-only";
 //
 // The search is the costliest thing the app did on Vercel (~7.5 s of CPU, docs/COMPUTE.md):
 // with the worker set up it runs there (a worker task), and Vercel only builds its input.
-// Other teams' moves, injury news and page visits refresh it at most every 15 minutes (every
+// Other teams' moves, injury news and page visits refresh it at most hourly (every
 // 3 hours when it runs on Vercel); Jack's own moves and the nightly run refresh it right away.
 
 import { after } from "next/server";
 import type { FantasyTeam, RosterPlayer } from "@fantasy-copilot/espn";
 import { minimalOn } from "@/lib/cpu-saver";
 import { dbConfigured } from "@/lib/db";
-import { fingerprintOf, readView, writeView } from "@/lib/view-cache";
+import { fingerprintOf, readView, viewStamp, writeView } from "@/lib/view-cache";
 import { loadLeagueView } from "./league-view";
 import { findTradeTargets, type TradeIdea } from "./trade";
 import { PACKAGES_PER_TARGET, compact, tradeSearchInput, type StoredIdea } from "./trade-task";
@@ -36,8 +36,11 @@ const KEY = "trade-targets";
 export const TRADE_FOR_KEY = "trade-for";
 /** Changes other than Jack's own moves refresh the ideas at most this often (on Vercel)... */
 export const TRADE_REFRESH_GAP_MS = 3 * 3600_000;
-/** ...or on the worker. */
-export const WORKER_REFRESH_GAP_MS = 15 * 60_000;
+/**
+ * ...or on the worker: hourly. Every 15 minutes, injury news launched the worker three times an
+ * hour all day, and each run kept Neon awake (it bills compute by time awake, docs/COMPUTE.md §10).
+ */
+export const WORKER_REFRESH_GAP_MS = 60 * 60_000;
 
 /** The search runs on the GitHub Actions worker (it's set up, and results can be stored). */
 const onWorker = () => Boolean(process.env.WORKER_SECRET) && dbConfigured();
@@ -390,7 +393,7 @@ let running: Promise<boolean> | null = null;
  */
 export function refreshTradeTargets({ force = false }: { force?: boolean } = {}): Promise<boolean> {
   running ??= (async () => {
-    const row = await readView<StoredIdea[]>(KEY).catch(() => null);
+    const row = await viewStamp(KEY).catch(() => null);
     if (!force && row && !refreshDue(row.computedAt)) return false;
     const v = await loadLeagueView();
     const fingerprint = tradeFingerprint(v);

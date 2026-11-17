@@ -54,12 +54,12 @@ const HOLE_KINDS: [keyof Holes, string][] = [
   ["guard", "guard"],
   ["forward", "forward"],
   ["center", "center"],
-  ["any", "any-position"],
 ];
 
 /**
- * Roster fit: the empty lineup slot-days the move changes by 2 or more (rest of season), and
- * the add's and dropped player's games in the playoff weeks.
+ * Roster fit: the open lineup spots the move changes by 2 or more (rest of season: days one
+ * more guard, forward or center would have started), and the add's and dropped player's games
+ * in the playoff weeks.
  */
 function FitLine({
   fit,
@@ -77,7 +77,10 @@ function FitLine({
     <p className="pl-[50px] text-xs text-muted-foreground tabular-nums">
       {changed.length > 0 && (
         <>
-          Empty lineup slots, rest of season:{" "}
+          <span title="Days one more guard, forward or center would have started, rest of season (two open spots on a day count twice)">
+            Open lineup spots
+          </span>
+          , rest of season:{" "}
           {changed.map(([k, label], i) => (
             <span key={k}>
               {i > 0 && ", "}

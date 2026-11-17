@@ -245,7 +245,7 @@
     - Not yet updated for 2026-27 (as of Jul 26).
 - **Storage** (migration 0005): `prop_lines`, `game_lines` and `projection_snapshots`, every row stamped with `captured_at` and tip.
   - Lines are only captured before tip (point in time).
-  - Snapshots: `morning` (nightly, 11:00Z), `pregame` (new Vercel cron, 22:00Z) and `close` (re-captured every 5 minutes inside 90 minutes of tip by the gameday job, once a 5-minute scheduler exists).
+  - Snapshots: `morning` (nightly, 11:00Z), `pregame` (new Vercel cron, 22:00Z) and `close` (re-captured every 5 minutes inside 90 minutes of tip by the gameday job, once a 5-minute scheduler exists). **Nov 16:** inside 20 minutes of tip. Each capture overwrites the last, and the extra captures kept Neon awake (docs/COMPUTE.md §10).
 - **Vegas projection** (`lib/nba/vegas.ts`):
   - Remove the bookmaker margin from each over/under, then solve for the mean: normal with variance 2.5×/1.3×/1.35× the mean for PTS/REB/AST, Poisson for 3PM/STL/BLK.
   - This league scores makes, misses and free throws rather than points, so the points line scales the model's shooting volume.
@@ -908,3 +908,28 @@
 
 - **Cost:** to be measured on the first jobs (docs/COMPUTE.md). Budget: 12 min per job (about 6.6 before) and 2 s of Vercel CPU (0.8 before). Over budget, the decision tier's cap drops to 72,000 seasons (±0.15).
 - **Note:** the ± is simulation noise only. The model's own error (projections, the sim's assumptions) is larger, and no number of seasons removes it.
+- **Addendum (Nov 16, after the first production job):**
+  - **The first racing job** (built 11:20 AM MT) took 19 min and 948 chunks; earlier jobs were about 6.6 min and ~190 chunks. Promoted groups hold only a few moves, so their chunks are cheaper.
+  - **Half the runners left at minute 5:** they asked for work while none was ready. The promotions then ran on 8 runners. **#159:** runners wait, rather than leave, while a running job has chunks out.
+  - **Result:** the Paul Reed card settled on Naz Reid +0.4±0.1 and Kris Dunn +0.3±0.1, both at 160,000 seasons. The deeper groups also extend the base run, so the Outlook now reads 160,000 seasons.
+  - **Still to measure:** the next full job's time with every runner kept.
+- **Roster fit on the cards (#157, #160):**
+  - `teamValue` counts the lineup's **room** each day for the rest of the season: how many more guards, forwards or centers would still start (`greedyLineup`, by augmenting paths from the finished lineup, where an open UTIL counts for every kind).
+  - Each card shows the kinds the move changes by 2 or more days, and both players' games in the playoff weeks.
+  - **Why room and not "empty slots by kind" (#157's first version):** a swingman decides which slot is "the" empty one, so a center add read "guard 136 → 130".
+- **Not shipped:** position-aware streaming in the season sim. It failed its pre-registered checks (MODEL_CARD, Nov 16). The sim's in-season streams stay raw-value, while its lineups are position-aware.
+- **Addendum (Nov 16, evening): same precision, less compute (#163).**
+  - **The problem:** the next full job kept all 16 runners and still took 18.7 min and 2,152 chunks. Each refresh's promotions made their own group, so a ±0.1 move could sit alone in a group running up to 320 chunks and re-simulating the base each chunk. Rivals also raced on after clearly losing.
+  - **Pooling:** a promoted move joins a racing group of its tier with room (`sim_groups.promoted`, migration 0029). That needs fewer than 12 moves, chunks left, and not behind his old group's chunks. A new group is made only when none fits.
+  - **Elimination (`racingTargets`):** a promoted move clearly behind (2 SE, head to head) the leader of the race that promoted it stops needing that race's precision. Out of the best-move race, it still gets a card's ±0.2 unless its card's best drop also beats it. Out of a card's race, it stops. The leaders run to their targets.
+  - **Runners:** 16 → 18. GitHub Free runs 20 jobs at once, and the task runner and the peek take the rest. (The peek and the workflow's schedule were removed Nov 16, docs/COMPUTE.md §10.)
+  - **Playoff replays stay at 10.** Measured with `scripts/measure-move-precision.ts` on three moves, title variance × CPU (lower is better): 1 replay ~110, 10 replays ~45, 20 replays ~60.
+
+## ADR-064: a fill-in's projection once the regular he replaced returns (2026-11-17)
+
+- **Context:** Jack (Nov 16–17): a borderline starter whose position-mate returns from injury should lose production, and the model should know it (Paul Reed while Jalen Duren is out). Tests 1–3 found no rule that beat today's projection; the exploration (MODEL_CARD, Nov 17) showed why: the drop is real, but today's projection already expects most of it, except for centers. Test 4 (pre-registered, walk-forward 2018-19 to 2023-24) passed for every big-minute same-position backup.
+- **Decision:** `lib/nba/teammate-return.ts`. When a regular (20+ minutes) misses 5+ straight team games, a teammate in his position group (guards, forwards, centers, by ESPN's primary position) whose minutes rose 6+ meanwhile (10+ games, 3+ during it) gets `today − λ × (today − with-him)` from the regular's estimated return, or from today once he's back: λ guards 0.23, forwards 0.07, centers 0.49. "With-him" is his projection from only the games the regular played.
+- **Where it applies:** the season simulator (`SimPlayer.change`: a player's FP/G changes on a day; lineups re-solve), `teamValue` (trades, waivers, team strength), the week projection, and the card's projected points ("27.4/g now · 25.2/g once Duren is back (Nov 24)"). Not the daily start/sit values, which only look at today.
+- **How:** the nightly job (step `teammate-returns`, before the simulation job) fetches ESPN's public game logs for regulars who have missed 5+ team games and their position-mates (~150 logs on Nov 17), stores the effects in `view_cache` (`teammate-returns`), and clears the in-memory league so the simulations reload it. The league and free-agent loaders attach `teammateReturn: { day, shift, teammate }` to each affected player.
+- **Departures from the test, small and stated:** a regular with fewer than 5 games before his absence counts by ESPN's projected minutes (the test used this season's games only; Duren played 2); a completed absence keeps applying with current data, so the gap closes as the fill-in plays with the regular again; a player lifted by two returns takes the larger drop; an absence for the season changes nothing.
+- **Check:** MODEL_CARD's forward check (this season's returns, after Apr 20, 2027): if the model is worse than today's projection there, this comes out.

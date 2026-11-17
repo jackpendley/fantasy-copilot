@@ -25,6 +25,8 @@ export interface WireInput {
   banked: [number, [number, number][]][];
   playoffWeeks: [number, number, number];
   addCapPerWeek: number;
+  /** Streams by lineup fit (SimInput.fitStreams); absent in jobs built before it shipped. */
+  fitStreams?: boolean;
 }
 
 export function toWire(input: SimInput): WireInput {
@@ -41,6 +43,7 @@ export function toWire(input: SimInput): WireInput {
     banked: [...input.banked].map(([team, byPeriod]) => [team, [...byPeriod]]),
     playoffWeeks: input.playoffWeeks,
     addCapPerWeek: input.addCapPerWeek,
+    fitStreams: input.fitStreams,
   };
 }
 
@@ -61,6 +64,7 @@ export function fromWire(
     banked: new Map(w.banked.map(([team, byPeriod]) => [team, new Map(byPeriod)])),
     playoffWeeks: w.playoffWeeks,
     addCapPerWeek: w.addCapPerWeek,
+    fitStreams: w.fitStreams,
     ...run,
   };
 }

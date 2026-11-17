@@ -934,3 +934,10 @@
 - **Departures from the test, small and stated:** a regular with fewer than 5 games before his absence counts by ESPN's projected minutes (the test used this season's games only; Duren played 2); a completed absence keeps applying with current data, so the gap closes as the fill-in plays with the regular again; a player lifted by two returns takes the larger drop; an absence for the season changes nothing.
 - **Check:** MODEL_CARD's forward check (this season's returns, after Apr 20, 2027). Revised Nov 17 (Jack): its result feeds the between-seasons refit, not a mid- or post-season removal; models change deliberately from history and new data, not on a schedule.
 - **Freshness:** the nightly computes the effects; a gameday run computes them when none are stored or they're over 26 hours old (the first day after a deploy, or a failed nightly), once per instance a day.
+
+## ADR-065: the season simulator streams by lineup fit (2026-11-17)
+
+- **Context:** every title-odds number comes from the season simulator, where each team streamed the free agent with the most raw points, ignoring positions: a team short of guards would add a sixth center who sits on the bench. Simulated streaming (rivals' and Jack's) added less than a real manager's, and moves that change roster construction could rank wrong. Streaming attempt 4 (MODEL_CARD) passed every quality check (first choice, add volume, scoring spread, league points) and failed only its time budget: +38% CPU per season against +25%.
+- **Decision (Jack, Nov 17):** ship it. Simulation time costs nothing (free GitHub runners) and overnight time doesn't matter; what matters is how fast triggered updates (roster moves, injury news, tip-off) arrive, which is handled by job design (right-sized, prioritized jobs) rather than by a cheaper, less accurate rule.
+- **How:** `buildOutlookInput` sets `SimInput.fitStreams`; the wire input carries it to the workers (jobs built before this run the raw rule). A change day clears the rule's cached standing lineup and week as well as the day lineups.
+- **Watch:** job times per trigger on Settings and in the worker logs.

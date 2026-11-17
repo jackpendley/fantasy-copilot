@@ -843,6 +843,8 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         /** Lineups by availability bitmask, for the roster as it stands. */
         lineups: new Map<number, P[]>(),
         swapped: undefined as TeamState["swapped"],
+        stand: undefined as TeamState["stand"],
+        week: undefined as TeamState["week"],
       };
     });
     const weekPts = banked.map((b) => Float64Array.from(b));

@@ -105,13 +105,17 @@ async function storageUse() {
     db()<{ bytes: number }[]>`select pg_database_size(current_database())::float8 as bytes`,
     db()<{ name: string; bytes: number; rows: number }[]>`
       select c.relname as name, pg_total_relation_size(c.oid)::float8 as bytes,
-        greatest(c.reltuples, 0)::float8 as rows
+        c.reltuples::float8 as rows
       from pg_class c join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind = 'r'
       order by pg_total_relation_size(c.oid) desc limit 8
     `,
   ]);
-  return { bytes: total?.bytes ?? 0, tables };
+  // Postgres's row estimate is -1 until it has sampled the table: unknown, not 0.
+  return {
+    bytes: total?.bytes ?? 0,
+    tables: tables.map((t) => ({ ...t, rows: t.rows < 0 ? null : t.rows })),
+  };
 }
 
 const fmtBytes = (b: number) =>
@@ -241,7 +245,8 @@ export default async function SettingsPage() {
               <div key={t.name} className="flex justify-between gap-2">
                 <span className="truncate font-mono text-xs">{t.name}</span>
                 <span className="text-muted-foreground">
-                  {fmtBytes(t.bytes)} · ~{Math.round(t.rows).toLocaleString("en-US")} rows
+                  {fmtBytes(t.bytes)}
+                  {t.rows != null && ` · ~${Math.round(t.rows).toLocaleString("en-US")} rows`}
                 </span>
               </div>
             ))}

@@ -957,3 +957,14 @@
 - **A chunk posted twice counts once:** `sim_posts` (migration 0031) records each group's posted chunks, and `sim_groups.posted` rises only for new ones. Sums were already idempotent.
 - **A job is stored in one transaction** (the replaced jobs, the job, its groups): a job without groups was never handed out.
 - **Tests:** against Postgres (`apps/web/test/db/queue.test.ts`).
+
+## ADR-067: login: a constant-time check and a lockout per address (2026-11-17)
+
+- **Why:** `/api/login` compared the password with `!==` and allowed unlimited tries. The site is public, and its session cookie authorizes ESPN writes.
+- **How** (`lib/login-guard.ts`, `login_attempts`, migration 0032):
+  - Both passwords are hashed (SHA-256) and compared with `timingSafeEqual`.
+  - After **10 wrong passwords from one address within 15 minutes**, that address gets 429 (with `Retry-After`) until the oldest of them is 15 minutes old. It's checked before the password, so a refused address learns nothing from its guesses. A right password clears the address's count.
+  - **Per address, not global:** a global lockout would let anyone lock Jack out by guessing. On Vercel the address is the first `x-forwarded-for` entry, which Vercel overwrites.
+  - **Fails open:** if the database can't be reached, the password is still checked but attempts aren't counted, so an outage never locks Jack out.
+  - Rows older than a day are deleted as new failures come in.
+- **Not changed:** the session cookie is still one fixed HMAC valid for a year. Rotating `SESSION_SECRET` signs every device out; a per-device session table would allow signing out one device. Jack's call if wanted.

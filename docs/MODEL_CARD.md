@@ -851,6 +851,37 @@ Jack asked (Nov 16) for the cheaper version. Branch `experiment/fit-streams-4` (
 
 **No pre-registered run:** at +22% check 5's +20% bar would likely fail narrowly. Whether to keep that bar or set another before an attempt-4 run is Jack's call; checks 1–4 would stay as in attempt 2.
 
+## Pre-registration: position-aware streaming, attempt 4 (2026-11-17, before any run of checks 1–4)
+
+**Goal (unchanged since attempt 1):** the season simulator behind every title-odds number (Moves, trades, the Outlook) has each team stream by raw value, ignoring position, so a simulated team can drop its third guard for a sixth center. That makes simulated rivals, and Jack's own simulated streaming, play worse than real managers who fill lineups, and it can mis-rank adds and drops that change roster construction (Jack asked Nov 16 for the simulation to respect it). The candidate values streams by the lineup points they add this week.
+
+**Candidate:** attempt 2's values exactly, computed as in attempt 4 above (`experiment/fit-streams-4`, 6d7cc7b): day lineups patched from the standing lineup, the standing lineup carried through each swap, free agents ranked once a day.
+
+**Checks 1–4:** as in attempt 2 (first choice ≥ 90% in the synthetic test; add volume ±15% or ±0.15 a week; weekly CV ±0.01; league points ≥ raw − 0.5%).
+
+**Check 5, cost: ≤ +25%** CPU per simulated season over the raw rule, same machine, same run (attempts 1–3 used +20%). **Why the change, decided before any attempt-4 run of checks 1–4 (Jack, Nov 17: "continue"):** simulations run on GitHub's free runners, so the cost is time, not money. A move check's job takes ~9 min now against ADR-063's 12-minute budget; +25% on its simulation time keeps it inside. Attempt 4 measured +22% (median; 1.19–1.25) on the profiling seed.
+
+**Run:** `scripts/experiment-fit-streams.ts` on the branch, the league as it stands on the run day, 4,000 seasons per rule with the simulator's default seed (not the profiling seed), check 1 as the branch's test. One evaluation, no tuning.
+
+**Ships only if** all five pass: `fitStreams` becomes the default, with an ADR, and job times are watched on Settings. Otherwise the result is written here and the raw rule stays.
+
+### Result (2026-11-17): checks 1–4 passed, check 5 (cost) failed; not shipped
+
+One evaluation (pre-registration on main at fc09d44; branch `experiment/fit-streams-4` at 906a252). Setup: day 29 (week 5), 15 regular weeks left, 4,000 seasons per rule.
+
+| Check                       | Result                                                                              |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| 1. First choice (synthetic) | Pass: the guard was the first pickup in 1.000 of seasons (n = 200; raw rule 0.070). |
+| 2. Add volume               | Pass for all 11 teams; the largest change −0.11 a week (team 11, 2.33 → 2.22).      |
+| 3. Weekly scoring spread    | Pass for all 9 active teams; every CV moved by 0.003 or less.                       |
+| 4. League points            | Pass: 847.5 → 860.8 a week (+1.6%).                                                 |
+| 5. Cost                     | **Fail:** 2.9 → 4.0 ms per season (**+38%**; the bar was +25%).                     |
+
+- **The cost estimate didn't hold:** the profiling bundle had measured +22% (median of six pairs). The pre-registered harness (unbundled, the live setup, one pair) measured +38%. The result is the harness's.
+- **What it means:** the rule does what it should and keeps the simulator calibrated (as in attempt 2); only its time fails. At +38%, a ~9-minute move-check job would take ~12.5 minutes, just past ADR-063's 12-minute budget. Whether that time is worth it is Jack's call, not a re-run with a new bar.
+- **Reported:** title odds under each rule (Jack 16.2% → 18.2%, within the noise of 4,000 seasons). The Reed moves were skipped (Reed is no longer a free agent).
+- **Shipped on Jack's decision (2026-11-17, ADR-065):** checks 1–4 are the quality checks and passed; check 5 was a time budget, and Jack accepts the time ("time is not much of a factor for the overnight calculations"), with triggered updates made fast by job design instead. Shipped as tested, plus one fix: a change day (ADR-064's `SimPlayer.change`) now also clears the standing lineup and week the rule caches (found merging with main; a temporary exactness check over 100 seasons found 119 of 38,955 week lineups stale without it, 0 of 41,168 with it).
+
 ## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
 
 **Question:** a player who filled in while a regular teammate was out keeps his inflated numbers in every rest-of-season value: trades, Moves, the season simulator. Example, Nov 16: Paul Reed played all 12 of his games without Jalen Duren (out since Oct 23). Ours projects 27.1 FP/G, ESPN preseason 17.6, for all 60 games left, though Duren's estimated return is Nov 24. Does projecting from the games the teammate **played** predict the player better once the teammate is back?
@@ -1003,6 +1034,63 @@ The interval isn't below 0, so halfway doesn't ship now; per the pre-registratio
 - **Centers in the set, n = 12:** today **+3.19**, halfway −0.65; MAE today 5.89, halfway 3.14.
 
 **Reading:** the hypothesis as registered (every position group) fails, and its sign is the wrong way. The center pattern from test 2's exploration appears again in seasons it wasn't drawn from: 43 events across seven seasons, today too high by 2–3 FP/G each time. But 12 events can't carry a test, and the subgroup was found by looking. **For Reed:** nothing changes; his 27.1 stays. The center lead is still a lead.
+
+## Exploration: what happens to a fill-in when the regular returns (2026-11-17, not a test)
+
+Jack (Nov 17): a borderline starter whose position-mate, a star, returns from injury should lose production; does the data show it, and does the model account for it? `scripts/explore-teammate-returns.ts`, every season tests 2 and 3 used (2017-18 to 2023-24), same events. FP/G in this league's scoring; "today" is the projection on the return day; intervals 95%, clustered by player.
+
+| Group                               | n     | FP/G before | during | after | today's projection | minutes before → during → after | today − actual       |
+| ----------------------------------- | ----- | ----------- | ------ | ----- | ------------------ | ------------------------------- | -------------------- |
+| Every affected teammate             | 5,990 | 16.0        | 18.2   | 17.6  | 17.3               | 22.8 → 25.4 → 24.2              | −0.32 [−0.52, −0.12] |
+| Other positions, minutes up ≥ 6     | 783   | 10.5        | 18.0   | 15.0  | 15.0               | 16.2 → 25.8 → 22.2              | −0.05 [−0.47, +0.37] |
+| Same position, minutes up ≥ 6       | 622   | 9.9         | 17.4   | 14.0  | 14.5               | 16.5 → 26.8 → 22.0              | +0.43 [−0.05, +0.90] |
+| — guards                            | 358   | 9.3         | 16.6   | 13.4  | 13.9               | 17.2 → 27.5 → 22.6              | +0.54 [−0.02, +1.13] |
+| — forwards                          | 221   | 10.0        | 17.2   | 14.4  | 14.3               | 15.7 → 26.0 → 21.7              | −0.10 [−0.97, +0.70] |
+| — centers                           | 43    | 14.3        | 25.0   | 17.6  | 19.9               | 14.8 → 25.4 → 18.1              | +2.35 [+0.41, +4.29] |
+| — returning player in the top third | 208   | 10.2        | 18.0   | 14.1  | 14.8               | 15.9 → 26.5 → 20.9              | +0.69 [−0.06, +1.38] |
+| — top third, centers                | 29    | 14.4        | 24.9   | 17.5  | 20.0               | 15.1 → 25.5 → 18.2              | +2.51 [+0.45, +4.55] |
+
+- **The drop is real:** big-minute same-position backups fall from 17.4 to 14.0 FP/G after the return (minutes 26.8 → 22.0). They keep about half the surge: among the 477 whose FP/G rose ≥ 3, 51% of it remained.
+- **Today's projection already expects most of it:** on the return day it carried 55% of the surge (it blends last season and the whole season so far, not the hot stretch), so for guards and forwards it lands close. That is why reverting rules (tests 1–3) came out too low.
+- **Centers are where it falls short:** there is one center spot, so a returning starting center takes his minutes back almost entirely (25.4 → 18.1, nearly the 14.8 before). Today's projection ran 2.35 FP/G too high; a star's return makes little difference beyond position.
+- **Paul Reed (2026-27, described):** 18.4 FP/G in 13.8 min last season behind Duren; 25.4 over his 12 games this season, all but two without Duren. Centers' history (≈30% of the surge kept) would put him near 20 after Duren returns, not 27.1.
+
+## Pre-registration: teammate returns, test 4 — how much each position keeps (2026-11-17, before any run)
+
+**Model:** on the day a regular returns, a same-position teammate whose minutes rose ≥ 6 while he was out gets `today − λ_g × (today − with-him)`, where "with-him" is the projection from only games the regular played (test 1's A) and λ_g is the least-squares share for his position group (guards, forwards, centers), clipped to [0, 1]. λ = 0 is today's projection; test 3's halfway was λ = 0.5 for everyone.
+
+**Walk-forward:** each tested season (2018-19 to 2023-24) uses λs fitted only on earlier seasons (from 2017-18, which trains only). Events, target (rest-of-season FP/G) and today's rule as tests 2 and 3 (`scripts/backtest-teammate-return-4.ts`).
+
+**Disclosure:** these seasons were already explored (tests 2 and 3 and the table above), including the center pattern that motivates position-specific shares. A pass here is weaker evidence than one on unseen data; the forward check below is the unseen part.
+
+**Comparisons:** (1) all same-position backups with minutes up ≥ 6; (2) the centers among them. Per event, |model − actual| − |today − actual|; 4,000 resamples clustered by player (seed 20261119); **97.5% intervals** (Bonferroni over two). Signed errors are reported alongside.
+
+**Ships if** (1) or (2) passes: the λs refitted on all seven seasons, applied (centers only if only (2) passes) from the regular's estimated return day, for the rest of the season, in the simulator, `teamValue`, the week projection and the card ("27.1 now · ~X after Duren returns"), with an ADR. **Forward check:** this season's returns from Nov 17, judged once after Apr 20, 2027 with test 3 part 2's data; if the model's MAE is worse than today's there, it comes out.
+
+**When:** `DRY=1` (counts only), then one evaluation.
+
+### Result (2026-11-17): passed (all big-minute same-position backups); ships
+
+One evaluation (pre-registration on main at fc09d44). `DRY=1` first: guards/forwards/centers per season 30/34/2 (2017-18, trains only), 36/29/3, 44/32/5, 65/32/2, 90/34/15, 47/35/6, 46/25/10.
+
+| Tested season | λ guards | λ forwards | λ centers (fitted on earlier seasons) |
+| ------------- | -------- | ---------- | ------------------------------------- |
+| 2018-19       | 0.00     | 0.24       | 0.90                                  |
+| 2019-20       | 0.11     | 0.00       | 0.43                                  |
+| 2020-21       | 0.13     | 0.00       | 0.54                                  |
+| 2021-22       | 0.12     | 0.00       | 0.54                                  |
+| 2022-23       | 0.13     | 0.00       | 0.53                                  |
+| 2023-24       | 0.16     | 0.05       | 0.51                                  |
+
+| Set                                      | n                 | MAE today | MAE model | Model − today | 97.5% CI (by player) | Signed error today → model |
+| ---------------------------------------- | ----------------- | --------- | --------- | ------------- | -------------------- | -------------------------- |
+| 1. Same-position backups, minutes up ≥ 6 | 556 (423 players) | 3.90      | 3.80      | −0.103        | [−0.214, −0.000]     | +0.49 → −0.03              |
+| 2. Centers among them                    | 41 (38 players)   | 5.65      | 4.47      | −1.188        | [−2.389, +0.065]     | +2.16 → −1.22              |
+
+- **Set 1 passes, barely** (the interval's top is just below 0), so the model ships for every big-minute same-position backup, with the shares refitted on all seven seasons: **guards 0.23, forwards 0.07, centers 0.49**. Centers alone don't pass (41 events), but they carry most of the gain.
+- **Reading:** Jack's logic holds: the fill-in loses production when the regular returns. Today's projection already expected most of it for guards and forwards; for centers it expected too little, and the fitted share takes about half of the gap between today's projection and his projection from games with the regular.
+- **Forward check:** this season's returns from Nov 17, judged once after Apr 20, 2027; if the model's MAE is worse than today's there, it comes out.
+- **Consequence revised (2026-11-17, Jack; before any forward data):** no model is pulled mid-season or after it on a schedule. The forward check still runs once after Apr 20, 2027, as registered; its result feeds the between-seasons refit of the shares and position grouping (with the history), not a removal. The test itself is unchanged.
 
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 

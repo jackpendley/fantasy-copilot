@@ -35,6 +35,8 @@ import { memoAsync, memoFetch } from "../fetch-memo";
 import { leagueTeamTotal } from "./league-total";
 import { LAST_SCORING_PERIOD, dateForScoringPeriod } from "./calendar";
 import { defenseTable } from "./defense-table";
+import { withTeammateReturns } from "./teammate-return";
+import { teammateReturnEffects } from "./teammate-return-run";
 
 /** How long each read is reused: rosters and matchups, live scores, slower feeds. */
 const LEAGUE_FETCH = memoFetch(20_000);
@@ -115,7 +117,7 @@ async function readLeague(scoringPeriodId: number, ymd: string) {
     leagueJson(scoringPeriodId),
     rostersAhead(scoringPeriodId),
   ]);
-  const [games, board, injuries, lineups, defense, leagueTotal] = await Promise.all([
+  const [games, board, injuries, lineups, defense, leagueTotal, returns] = await Promise.all([
     nbaSchedule(season),
     fetchScoreboard(yyyymmdd, LIVE_FETCH).catch(() => []),
     safeInjuries(),
@@ -123,15 +125,24 @@ async function readLeague(scoringPeriodId: number, ymd: string) {
     fetchDailyLineups(yyyymmdd, LINEUPS_FETCH).catch(() => null),
     defenseTable().catch(() => null),
     leagueTeamTotal(ymd).catch(() => null),
+    teammateReturnEffects(),
   ]);
   // Each game's line carries this season's league-average team total (the projection's
   // game-environment factor divides by it).
   const scoreboard = board.map((g) => ({ ...g, leagueTotal }));
   const settings = parseSettings(raw);
-  const teams = parseTeams(raw);
+  // A fill-in's projection drops once the regular he replaced returns (ADR-064).
+  const attach = (roster: RosterPlayer[]) =>
+    withTeammateReturns(roster, returns, injuries.list, scoringPeriodId, everyone);
+  const parsed = parseTeams(raw);
+  const everyone = [...parsed.flatMap((t) => t.roster), ...[...(ahead?.values() ?? [])].flat()];
+  const teams = parsed.map((t) => ({ ...t, roster: attach(t.roster) }));
   const me = teams.find((t) => t.id === teamId);
   if (!me) throw new Error(`team ${teamId} not found in the league`);
-  const teamsAhead = teams.map((t) => ({ ...t, roster: ahead?.get(t.id) ?? t.roster }));
+  const teamsAhead = teams.map((t) => {
+    const next = ahead?.get(t.id);
+    return next ? { ...t, roster: attach(next) } : t;
+  });
   return {
     settings,
     /** Today's rosters: who scores today. */
@@ -182,7 +193,16 @@ async function readFreeAgents(scoringPeriodId: number, limit = 250) {
     scoringPeriodId,
     fetchImpl: FEED_FETCH,
   });
-  return parseFreeAgents(raw, cfg.season);
+  const [returns, injuries] = await Promise.all([teammateReturnEffects(), safeInjuries()]);
+  const free = parseFreeAgents(raw, cfg.season);
+  if (!returns.length) return free;
+  const fixed = withTeammateReturns(
+    free.map((f) => f.player),
+    returns,
+    injuries.list,
+    scoringPeriodId,
+  );
+  return free.map((f, i) => ({ ...f, player: fixed[i]! }));
 }
 
 /** Players by id, wherever they are now (e.g. dropped since a past day); empty in dev mode. */

@@ -68,6 +68,13 @@ export interface RosterPlayer {
   proTeam: string;
   /** Real positions (PG..C). */
   positions: string[];
+  /** ESPN's primary position (PG..C), when it sends one. */
+  defaultPosition?: string;
+  /**
+   * His expected FP/G changes by `shift` from `day` on: a fill-in once the regular he replaced
+   * returns (set by the app; MODEL_CARD, teammate returns test 4).
+   */
+  teammateReturn?: { day: number; shift: number; teammate: string };
   /** Current lineup slot name, e.g. "UTIL", "BE", "IR". */
   slot: string | null;
   /** ESPN's injury status (ACTIVE, DAY_TO_DAY, OUT, ...). */
@@ -101,6 +108,9 @@ export interface MarketSignals {
   /** ESPN's in-season overall rank (0 / null until it has games to rank). */
   seasonRank: number | null;
 }
+
+/** ESPN's `defaultPositionId`. */
+const DEFAULT_POSITION: Record<number, string> = { 1: "PG", 2: "SG", 3: "SF", 4: "PF", 5: "C" };
 
 const positive = (v: unknown) => (typeof v === "number" && v > 0 ? v : null);
 
@@ -179,6 +189,9 @@ export function parsePlayer(
     positions: (player.eligibleSlots ?? [])
       .filter((id: number) => POSITIONAL_SLOT_IDS.includes(id))
       .map((id: number) => SLOT_BY_ID[id]),
+    ...(DEFAULT_POSITION[player.defaultPositionId]
+      ? { defaultPosition: DEFAULT_POSITION[player.defaultPositionId] }
+      : {}),
     slot: slotId != null ? (SLOT_BY_ID[slotId] ?? null) : null,
     // The roster entry's own status is about the slot ("NORMAL", "FUTURE_TO_IR"), not his health.
     injuryStatus:

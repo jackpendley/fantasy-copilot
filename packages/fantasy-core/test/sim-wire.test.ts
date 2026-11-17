@@ -69,6 +69,13 @@ describe("simulations over the wire", { timeout: 60_000 }, () => {
     expect(simulateSeason(fromWire(w, { seasons: 60, seed: 5 }))).toEqual(simulateSeason(input));
   });
 
+  it("carries position-aware streaming to the worker", () => {
+    const input = { ...league(), fitStreams: true };
+    const w = JSON.parse(JSON.stringify(toWire(input)));
+    expect(fromWire(w, { seasons: 60, seed: 5 }).fitStreams).toBe(true);
+    expect(simulateSeason(fromWire(w, { seasons: 60, seed: 5 }))).toEqual(simulateSeason(input));
+  });
+
   it("a chunk is deterministic, and a move that changes nothing differs by exactly 0", () => {
     const w = toWire(league());
     const same = { key: "same", roster: w.teams[1]!.roster, freeAgents: w.freeAgents };

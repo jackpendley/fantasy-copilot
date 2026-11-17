@@ -39,6 +39,8 @@ import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
 import { pruneTasks } from "./nba/worker-tasks";
 import { fingerprintOf } from "./view-cache";
+import { forgetResponses } from "./fetch-memo";
+import { refreshTeammateReturns, teammateReturnsDue } from "./nba/teammate-return-run";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -211,9 +213,17 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     }),
   );
 
+  // The nightly computes the teammate-return effects; a day without them (the first after a
+  // deploy, or a failed nightly) gets them now, once per instance a day.
+  const returns = (await teammateReturnsDue(date))
+    ? await m.step("teammate-returns", () =>
+        step("teammate-returns", () => refreshReturns(sp, data)),
+      )
+    : null;
+
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
   if (!games.length)
-    return { ...watch, leagueChanged, simRoster, darko, skipped: "no games today" };
+    return { ...watch, leagueChanged, simRoster, darko, returns, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
 
@@ -263,6 +273,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       leagueChanged,
       simRoster,
       darko,
+      returns,
       timeline,
       availability,
       tradesRefreshed: trades,
@@ -336,6 +347,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     simRoster,
     lockJob,
     darko,
+    returns,
     timeline,
     closingProps: market?.props ?? 0,
     tradesRefreshed: trades,
@@ -348,6 +360,20 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   // Logged only when the run did database work anyway (a log alone would wake Neon).
   if (dbUse.queries > queries) await log("gameday", "ok", JSON.stringify(result));
   return result;
+}
+
+/** Fill-ins whose regular is out or back (ADR-064): every rostered and free player's effects. */
+async function refreshReturns(sp: number, league: Awaited<ReturnType<typeof loadLeague>>) {
+  const free = await loadFreeAgents(sp);
+  const r = await refreshTeammateReturns(
+    [...league.ahead.teams.flatMap((t) => t.roster), ...free.map((f) => f.player)],
+    league.games,
+    league.settings.scoring,
+    sp,
+  );
+  // The league as loaded carries the old effects: pages and the simulations reload it.
+  forgetResponses();
+  return r;
 }
 
 /** Once a day, before the games: re-run the season outlook with yesterday's results. */
@@ -367,6 +393,11 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     );
     // Every league matchup's state, for calibrating the weekly win probability.
     const states = await metered("matchup-states", () => recordMatchupStates(), [20_000]);
+    // Fill-ins whose regular is out or back (ADR-064), before the simulations read the league.
+    const returns = await metered("teammate-returns", async () => {
+      const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
+      return refreshReturns(sp, await loadLeague(sp, gameDate()));
+    });
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
     // deep move checks arrive within minutes), otherwise here.
     const queued = workerEnabled()
@@ -418,6 +449,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       transactions,
       defense,
       neon,
+      teammateReturns: returns,
       ...states,
       ...market,
     };

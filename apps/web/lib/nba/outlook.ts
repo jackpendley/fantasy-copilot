@@ -5,6 +5,7 @@ import type { FantasyTeam, Matchup, ProGame, RosterPlayer } from "@fantasy-copil
 import type { Position, SimInput, SimPlayer, SimTeam } from "@fantasy-copilot/fantasy-core";
 import { LAST_SCORING_PERIOD, matchupPeriodOf } from "./calendar";
 import { perGameProjection } from "./projection";
+import { afterReturn } from "./teammate-return";
 import { teamValue, valueContext, type ValueContext } from "./trade";
 
 /** A daily manager makes ~2.5 lineup moves per day (2025-26: ~400 over the season). */
@@ -58,6 +59,10 @@ export function toSimPlayer(p: RosterPlayer, outUntil?: number): SimPlayer {
     // in place of the roster's weakest player.
     ...(outUntil != null ? { outUntil } : {}),
     ...(p.slot === "IR" ? { reserve: true } : {}),
+    // A fill-in drops once the regular he replaced returns (ADR-064).
+    ...(p.teammateReturn
+      ? { change: { day: p.teammateReturn.day, fppg: afterReturn(proj.fppg, p.teammateReturn) } }
+      : {}),
   };
 }
 
@@ -187,6 +192,8 @@ export function buildOutlookInput(a: OutlookArgs): {
       banked,
       playoffWeeks: [a.regularWeeks + 1, a.regularWeeks + 2, a.regularWeeks + 3],
       addCapPerWeek: a.addCapPerWeek,
+      // Streams pick by lineup fit, not raw points (MODEL_CARD streaming attempt 4; ADR-065).
+      fitStreams: true,
       seasons: a.seasons,
       seed: a.seed,
     },

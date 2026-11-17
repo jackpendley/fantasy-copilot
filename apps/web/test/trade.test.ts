@@ -63,6 +63,19 @@ describe("teamValue", () => {
     expect(v.regular).toBeCloseTo(6 * perDay, 6);
     expect(v.playoffs).toBeCloseTo(4 * perDay, 6);
   });
+
+  it("drops a fill-in's value from the day the regular he replaced returns", () => {
+    // The 30-point center drops to 20 from day 4: from then the 28 and the 26 start ahead of him.
+    const fill = { ...mine[0]!, teammateReturn: { day: 4, shift: -10, teammate: "T" } };
+    const v = teamValue([fill, ...mine.slice(1)], ctx);
+    const before = (30 + 28 + 10) * k;
+    const after = (28 + 26 + 10) * k;
+    expect(v.regular).toBeCloseTo(3 * before + 3 * after, 6);
+    expect(v.playoffs).toBeCloseTo(4 * after, 6);
+    // After the last day: no change.
+    const late = { ...mine[0]!, teammateReturn: { day: 11, shift: -10, teammate: "T" } };
+    expect(teamValue([late, ...mine.slice(1)], ctx).regular).toBeCloseTo(6 * before, 6);
+  });
 });
 
 describe("teamValue's room in the lineup (roster fit)", () => {

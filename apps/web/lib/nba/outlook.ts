@@ -192,6 +192,8 @@ export function buildOutlookInput(a: OutlookArgs): {
       banked,
       playoffWeeks: [a.regularWeeks + 1, a.regularWeeks + 2, a.regularWeeks + 3],
       addCapPerWeek: a.addCapPerWeek,
+      // Streams pick by lineup fit, not raw points (MODEL_CARD streaming attempt 4; ADR-065).
+      fitStreams: true,
       seasons: a.seasons,
       seed: a.seed,
     },

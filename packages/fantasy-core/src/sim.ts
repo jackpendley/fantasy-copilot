@@ -854,8 +854,14 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id));
 
     const playDay = (d: number) => {
-      // Points per game as of this day; a change re-solves every team's lineups.
-      if (pointsAsOf(d)) for (const x of st) setRoster(x, x.roster);
+      // Points per game as of this day; a change re-solves every team's lineups (and the
+      // standing lineup and week that fitStreams keeps, ordered by points).
+      if (pointsAsOf(d))
+        for (const x of st) {
+          setRoster(x, x.roster);
+          x.stand = x.swapped = undefined;
+          if (x.week) x.week.period = -1;
+        }
       const p = period[d]!;
       if (p !== curP) {
         curP = p;

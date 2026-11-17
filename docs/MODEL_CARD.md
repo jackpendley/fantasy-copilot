@@ -880,6 +880,7 @@ One evaluation (pre-registration on main at fc09d44; branch `experiment/fit-stre
 - **The cost estimate didn't hold:** the profiling bundle had measured +22% (median of six pairs). The pre-registered harness (unbundled, the live setup, one pair) measured +38%. The result is the harness's.
 - **What it means:** the rule does what it should and keeps the simulator calibrated (as in attempt 2); only its time fails. At +38%, a ~9-minute move-check job would take ~12.5 minutes, just past ADR-063's 12-minute budget. Whether that time is worth it is Jack's call, not a re-run with a new bar.
 - **Reported:** title odds under each rule (Jack 16.2% → 18.2%, within the noise of 4,000 seasons). The Reed moves were skipped (Reed is no longer a free agent).
+- **Shipped on Jack's decision (2026-11-17, ADR-065):** checks 1–4 are the quality checks and passed; check 5 was a time budget, and Jack accepts the time ("time is not much of a factor for the overnight calculations"), with triggered updates made fast by job design instead. Shipped as tested, plus one fix: a change day (ADR-064's `SimPlayer.change`) now also clears the standing lineup and week the rule caches (found merging with main; a temporary exactness check over 100 seasons found 119 of 38,955 week lineups stale without it, 0 of 41,168 with it).
 
 ## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
 

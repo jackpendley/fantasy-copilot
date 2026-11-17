@@ -40,7 +40,9 @@ Jack's league is "FOX Champions League" (ESPN 322514556, team 13, 2026-27). Its 
   - Injury reports, lineups and lines carry when they were published or observed.
   - Never stamp historical data with import time.
 - **Never fabricate:** stats, projections or results. Missing data shows as missing. Synthetic test data is labeled synthetic.
-- **Models ship only after beating their baseline** (ESPN's projection and a simple baseline) on a pre-registered, walk-forward test. Results go in `docs/MODEL_CARD.md`.
+- **Models ship only after beating their baseline on a pre-registered, walk-forward test.** Results go in `docs/MODEL_CARD.md`.
+  - The baseline is the current production rule the model would replace.
+  - A full projection model must also beat ESPN's projection (where saved) and a simple baseline.
 
 ## Commands
 

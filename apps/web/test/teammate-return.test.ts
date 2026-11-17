@@ -111,6 +111,12 @@ describe("teammate returns", () => {
     expect(now!.teammateReturn!.day).toBe(22);
   });
 
+  it("applies today's share to effects stored with an older one", () => {
+    const [e] = teammateEffects([star, backup], logs, schedule);
+    const [, b] = withTeammateReturns([star, backup], [{ ...e!, lambda: 0.49 }], [], 22);
+    expect(b!.teammateReturn!.shift).toBeCloseTo(-SHARE.C * e!.gap);
+  });
+
   it("never projects below zero", () => {
     expect(afterReturn(3, { day: 1, shift: -5, teammate: "x" })).toBe(0);
     expect(afterReturn(20, { day: 1, shift: -5, teammate: "x" })).toBe(15);

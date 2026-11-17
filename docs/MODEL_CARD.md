@@ -1156,6 +1156,7 @@ Shares fitted on 2017-18 to 2023-24: test 4's grouping G 0.23, F 0.07, C 0.49; c
   - So taking some away made the centers worse there: MAE 4.55 → 4.78, signed error −0.12 → −1.75, over 25 test-4 center events.
 - **Shares on all nine seasons** (2017-18 to 2025-26): test 4's grouping G 0.22, F 0.06, **C 0.34** (from 0.49); candidate G 0.22, F 0.11, C 0.31.
 - **Per the pre-registration,** test 4's model stays as shipped. Whether to refit its shares on all nine seasons now is Jack's call (ADR-064). The between-seasons refit uses this season's forward data.
+- **Refitted (Jack, Nov 17):** production now uses test 4's model with the nine-season shares (G 0.22, F 0.06, C 0.34; ADR-064). Same model and fitting rule, more history; not a new test.
 
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 

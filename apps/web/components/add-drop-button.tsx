@@ -65,7 +65,9 @@ export function AddDropButton({
         setOpen(false);
       } else if (out.code === "NO_RESPONSE") {
         // Unknown outcome (the server got no answer from ESPN): the refresh shows what ESPN has.
+        // The dialog closes, so its Confirm can't send the same move again blindly (ADR-009).
         toast.error(out.message);
+        setOpen(false);
       } else {
         toast.error(
           `ESPN rejected it: ${out.code ?? res.status} ${out.message ?? out.error ?? ""}`,
@@ -74,6 +76,7 @@ export function AddDropButton({
     } catch (e) {
       // Unknown outcome: never retry blindly; refresh to see what ESPN has.
       toast.error(`No response (${(e as Error).message}). Refreshing to check ESPN.`);
+      setOpen(false);
     } finally {
       setBusy(false);
       router.refresh();

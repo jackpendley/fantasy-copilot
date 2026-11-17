@@ -15,7 +15,11 @@ export function PageSkeleton({
 }) {
   return (
     <div aria-busy="true" aria-label={`Loading ${title}`} className="space-y-4">
-      <PageHeader title={title} subtitle={<Skeleton className="mt-1 h-4 w-48" />} />
+      {/* The subtitle sits in a <p>, which can't hold Skeleton's <div>: a span drawn the same. */}
+      <PageHeader
+        title={title}
+        subtitle={<span className="mt-1 block h-4 w-48 animate-pulse rounded-md bg-muted" />}
+      />
       <Skeleton className="h-8 w-full max-w-md" />
       <div className="divide-y overflow-hidden rounded-xl border bg-card">
         {Array.from({ length: rows }, (_, i) => (

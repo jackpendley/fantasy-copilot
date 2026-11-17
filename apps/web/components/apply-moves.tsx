@@ -49,7 +49,9 @@ export function ApplyMoves({ date, moves }: { date: string; moves: PendingMove[]
         setOpen(false);
       } else if (out.code === "NO_RESPONSE") {
         // Unknown outcome (the server got no answer from ESPN): the refresh shows what ESPN has.
+        // The dialog closes, so its Confirm can't send the same moves again blindly (ADR-009).
         toast.error(out.message);
+        setOpen(false);
       } else {
         toast.error(
           `ESPN rejected the moves: ${out.code ?? res.status} ${out.message ?? out.error ?? ""}`,
@@ -58,6 +60,7 @@ export function ApplyMoves({ date, moves }: { date: string; moves: PendingMove[]
     } catch (e) {
       // Unknown outcome: never retry blindly, re-read instead.
       toast.error(`No response (${(e as Error).message}). Refreshing to check what ESPN has.`);
+      setOpen(false);
     } finally {
       setBusy(false);
       router.refresh();

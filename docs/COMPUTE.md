@@ -368,7 +368,8 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
 | Transfer  | 5 GB      | 2 GB    |
 | Compute   | 100 CU-h  | 60 CU-h |
 
-- **Measured, not guessed:** Settings → "Database this month" reads Neon's API (`NEON_API_KEY`, a project-scoped key, Production only; `lib/neon-usage.ts`): transfer, CU-hours, hours awake and the month's pace. The nightly and pregame jobs push an alert at 60% and 85% of Free, and when the month is on pace past the budget (once each per period).
+- **Measured, not guessed:** Settings → "Database this month" reads Neon's API (`NEON_API_KEY`, a project-scoped key, Production only; `lib/neon-usage.ts`): transfer, CU-hours, hours awake and the month's pace. The nightly and pregame jobs push an alert at 60% and 85% of Free, and when a month at this rate passes the budget (once each per period). "A month at this rate" scales the period's use to 30.4 days, so the short Nov 16–30 period (the upgrade restarted it) compares fairly.
+- **The plan check:** in a period's last 36 hours (Neon bills by calendar month, so Nov 30's nightly and pregame runs), a push says whether a month at this rate fits Free with 15% to spare, with the steps to switch in Vercel. That's the reminder for Jack's Dec 1 decision between Launch and Free, and it repeats every month.
 - **Which reads:** `DB_TRAFFIC_LOG=1` logs each query's result size by its SQL, once a minute (`[db-traffic]` in Vercel's runtime logs). On for a day at a time only: it costs CPU.
 - **Compute is awake time.** Neon suspends after 5 idle minutes, so any query every few minutes keeps it up. Cuts (Nov 16):
   - **No `*/15` schedule** for the worker: its peek woke Neon 96 times a day. A missed dispatch is caught by `ensureWorker` in the gameday job (only when that run touched the database anyway), the nightly job, and the Moves poll while a job is live.

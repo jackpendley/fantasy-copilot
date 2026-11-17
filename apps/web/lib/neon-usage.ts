@@ -30,6 +30,7 @@ export async function neonUsage(): Promise<NeonUsage | null> {
       compute_time_seconds?: number;
       active_time_seconds?: number;
       consumption_period_start?: string;
+      consumption_period_end?: string;
     };
   };
   return {
@@ -38,7 +39,15 @@ export async function neonUsage(): Promise<NeonUsage | null> {
     cuHours: (p.compute_time_seconds ?? 0) / 3600,
     activeHours: (p.active_time_seconds ?? 0) / 3600,
     periodStart: p.consumption_period_start ? new Date(p.consumption_period_start) : null,
+    periodEnd: plausibleEnd(p.consumption_period_start, p.consumption_period_end),
   };
+}
+
+/** Neon's period end, if it falls within a month after the start (else ours is computed). */
+function plausibleEnd(start?: string, end?: string): Date | null {
+  if (!start || !end) return null;
+  const days = (Date.parse(end) - Date.parse(start)) / 86_400_000;
+  return days > 0 && days <= 32 ? new Date(end) : null;
 }
 
 /** Push any usage alert due (each once per period and threshold); the totals, for the job log. */

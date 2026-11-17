@@ -8,7 +8,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { db, dbConfigured } from "@/lib/db";
 import { fmtDayTime } from "@/lib/format";
 import { DAILY_CPU_BUDGET_S } from "@/lib/nba/move-sim";
-import { BUDGET, FREE, onPace } from "@/lib/neon-budget";
+import { BUDGET, FREE, onPace, periodEnd } from "@/lib/neon-budget";
 import { neonUsage } from "@/lib/neon-usage";
 
 type JobRow = { job: string; status: string; detail: string | null; ran_at: Date };
@@ -98,6 +98,7 @@ export default async function SettingsPage() {
     neonUsage().catch(() => null),
   ]);
   const pace = neon ? onPace(neon, new Date()) : null;
+  const neonEnd = neon ? periodEnd(neon) : null;
   const cpuOf = (job: string) => cpu?.get(job) ?? { month: 0, day: 0 };
   const cpuTotal = ["move-sim", "outlook-sim", "trade-sim"].reduce((a, j) => a + cpuOf(j).month, 0);
   return (
@@ -157,10 +158,12 @@ export default async function SettingsPage() {
             <CardTitle>Database this month</CardTitle>
             <CardDescription>
               Neon&apos;s count since{" "}
-              {neon.periodStart ? fmtDayTime(neon.periodStart) : "the period began"}. Free allows{" "}
-              {FREE.transferBytes / 1e9} GB of transfer and {FREE.cuHours} CU-hours; our budget is{" "}
+              {neon.periodStart ? fmtDayTime(neon.periodStart) : "the period began"}
+              {neonEnd && `, until ${fmtDayTime(neonEnd)}`}. Free allows {FREE.transferBytes / 1e9}{" "}
+              GB of transfer and {FREE.cuHours} CU-hours a month; our budget is{" "}
               {BUDGET.transferBytes / 1e9} GB and {BUDGET.cuHours}. An alert comes at 60% and 85% of
-              Free, or when the month is on pace past the budget.
+              Free, or when a month at this rate passes the budget, and in the period&apos;s last
+              day whether a month at this rate fits Free.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm tabular-nums">
@@ -182,7 +185,7 @@ export default async function SettingsPage() {
                 <span>{label}</span>
                 <span className={over ? "text-destructive" : "text-muted-foreground"}>
                   {used}
-                  {projected && ` · on pace for ${projected}`}
+                  {projected && ` · a month at this rate: ${projected}`}
                 </span>
               </div>
             ))}

@@ -487,7 +487,8 @@ export async function nextAssignment(
     (c) => c < g.max_chunks,
   );
   const nMoves = groups.reduce((a, x) => a + x.n_keys, 0);
-  const fresh = have !== job.id || (haveMoves != null && haveMoves !== nMoves);
+  // The id is a bigint, which the database client returns as a string.
+  const fresh = have !== Number(job.id) || (haveMoves != null && haveMoves !== nMoves);
   const input = fresh ? await jobPayload(job.id) : null;
   return {
     jobId: job.id,
@@ -1087,7 +1088,8 @@ export async function liveJob(
     withAsked ? deepRow(ASKED_KEY, only).catch(() => null) : null,
   ]);
   if (!j) return null;
-  const mine = [deep, asked].find((d) => d?.jobId === j.id) ?? null;
+  // As numbers: the job's id comes back as a string, a cut row's as a number.
+  const mine = [deep, asked].find((d) => d != null && Number(d.jobId) === Number(j.id)) ?? null;
   const effects = mine ? new Map(mine.effects.map((e) => [e.key, e])) : null;
   const keys = await db()<{ n: number }[]>`
     select coalesce(sum(cardinality(keys)), 0)::int as n from sim_groups where job_id = ${j.id}

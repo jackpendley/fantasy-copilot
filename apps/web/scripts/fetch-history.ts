@@ -19,6 +19,7 @@ interface PoolPlayer {
   player: {
     id: number;
     defaultPositionId: number;
+    eligibleSlots?: number[];
     stats?: { id: string; stats?: Record<string, number> }[];
   };
 }
@@ -48,6 +49,16 @@ async function season(end: number) {
       new URL(`positions-${end}.json`, CACHE),
       JSON.stringify(
         Object.fromEntries(played.map((p) => [p.player.id, p.player.defaultPositionId])),
+      ),
+    );
+  // Eligible positions too (ids 0-4: PG, SG, SF, PF, C), for the position cross-tabs (test 5).
+  if (pool)
+    writeFileSync(
+      new URL(`eligible-${end}.json`, CACHE),
+      JSON.stringify(
+        Object.fromEntries(
+          played.map((p) => [p.player.id, (p.player.eligibleSlots ?? []).filter((s) => s <= 4)]),
+        ),
       ),
     );
   let fetched = 0;

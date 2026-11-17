@@ -1092,6 +1092,47 @@ One evaluation (pre-registration on main at fc09d44). `DRY=1` first: guards/forw
 - **Forward check:** this season's returns from Nov 17, judged once after Apr 20, 2027; if the model's MAE is worse than today's there, it comes out.
 - **Consequence revised (2026-11-17, Jack; before any forward data):** no model is pulled mid-season or after it on a schedule. The forward check still runs once after Apr 20, 2027, as registered; its result feeds the between-seasons refit of the shares and position grouping (with the history), not a removal. The test itself is unchanged.
 
+## Exploration: positions for teammate returns, both directions (2026-11-17, not a test)
+
+Jack (Nov 17): make sure a PF/C isn't treated like a backup center when he's really a forward, and that a PF/C who does back up at center isn't missed. Test 4 groups by ESPN's primary position for the season, so a PF/C listed PF is a forward. That means he gets the forward share, and he is never paired with a returning center. `scripts/explore-teammate-positions.ts` covers the same seasons and events as test 4 (2017-18 to 2023-24), for fill-ins whose minutes rose ≥ 6. It adds each season's ESPN eligibility (`eligible-{season}.json`, now saved by `fetch-history.ts`; it is season-specific: Jokic is PF/C in 2018-19, C only from 2019-20) and rebounds plus blocks per 36. Columns are as in the exploration above, plus the least-squares share of the gap the return takes back (λ).
+
+| Returning player → fill-in                     | n   | FP/G before → during → after | today − actual (95% CI) | λ   |
+| ---------------------------------------------- | --- | ---------------------------- | ----------------------- | --- |
+| C → C (test 4's centers)                       | 43  | 14.3 → 25.0 → 17.6           | +2.35 [+0.41, +4.29]    | 49% |
+| C → PF/C (primary PF, C-eligible)              | 16  | 11.5 → 23.3 → 16.4           | +3.09 [+0.25, +5.30]    | 48% |
+| C → forward, not C-eligible                    | 71  | 8.9 → 17.7 → 13.3            | +0.38 [−0.70, +1.49]    | 12% |
+| PF/C → C                                       | 19  | 11.0 → 22.1 → 16.3           | +1.30 [−1.08, +3.95]    | 46% |
+| PF/C → forward, not C-eligible                 | 45  | 9.4 → 18.2 → 15.1            | −0.48 [−2.01, +1.23]    | 0%  |
+| Forward (not C-eligible) → PF/C                | 16  | 18.4 → 23.3 → 22.6           | −1.47 [−6.17, +2.93]    | 0%  |
+| Both C-eligible                                | 87  | 12.8 → 23.5 → 17.2           | +1.81 [+0.55, +3.09]    | 45% |
+| Big by stats → big (top third, reb + blk / 36) | 197 | 11.5 → 21.5 → 16.1           | +1.36 [+0.49, +2.22]    | 36% |
+
+- **Under-applying is real:** when a center returns, a PF/C fill-in loses his surge like a backup center (λ 48%, today +3.09 too high). Test 4's grouping misses him, and also misses the center behind a returning PF/C (the Davis or Sabonis type).
+- **Over-applying doesn't show:** a forward who isn't C-eligible keeps most of his surge when a center returns (λ 12%), and nothing changes when a PF/C returns ahead of a pure forward (λ 0%). Grouping by C-eligibility puts each of these cells on the right side.
+- **Stats-based bigs separate less cleanly** than ESPN's eligibility (λ 36%, a weaker signal).
+- **Small cells, found by looking:** this motivates test 5 and is not evidence for it.
+
+## Pre-registration: teammate returns, test 5 — centers by eligibility (2026-11-17, before any run)
+
+**Candidate:** test 4's model with one change. A player's group is **C if he is C-eligible** in ESPN that season; otherwise it is his primary-position group (guards, forwards). A teammate is adjusted when his group equals the returning regular's. Shares λ_G, λ_F, λ_C are fitted for this grouping. Everything else is as test 4: events, minutes up ≥ 6, the least-squares share clipped to [0, 1], the target (rest-of-season FP/G) and today's rule.
+
+**Baseline:** **test 4's model as shipped** (primary-position groups), with its shares fitted on the same training seasons.
+
+**Data:**
+
+- **Training:** both models fit their shares on 2017-18 to 2023-24.
+- **Judged on 2024-25 and 2025-26** (priors 2023-24 and 2024-25; `fetch-history.ts 2025 2026`).
+- **Disclosure:** test 1 used these two seasons for its own question (every teammate, next 10 games, the with-him projection), and nothing was broken out by position. They are the only complete seasons not used by tests 2–4 or by the exploration above.
+
+**Comparison (one):** on every event either model adjusts, per event |candidate − actual| − |test 4's model − actual|. The bootstrap uses 4,000 resamples clustered by player (seed 20261120) and a **95% interval**.
+
+- **Passes** if the whole interval is below 0.
+- **Described, not tested:** events the two pair differently, the candidate's centers, and each model against today's projection.
+
+**Ships if it passes:** production groups by C-eligibility (`groupOf` in `lib/nba/teammate-return.ts`, from the player's eligible positions), with the shares refitted on all nine seasons, and an ADR-064 amendment. **If it fails,** test 4's model stays as shipped. The between-seasons refit uses the forward data, as ADR-064 says.
+
+**When:** `DRY=1` (counts only), then one evaluation.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

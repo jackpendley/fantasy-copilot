@@ -948,6 +948,31 @@ No interval lies below 0, so today's projection stays for the rest of the season
 - **For Reed:** no tested rule says to change his 27.1. If the hint holds, his rest-of-season value is nearer 25 than 27 once Duren is back.
 - **Next, if wanted:** pre-register "halfway for same-position backups whose minutes rose ≥ 6" and judge it forward on this season's returns.
 
+## Pre-registration: teammate returns, test 3 — halfway for big-minute same-position backups (2026-11-17, before any run)
+
+**Question:** test 2's exploration (above, not a test) found that backup centers whose minutes rose ≥ 6 ran about 2 FP/G below today's projection after the starter returned, and halfway (C) came closest. Jack chose (Nov 16) to keep exploring it and to pre-register it. One hypothesis, judged twice:
+
+> For a **same-position backup whose minutes rose ≥ 6** while a regular teammate was out, the **halfway rule** (C: the mean of today's projection and the one from only games with the teammate) predicts his rest-of-season FP/G better than today's projection.
+
+**Same as test 2, unchanged:** events, affected players, target (mean FP over all remaining regular-season games from the return, at least 10), today's rule, candidate C, the position groups, and the code (`scripts/teammate-return-events.ts`, moved out of test 2's script; re-running test 2 reproduces its table exactly).
+
+**The set:** P's default position group equals T's, and P's minutes during the absence exceed his minutes before it by **≥ 6**. Every group (guards, forwards, centers); the threshold of 6 comes from the exploration.
+
+**Part 1, historical (run now):** **2017-18, 2018-19, 2019-20 and 2020-21**, none of them evaluated for this question (2020-21 was only test 2's prior). Priors are each previous season. ESPN's public season pool starts at 2017-18, so 2016-17's logs are fetched for 2017-18's players. 2019-20's hiatus and bubble and 2020-21's protocol absences stay in: missed games are counted as team games, as before.
+
+**Part 2, forward (this season):** returns on or after **Nov 17, 2026**, with the same rules; 2025-26 is the prior. It's evaluated **once, after the regular season** (the script refuses before Apr 20, 2027), when every event's rest of the season is known. It will be small (test 2 found about 140 same-position backups a season at ≥ 4 minutes, so fewer at ≥ 6, and only from Nov 17), so it may not have the power to pass alone.
+
+**Metric:** per (P, event), |halfway − actual| − |today − actual|; the mean with a bootstrap interval (4,000 resamples, clustered by player; seed 20261118 for part 1, 20270420 for part 2). Two comparisons (one per part), so each uses a **97.5% interval** (Bonferroni for 95% overall). A part passes if its interval lies entirely below 0.
+
+**Ships:**
+
+- **Part 1 passes:** ship now, in its own PR with an ADR. When a regular's estimated return date is known, his same-position backups whose minutes rose ≥ 6 change on that day to halfway, for the rest of the season (simulator, `teamValue` in trades and Moves, the week projection, and the card's "after T returns" number). Part 2 then checks it: if its mean difference is ≥ 0 (no better than today), the rule comes out.
+- **Part 1 fails:** nothing changes now. Ship only if part 2 passes.
+
+**Described, not tested** (both parts): the set's signed error for today and halfway, and the centers within the set (MAE and signed error).
+
+**When:** `DRY=1` first (event counts only, no outcomes), then one evaluation of part 1. Nothing is tuned; nothing is re-run with other thresholds.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

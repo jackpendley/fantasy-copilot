@@ -837,6 +837,20 @@ Branch `experiment/fit-streams-3` (not merged). `scripts/profile-sim.ts` there s
 
 **What's left is the design, not waste:** per 1,000 seasons, 424k fit checks, 60% of which rebuild the week's lineups (each team's first check of a week, and every check after a roster change). That's 1.37M extra lineup solves on top of the raw rule's 1.57M, plus the scoring itself. Getting to +20% needs a cheaper model of positional need, for example room counts by position without solving lineups, or today's room only. That would be a different candidate with its own pre-registration. So **no attempt-3 run was made**: it would fail check 5 for certain.
 
+### Attempt 4: an exact cheaper rewrite, no test run (2026-11-16)
+
+Jack asked (Nov 16) for the cheaper version. Branch `experiment/fit-streams-4` (6d7cc7b, not merged); the values are attempt 2's, unchanged.
+
+- **A gate was tried first and dropped:** letting the raw rule decide whether to stream and lineup values only whom saves nothing, because the raw rule wants a stream at 70% of checks with budget (294k of 419k per 1,000 seasons).
+- **Day lineups without solving:** the best lineup from a subset of players keeps every full-roster starter in that subset (greedy on a matroid). So each day's lineup starts from the standing lineup's starters who play and adds the others who play, best first, by the solver's augmenting paths. Checked equal to a full solve on all 1.64M day lineups of 1,000 seasons.
+- **The standing lineup follows each stream:** without the dropped player it refills his slot from the bench; the pickup takes a slot by an augmenting path or replaces the weakest starter whose removal lets him in. Equal to a full solve on all 194k swaps checked.
+- **Free agents ranked once a day** for every team's check (values change only daily), and a healthy free agent whose raw value can't beat the best so far isn't scored (his lineup value can't exceed it). Identical pickups with and without.
+- **Slot assignment** can differ from a full solve's (same players), which changes some scores: 240,625 pickups vs 240,910 on the profiling seed.
+
+**Cost** (profiling seed 20261116, one machine, 2,000 seasons, six alternating raw/fit pairs): fit/raw **1.19–1.25, median +22%** (attempt 3: +65%; attempt 2: +108%). Scoring 3 candidates a side instead of 5 measured +11% to +19%, within run-to-run noise of the default, so it isn't proposed.
+
+**No pre-registered run:** at +22% check 5's +20% bar would likely fail narrowly. Whether to keep that bar or set another before an attempt-4 run is Jack's call; checks 1–4 would stay as in attempt 2.
+
 ## Pre-registration: projections after a teammate returns (2026-11-16, before any run)
 
 **Question:** a player who filled in while a regular teammate was out keeps his inflated numbers in every rest-of-season value: trades, Moves, the season simulator. Example, Nov 16: Paul Reed played all 12 of his games without Jalen Duren (out since Oct 23). Ours projects 27.1 FP/G, ESPN preseason 17.6, for all 60 games left, though Duren's estimated return is Nov 24. Does projecting from the games the teammate **played** predict the player better once the teammate is back?

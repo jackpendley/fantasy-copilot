@@ -8,10 +8,11 @@ import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import { fetchGameLog } from "@fantasy-copilot/nba-data";
 import { dbConfigured } from "../db";
-import { readView, writeView } from "../view-cache";
+import { readView, viewStamp, writeView } from "../view-cache";
 import {
   groupOf,
   latestAbsence,
+  returnsStale,
   teammateEffects,
   type LogGame,
   type TeammateEffect,
@@ -51,6 +52,19 @@ export async function refreshTeammateReturns(...args: Parameters<typeof computeT
     ...found,
     effects: effects.map((e) => `${e.player}<-${e.teammate} ${(-e.lambda * e.gap).toFixed(1)}`),
   };
+}
+
+/** The day this instance last checked whether the stored effects are due (one look a day). */
+let dueChecked: string | null = null;
+
+/**
+ * Whether the stored effects are missing or over a day old, so a gameday run computes them
+ * (the first day after a deploy, or a nightly that failed). Looked at once per instance a day.
+ */
+export async function teammateReturnsDue(ymd: string): Promise<boolean> {
+  if (!dbConfigured() || dueChecked === ymd) return false;
+  dueChecked = ymd;
+  return returnsStale((await viewStamp(KEY))?.computedAt ?? null);
 }
 
 /** The effects as of scoring period `today` (no database). */

@@ -189,6 +189,11 @@ export function withTeammateReturns<T extends RosterPlayer>(
   });
 }
 
+/** Stored effects this old (or none) are recomputed by the next gameday run, not only the nightly. */
+export const STALE_MS = 26 * 3600_000;
+export const returnsStale = (computedAt: Date | null, now = Date.now()) =>
+  !computedAt || now - computedAt.getTime() > STALE_MS;
+
 /** His FP/G from `day` on, given today's (never below 0). */
 export const afterReturn = (fppg: number, c: NonNullable<RosterPlayer["teammateReturn"]>) =>
   Math.max(0, fppg + c.shift);

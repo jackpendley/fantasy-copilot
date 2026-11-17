@@ -49,9 +49,11 @@ async function main() {
   let done = 0;
 
   while (Date.now() < deadline) {
-    // A failed request is tried again (a 5xx while the app deploys, a network error).
+    // A request that hangs is given up after a minute; a failed one is tried again (a 5xx while
+    // the app deploys, a network error).
+    const signal = () => AbortSignal.timeout(60_000);
     const res = await retrying(async () => {
-      const r = await fetch(`${app}/api/worker/task`, { headers });
+      const r = await fetch(`${app}/api/worker/task`, { headers, signal: signal() });
       if (![200, 202, 204].includes(r.status)) throw new Error(`task: HTTP ${r.status}`);
       return r;
     });
@@ -72,6 +74,7 @@ async function main() {
           method: "POST",
           headers,
           body: JSON.stringify(body),
+          signal: signal(),
         });
         if (!r.ok) throw new Error(`task result: HTTP ${r.status}`);
       });

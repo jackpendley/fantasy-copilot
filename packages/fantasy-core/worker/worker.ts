@@ -7,6 +7,7 @@
 
 import { availableParallelism } from "node:os";
 import { Worker, isMainThread, parentPort } from "node:worker_threads";
+import { retrying } from "../src/retry";
 import { runChunk, type ChunkResult, type WireInput, type WireMove } from "../src/sim-wire";
 
 interface Task {
@@ -73,25 +74,31 @@ async function main() {
   // Two chunks per core per request: half the requests the app answers.
   const count = 2 * cores;
   type Step = { go: Assignment } | "wait" | "leave";
-  const ask = async (): Promise<Step> => {
-    const res = await fetch(
-      `${app}/api/worker/next?count=${count}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
-      { headers },
-    );
-    if (res.status === 204) return "leave";
-    if (res.status === 202) return "wait";
-    if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
-    return { go: (await res.json()) as Assignment };
-  };
-  const post = async (body: object) => {
-    const r = await fetch(`${app}/api/worker/result`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
+  // A request that hangs is given up after a minute, and a failed one is tried again (the app
+  // counts a chunk posted twice once).
+  const signal = () => AbortSignal.timeout(60_000);
+  const ask = (): Promise<Step> =>
+    retrying(async () => {
+      const res = await fetch(
+        `${app}/api/worker/next?count=${count}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
+        { headers, signal: signal() },
+      );
+      if (res.status === 204) return "leave";
+      if (res.status === 202) return "wait";
+      if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
+      return { go: (await res.json()) as Assignment };
     });
-    if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
-    return (await r.json()) as { next?: Assignment | null; wait?: boolean };
-  };
+  const post = (body: object) =>
+    retrying(async () => {
+      const r = await fetch(`${app}/api/worker/result`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: signal(),
+      });
+      if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
+      return (await r.json()) as { next?: Assignment | null; wait?: boolean };
+    });
 
   try {
     let step = await ask();

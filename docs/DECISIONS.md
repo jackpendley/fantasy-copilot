@@ -941,3 +941,16 @@
 - **Decision (Jack, Nov 17):** ship it. Simulation time costs nothing (free GitHub runners) and overnight time doesn't matter; what matters is how fast triggered updates (roster moves, injury news, tip-off) arrive, which is handled by job design (right-sized, prioritized jobs) rather than by a cheaper, less accurate rule.
 - **How:** `buildOutlookInput` sets `SimInput.fitStreams`; the wire input carries it to the workers (jobs built before this run the raw rule). A change day clears the rule's cached standing lineup and week as well as the day lineups.
 - **Watch:** job times per trigger on Settings and in the worker logs.
+
+## ADR-066: a simulation job always finishes; runners retry (2026-11-17)
+
+- **Why:** a job is done when every chunk handed out is back. A runner that died holding chunks left its job `running` until the next job replaced it: the Outlook row never became final, P(best) was never computed, and the other runners waited 3 minutes for chunks that weren't coming. `closeQuietJobs` was written for this in ADR-053 but nothing called it. A runner died on any single failed request.
+- **Closing:** `closeQuietJobs` closes a running job with what it has once no runner has taken chunks for 4 minutes. It runs where the database is already awake (docs/COMPUTE.md §10):
+  - the gameday job, on runs that queried anyway;
+  - the nightly job, before it queues the new job;
+  - the Moves poll, at most every 2 minutes per instance (the page polls only while a job is live).
+  - A quiet job with chunks still to hand out isn't closed: `ensureWorker` starts a run for it.
+- **Runners retry:** each request to the app is tried again after 2, 8 and 20 seconds (`retrying`, fantasy-core).
+- **A chunk posted twice counts once:** `sim_posts` (migration 0031) records each group's posted chunks, and `sim_groups.posted` rises only for new ones. Sums were already idempotent.
+- **A job is stored in one transaction** (the replaced jobs, the job, its groups): a job without groups was never handed out.
+- **Tests:** against Postgres (`apps/web/test/db/queue.test.ts`).

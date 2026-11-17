@@ -10,8 +10,11 @@ import { absenceOf } from "./availability";
 import { perGameProjection } from "./projection";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
 
-/** λ by position group, fitted on 2017-18 to 2023-24 (MODEL_CARD test 4). */
-export const SHARE = { G: 0.23, F: 0.07, C: 0.49 } as const;
+/**
+ * λ by position group: test 4's model, its shares refitted on 2017-18 to 2025-26 (MODEL_CARD
+ * test 5's result; Jack, Nov 17). Test 4 fitted G 0.23, F 0.07, C 0.49 on seven seasons.
+ */
+export const SHARE = { G: 0.22, F: 0.06, C: 0.34 } as const;
 export type Group = keyof typeof SHARE;
 
 /** The test's events: a regular (20+ minutes) misses 5+ straight team games. */
@@ -177,7 +180,8 @@ export function withTeammateReturns<T extends RosterPlayer>(
     if (absence?.season) continue;
     const change = {
       day: absence?.outUntil ?? today,
-      shift: -e.lambda * e.gap,
+      // Today's share for his group (stored effects may carry an older one).
+      shift: -SHARE[e.group] * e.gap,
       teammate: e.teammateName,
     };
     const had = best.get(e.player);

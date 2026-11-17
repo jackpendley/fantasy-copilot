@@ -5,6 +5,7 @@
 //
 //   APP_URL=https://fantasycopilot.vercel.app WORKER_SECRET=... node tasks.mjs
 
+import { retrying } from "@fantasy-copilot/fantasy-core";
 import { buildAskedMoves, buildSimMoves, type SimBuildInput } from "../lib/nba/sim-moves";
 import {
   runTradeFor,
@@ -34,7 +35,8 @@ const HANDLERS: Record<string, (input: never) => unknown> = {
 const POLL_MS = 15_000;
 // Short: each ask is a query, and a new task dispatches a run anyway (Neon sleeps sooner).
 const IDLE_MS = 30_000;
-const STAY_MS = 30_000;
+// While simulations run, a job's build (a new trigger) shouldn't wait long to be picked up.
+const STAY_MS = 5_000;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,7 +50,14 @@ async function main() {
   let done = 0;
 
   while (Date.now() < deadline) {
-    const res = await fetch(`${app}/api/worker/task`, { headers });
+    // A request that hangs is given up after a minute; a failed one is tried again (a 5xx while
+    // the app deploys, a network error).
+    const signal = () => AbortSignal.timeout(60_000);
+    const res = await retrying(async () => {
+      const r = await fetch(`${app}/api/worker/task`, { headers, signal: signal() });
+      if (![200, 202, 204].includes(r.status)) throw new Error(`task: HTTP ${r.status}`);
+      return r;
+    });
     if (res.status === 200) {
       const task = (await res.json()) as { id: number; kind: string; input: never };
       const t0 = Date.now();
@@ -60,12 +69,16 @@ async function main() {
       } catch (e) {
         body = { id: task.id, error: (e as Error).message };
       }
-      const r = await fetch(`${app}/api/worker/task`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
+      // The app closes a task once: a result posted twice changes nothing.
+      await retrying(async () => {
+        const r = await fetch(`${app}/api/worker/task`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: signal(),
+        });
+        if (!r.ok) throw new Error(`task result: HTTP ${r.status}`);
       });
-      if (!r.ok) throw new Error(`task result: HTTP ${r.status}`);
       console.log(`${task.kind} #${task.id}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
       done++;
       lastWork = Date.now();
@@ -77,7 +90,6 @@ async function main() {
       await sleep(STAY_MS);
       continue;
     }
-    if (res.status !== 204) throw new Error(`task: HTTP ${res.status}`);
     if (Date.now() - lastWork > IDLE_MS) break;
     await sleep(POLL_MS);
   }

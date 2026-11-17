@@ -325,59 +325,63 @@ async function storeJob(
   // A full job replaces every live job (it checks the asked trades too); an asked one replaces
   // only an earlier asked one, and runs first (runners take the newest job).
   const askedOnly = ctx.askedOnly ?? false;
-  await db()`update sim_jobs set status = 'superseded', updated_at = now()
-    where status in ('queued', 'running') and (asked_only or ${!askedOnly})`;
-  const [row] = await db()<{ id: number }[]>`
-    insert into sim_jobs ${db()({
-      trigger: ctx.trigger,
-      team_id: ctx.teamId,
-      scoring_period: ctx.scoringPeriod,
-      read_at: new Date(ctx.readAt),
-      fingerprint,
-      // Compressed (each runner reads them; database transfer): the jsonb columns stay empty.
-      setup: db().json({} as never),
-      moves: db().json([] as never),
-      setup_gz: pack(wire),
-      moves_gz: pack(moves),
-      n_moves: moves.length,
-      waiver_fingerprint: ctx.waiverFingerprint,
-      roster_key: ctx.rosterKey,
-      watch_key: ctx.watchKey ?? null,
-      replays: REPLAYS,
-      chunk_seasons: CHUNK_SEASONS,
-      max_chunks: MAX_CHUNKS,
-      active: [],
-      meta: db().json(ctx.meta as never),
-      asked_only: askedOnly,
-    })}
-    returning id
-  `;
   // The opening moves (and any Jack asked for) get the first groups and their seasons first;
   // the moves he acts on are checked to the top tier's precision (ADR-060).
   const groups = groupsOf(
     moves.map((m) => m.key),
     top,
   );
-  let start = 0;
-  const rows = groups.map((keys, grp) => {
-    const tier: Tier = start < top ? TOP_TIER : REST_TIER;
-    const row_ = {
-      job_id: row!.id,
-      grp,
-      prio: start < leading ? 1 : 2,
-      keys,
-      active: keys,
-      target_2se: tier.target2se,
-      min_seasons: tier.minSeasons,
-      // Group 0 also carries the base run (the Outlook) to its minimum.
-      max_seasons: grp === 0 ? Math.max(tier.maxSeasons, MIN_BASE_SEASONS) : tier.maxSeasons,
-    };
-    start += keys.length;
-    return row_;
+  // One transaction: a job stored without its groups would wait forever (nothing hands it out).
+  const id = await db().begin(async (sql) => {
+    await sql`update sim_jobs set status = 'superseded', updated_at = now()
+      where status in ('queued', 'running') and (asked_only or ${!askedOnly})`;
+    const [row] = await sql<{ id: number }[]>`
+      insert into sim_jobs ${sql({
+        trigger: ctx.trigger,
+        team_id: ctx.teamId,
+        scoring_period: ctx.scoringPeriod,
+        read_at: new Date(ctx.readAt),
+        fingerprint,
+        // Compressed (each runner reads them; database transfer): the jsonb columns stay empty.
+        setup: sql.json({} as never),
+        moves: sql.json([] as never),
+        setup_gz: pack(wire),
+        moves_gz: pack(moves),
+        n_moves: moves.length,
+        waiver_fingerprint: ctx.waiverFingerprint,
+        roster_key: ctx.rosterKey,
+        watch_key: ctx.watchKey ?? null,
+        replays: REPLAYS,
+        chunk_seasons: CHUNK_SEASONS,
+        max_chunks: MAX_CHUNKS,
+        active: [],
+        meta: sql.json(ctx.meta as never),
+        asked_only: askedOnly,
+      })}
+      returning id
+    `;
+    let start = 0;
+    const rows = groups.map((keys, grp) => {
+      const tier: Tier = start < top ? TOP_TIER : REST_TIER;
+      const row_ = {
+        job_id: row!.id,
+        grp,
+        prio: start < leading ? 1 : 2,
+        keys,
+        active: keys,
+        target_2se: tier.target2se,
+        min_seasons: tier.minSeasons,
+        // Group 0 also carries the base run (the Outlook) to its minimum.
+        max_seasons: grp === 0 ? Math.max(tier.maxSeasons, MIN_BASE_SEASONS) : tier.maxSeasons,
+      };
+      start += keys.length;
+      return row_;
+    });
+    await sql`insert into sim_groups ${sql(rows)}`;
+    return row!.id;
   });
-  await db()`insert into sim_groups ${db()(rows)}`;
   await startWorker();
-  return row!.id;
+  return id;
 }
 
 /**
@@ -488,7 +492,8 @@ export async function nextAssignment(
     (c) => c < g.max_chunks,
   );
   const nMoves = groups.reduce((a, x) => a + x.n_keys, 0);
-  const fresh = have !== job.id || (haveMoves != null && haveMoves !== nMoves);
+  // The id is a bigint, which the database client returns as a string.
+  const fresh = have !== Number(job.id) || (haveMoves != null && haveMoves !== nMoves);
   const input = fresh ? await jobPayload(job.id) : null;
   return {
     jobId: job.id,
@@ -609,8 +614,13 @@ export async function postChunks(
     )}
     on conflict do nothing
   `;
+  // A chunk posted again (a runner retrying after a lost answer) counts once.
   await db()`
-    update sim_groups set posted = posted + ${results.length}
+    with fresh as (
+      insert into sim_posts ${db()(results.map((r) => ({ job_id: jobId, grp: group, chunk: r.chunk })))}
+      on conflict do nothing returning 1
+    )
+    update sim_groups set posted = posted + (select count(*) from fresh)
     where job_id = ${jobId} and grp = ${group}
   `;
   const [state] = await db()<{ back: boolean }[]>`
@@ -955,12 +965,19 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   return { done };
 }
 
+/** When this instance last looked for quiet jobs (ms). */
+let quietCheckedAt = 0;
+
 /**
- * Close jobs whose runners went quiet with what they have (5-minute job). Returns how many
+ * Close jobs whose runners went quiet with what they have: a runner that died holding chunks
+ * would otherwise leave its job running until the next one replaces it (its Outlook never
+ * final, P(best) never computed). Callers already have the database awake (the gameday and
+ * nightly jobs, the Moves poll); at most every `everyMs` per instance. Returns how many
  * live jobs have had no runner at all for 15 minutes (the worker isn't starting).
  */
-export async function closeQuietJobs(): Promise<{ closed: number; unstarted: number }> {
-  if (!dbConfigured()) return { closed: 0, unstarted: 0 };
+export async function closeQuietJobs(everyMs = 0): Promise<{ closed: number; unstarted: number }> {
+  if (!dbConfigured() || Date.now() - quietCheckedAt < everyMs) return { closed: 0, unstarted: 0 };
+  quietCheckedAt = Date.now();
   const quiet = await db()<{ id: number }[]>`
     select id from sim_jobs where status = 'running'
       and coalesce(last_worker_at, created_at) < now() - ${`${STALE_MS / 1000} seconds`}::interval
@@ -1090,7 +1107,8 @@ export async function liveJob(
     withAsked ? deepRow(ASKED_KEY, only).catch(() => null) : null,
   ]);
   if (!j) return null;
-  const mine = [deep, asked].find((d) => d?.jobId === j.id) ?? null;
+  // As numbers: the job's id comes back as a string, a cut row's as a number.
+  const mine = [deep, asked].find((d) => d != null && Number(d.jobId) === Number(j.id)) ?? null;
   const effects = mine ? new Map(mine.effects.map((e) => [e.key, e])) : null;
   const keys = await db()<{ n: number }[]>`
     select coalesce(sum(cardinality(keys)), 0)::int as n from sim_groups where job_id = ${j.id}

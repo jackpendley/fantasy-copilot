@@ -7,6 +7,7 @@
 
 import { availableParallelism } from "node:os";
 import { Worker, isMainThread, parentPort } from "node:worker_threads";
+import { retrying } from "../src/retry";
 import { runChunk, type ChunkResult, type WireInput, type WireMove } from "../src/sim-wire";
 
 interface Task {
@@ -66,31 +67,38 @@ async function main() {
   let posted = 0;
   const t0 = Date.now();
   // While a job is being built (the app answers "wait"), ask again this often, up to WAIT_MS.
-  const WAIT_EVERY_MS = 20_000;
+  // Short: a triggered job's runners are waiting on it (the app only answers; Neon is awake).
+  const WAIT_EVERY_MS = 5_000;
   const WAIT_MS = 3 * 60_000;
   let waitingSince: number | null = null;
   // Two chunks per core per request: half the requests the app answers.
   const count = 2 * cores;
   type Step = { go: Assignment } | "wait" | "leave";
-  const ask = async (): Promise<Step> => {
-    const res = await fetch(
-      `${app}/api/worker/next?count=${count}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
-      { headers },
-    );
-    if (res.status === 204) return "leave";
-    if (res.status === 202) return "wait";
-    if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
-    return { go: (await res.json()) as Assignment };
-  };
-  const post = async (body: object) => {
-    const r = await fetch(`${app}/api/worker/result`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
+  // A request that hangs is given up after a minute, and a failed one is tried again (the app
+  // counts a chunk posted twice once).
+  const signal = () => AbortSignal.timeout(60_000);
+  const ask = (): Promise<Step> =>
+    retrying(async () => {
+      const res = await fetch(
+        `${app}/api/worker/next?count=${count}${job ? `&have=${job.id}&moves=${job.moves.length}` : ""}`,
+        { headers, signal: signal() },
+      );
+      if (res.status === 204) return "leave";
+      if (res.status === 202) return "wait";
+      if (!res.ok) throw new Error(`next: HTTP ${res.status}`);
+      return { go: (await res.json()) as Assignment };
     });
-    if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
-    return (await r.json()) as { next?: Assignment | null; wait?: boolean };
-  };
+  const post = (body: object) =>
+    retrying(async () => {
+      const r = await fetch(`${app}/api/worker/result`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: signal(),
+      });
+      if (!r.ok) throw new Error(`result: HTTP ${r.status}`);
+      return (await r.json()) as { next?: Assignment | null; wait?: boolean };
+    });
 
   try {
     let step = await ask();

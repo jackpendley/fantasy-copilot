@@ -35,7 +35,8 @@ async function main() {
   if (FORWARD && Date.now() < FORWARD_RUN_AFTER)
     throw new Error("Part 2 runs once, after the 2026-27 regular season (from Apr 20, 2027).");
   const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
-  const all = SEASONS.flatMap((s) => analyze(s, scoring, RECORDED)).filter(
+  // Part 2 judges clean events (amendment, Nov 17, before any part 2 data: MODEL_CARD).
+  const all = SEASONS.flatMap((s) => analyze(s, scoring, FORWARD ? {} : RECORDED)).filter(
     (r) => !FORWARD || r.at >= FORWARD_FROM,
   );
   const set = all.filter((r) => r.sameGroup && r.minShift >= MIN_SHIFT);

@@ -1007,6 +1007,8 @@ No interval lies below 0, so today's projection stays for the rest of the season
 
 **Part 2, forward (this season):** returns on or after **Nov 17, 2026**, with the same rules; 2025-26 is the prior. It's evaluated **once, after the regular season** (the script refuses before Apr 20, 2027), when every event's rest of the season is known. It will be small (test 2 found about 140 same-position backups a season at ≥ 4 minutes, so fewer at ≥ 6, and only from Nov 17), so it may not have the power to pass alone.
 
+**Amendment (2026-11-17, Jack; before any part 2 data):** part 2 judges **clean events only**: a teammate is in only if he has games before the absence and games with the returning player (see the erratum under test 4). The rest of part 2 is unchanged. Without those games his minutes rise and the "with him" projection are undefined, and production no longer adjusts him. No 2026-27 game log had been fetched when this was written (`data/local/backtest` held none), so no part 2 outcome had been seen. The script applies it (`FORWARD=1` reads clean events; part 1 keeps the recorded rule).
+
 **Metric:** per (P, event), |halfway − actual| − |today − actual|; the mean with a bootstrap interval (4,000 resamples, clustered by player; seed 20261118 for part 1, 20270420 for part 2). Two comparisons (one per part), so each uses a **97.5% interval** (Bonferroni for 95% overall). A part passes if its interval lies entirely below 0.
 
 **Ships:**
@@ -1091,6 +1093,7 @@ One evaluation (pre-registration on main at fc09d44). `DRY=1` first: guards/forw
 - **Reading:** Jack's logic holds: the fill-in loses production when the regular returns. Today's projection already expected most of it for guards and forwards; for centers it expected too little, and the fitted share takes about half of the gap between today's projection and his projection from games with the regular.
 - **Forward check:** this season's returns from Nov 17, judged once after Apr 20, 2027; if the model's MAE is worse than today's there, it comes out.
 - **Consequence revised (2026-11-17, Jack; before any forward data):** no model is pulled mid-season or after it on a schedule. The forward check still runs once after Apr 20, 2027, as registered; its result feeds the between-seasons refit of the shares and position grouping (with the history), not a removal. The test itself is unchanged.
+- **Amendment (2026-11-17, Jack; before any forward data):** the forward check judges **clean events only**: the teammate has games before the absence and games with the returning player (see the erratum below). These are the events production adjusts. Everything else is as registered. No 2026-27 game log had been fetched when this was written.
 
 ### Erratum (2026-11-17): events with undefined values; test 4 doesn't pass without them
 
@@ -1120,7 +1123,7 @@ Test 4's set 1 held 30 such events (18 without games before the absence, all of 
 **For Jack to decide:**
 
 1. Whether test 4's model stays shipped. It was shipped on a pass that depended on these events; CLAUDE.md requires a passed pre-registered test. Your Nov 17 decision not to pull models mid-season predates this finding.
-2. Whether to amend, before any of their data is seen, test 3 part 2 and test 4's forward check (both after Apr 20, 2027) to judge clean events. As registered they include the undefined ones.
+2. ~~Whether to amend test 3 part 2 and test 4's forward check to clean events.~~ **Decided (Jack, Nov 17): amended**, before any of their data existed; see the amendments under each.
 
 ## Exploration: positions for teammate returns, both directions (2026-11-17, not a test)
 

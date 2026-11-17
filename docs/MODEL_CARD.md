@@ -1133,6 +1133,30 @@ Jack (Nov 17): make sure a PF/C isn't treated like a backup center when he's rea
 
 **When:** `DRY=1` (counts only), then one evaluation.
 
+### Result (2026-11-17): not passed; test 4's model stays
+
+One evaluation (pre-registration on main at c77fef9). `DRY=1` first:
+
+- **Training:** 658 events.
+- **2024-25:** 133 events (test 4's grouping G/F/C 62/50/13, candidate 62/38/21).
+- **2025-26:** 124 events (47/55/12 and 47/45/22).
+- 40 test events are paired differently; no event lacks eligibility.
+
+Shares fitted on 2017-18 to 2023-24: test 4's grouping G 0.23, F 0.07, C 0.49; candidate G 0.23, F 0.13, C 0.45.
+
+| Set                                         | n                 | MAE today | MAE test 4's model | MAE candidate | Candidate − test 4's model | 95% CI (by player) | Signed error today → test 4 → candidate |
+| ------------------------------------------- | ----------------- | --------- | ------------------ | ------------- | -------------------------- | ------------------ | --------------------------------------- |
+| Every event either model adjusts (the test) | 257 (191 players) | 4.05      | 4.03               | 4.07          | +0.041                     | [−0.049, +0.138]   | −0.76 → −1.42 → −1.62                   |
+| — paired differently by the two             | 40 (32 players)   | 4.15      | 4.12               | 4.49          | +0.372                     | [−0.187, +0.969]   | −1.20 → −1.32 → −2.36                   |
+| — candidate's centers                       | 43 (39 players)   | 4.55      | 4.78               | 5.05          | +0.262                     | [−0.284, +0.814]   | −0.12 → −1.75 → −2.68                   |
+
+- **Not passed:** grouping centers by eligibility predicts no better than test 4's grouping, and leans worse. The PF/C pattern in the exploration did not carry over to fresh seasons.
+- **Described, and important:** on these two seasons **test 4's model itself is no better than today's projection**: −0.023 [−0.179, +0.129]. The candidate's is +0.019 [−0.158, +0.197].
+  - In 2024-25 and 2025-26, fill-ins kept _more_ of their surge than today's projection expected (signed error −0.76).
+  - So taking some away made the centers worse there: MAE 4.55 → 4.78, signed error −0.12 → −1.75, over 25 test-4 center events.
+- **Shares on all nine seasons** (2017-18 to 2025-26): test 4's grouping G 0.22, F 0.06, **C 0.34** (from 0.49); candidate G 0.22, F 0.11, C 0.31.
+- **Per the pre-registration,** test 4's model stays as shipped. Whether to refit its shares on all nine seasons now is Jack's call (ADR-064). The between-seasons refit uses this season's forward data.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

@@ -4,7 +4,13 @@
 
 import { after, NextResponse, type NextRequest } from "next/server";
 import { deepView } from "@/lib/nba/move-shown";
-import { deepVersion, ensureWorker, liveJob, settledResults } from "@/lib/nba/sim-jobs";
+import {
+  closeQuietJobs,
+  deepVersion,
+  ensureWorker,
+  liveJob,
+  settledResults,
+} from "@/lib/nba/sim-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +25,9 @@ export async function POST(request: NextRequest) {
   if (typeof body?.roster !== "string" || !keys.length) {
     return NextResponse.json({ error: "roster and keys are required" }, { status: 400 });
   }
+  // The page polls while a job is live: one whose runners went quiet is closed while Jack
+  // watches (its version then changes, and the next poll brings the final numbers).
+  after(() => closeQuietJobs(2 * 60_000).catch(() => null));
   if (body.version && body.version === (await deepVersion())) {
     return new NextResponse(null, { status: 204 });
   }

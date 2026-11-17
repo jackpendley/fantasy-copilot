@@ -33,7 +33,7 @@ import {
   recordTimeline,
 } from "./nba/matchup-snapshots";
 import { latestOutlook, runOutlook } from "./nba/outlook-run";
-import { enqueueSimJob, ensureWorker, pruneSimJobs } from "./nba/sim-jobs";
+import { closeQuietJobs, enqueueSimJob, ensureWorker, pruneSimJobs } from "./nba/sim-jobs";
 import { refreshMoveChecks, watchedFreeAgents } from "./nba/move-checks";
 import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
@@ -102,8 +102,12 @@ export async function gamedayJob(now = new Date()): Promise<Record<string, unkno
     result = await gamedayRun(now, m);
     return result;
   } finally {
-    // Work waiting with no runner (a missed dispatch) starts one, while the database is awake.
-    if (dbUse.queries > queries) await ensureWorker().catch(() => false);
+    // Work waiting with no runner (a missed dispatch) starts one, and a job whose runners went
+    // quiet is closed, while the database is awake.
+    if (dbUse.queries > queries) {
+      await ensureWorker().catch(() => false);
+      await closeQuietJobs().catch(() => null);
+    }
     // A run that sent no query left Neon asleep (its compute bills by the minute awake): its
     // CPU joins the next stored row instead of waking it.
     const quiet = dbUse.queries === queries;
@@ -369,6 +373,8 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     const states = await metered("matchup-states", () => recordMatchupStates(), [20_000]);
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
     // deep move checks arrive within minutes), otherwise here.
+    // A job left running by runners that went quiet is closed first (the new one replaces it).
+    if (workerEnabled()) await metered("quiet-jobs", () => closeQuietJobs());
     const queued = workerEnabled()
       ? await metered("sim-job", () => enqueueSimJob(null).then((id) => ({ job: id })))
       : null;

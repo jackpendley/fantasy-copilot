@@ -5,6 +5,7 @@
 //
 //   APP_URL=https://fantasycopilot.vercel.app WORKER_SECRET=... node tasks.mjs
 
+import { retrying } from "@fantasy-copilot/fantasy-core";
 import { buildAskedMoves, buildSimMoves, type SimBuildInput } from "../lib/nba/sim-moves";
 import {
   runTradeFor,
@@ -48,7 +49,12 @@ async function main() {
   let done = 0;
 
   while (Date.now() < deadline) {
-    const res = await fetch(`${app}/api/worker/task`, { headers });
+    // A failed request is tried again (a 5xx while the app deploys, a network error).
+    const res = await retrying(async () => {
+      const r = await fetch(`${app}/api/worker/task`, { headers });
+      if (![200, 202, 204].includes(r.status)) throw new Error(`task: HTTP ${r.status}`);
+      return r;
+    });
     if (res.status === 200) {
       const task = (await res.json()) as { id: number; kind: string; input: never };
       const t0 = Date.now();
@@ -60,12 +66,15 @@ async function main() {
       } catch (e) {
         body = { id: task.id, error: (e as Error).message };
       }
-      const r = await fetch(`${app}/api/worker/task`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
+      // The app closes a task once: a result posted twice changes nothing.
+      await retrying(async () => {
+        const r = await fetch(`${app}/api/worker/task`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error(`task result: HTTP ${r.status}`);
       });
-      if (!r.ok) throw new Error(`task result: HTTP ${r.status}`);
       console.log(`${task.kind} #${task.id}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
       done++;
       lastWork = Date.now();
@@ -77,7 +86,6 @@ async function main() {
       await sleep(STAY_MS);
       continue;
     }
-    if (res.status !== 204) throw new Error(`task: HTTP ${res.status}`);
     if (Date.now() - lastWork > IDLE_MS) break;
     await sleep(POLL_MS);
   }

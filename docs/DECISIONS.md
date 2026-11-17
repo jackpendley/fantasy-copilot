@@ -924,3 +924,16 @@
   - **Elimination (`racingTargets`):** a promoted move clearly behind (2 SE, head to head) the leader of the race that promoted it stops needing that race's precision. Out of the best-move race, it still gets a card's ±0.2 unless its card's best drop also beats it. Out of a card's race, it stops. The leaders run to their targets.
   - **Runners:** 16 → 18. GitHub Free runs 20 jobs at once, and the task runner and the peek take the rest. (The peek and the workflow's schedule were removed Nov 16, docs/COMPUTE.md §10.)
   - **Playoff replays stay at 10.** Measured with `scripts/measure-move-precision.ts` on three moves, title variance × CPU (lower is better): 1 replay ~110, 10 replays ~45, 20 replays ~60.
+
+## ADR-064: a simulation job always finishes; runners retry (2026-11-16)
+
+- **Why:** a job is done when every chunk handed out is back. A runner that died holding chunks left its job `running` until the next job replaced it: the Outlook row never became final, P(best) was never computed, and the other runners waited 3 minutes for chunks that weren't coming. `closeQuietJobs` was written for this in ADR-053 but nothing called it. A runner died on any single failed request.
+- **Closing:** `closeQuietJobs` closes a running job with what it has once no runner has taken chunks for 4 minutes. It runs where the database is already awake (docs/COMPUTE.md §10):
+  - the gameday job, on runs that queried anyway;
+  - the nightly job, before it queues the new job;
+  - the Moves poll, at most every 2 minutes per instance (the page polls only while a job is live).
+  - A quiet job with chunks still to hand out isn't closed: `ensureWorker` starts a run for it.
+- **Runners retry:** each request to the app is tried again after 2, 8 and 20 seconds (`retrying`, fantasy-core).
+- **A chunk posted twice counts once:** `sim_posts` (migration 0030) records each group's posted chunks, and `sim_groups.posted` rises only for new ones. Sums were already idempotent.
+- **A job is stored in one transaction** (the replaced jobs, the job, its groups): a job without groups was never handed out.
+- **Tests:** against Postgres (`apps/web/test/db/queue.test.ts`).

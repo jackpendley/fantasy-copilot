@@ -10,6 +10,9 @@ import { fmtDayTime } from "@/lib/format";
 import { DAILY_CPU_BUDGET_S } from "@/lib/nba/move-sim";
 import { BUDGET, FREE, onPace, periodEnd } from "@/lib/neon-budget";
 import { neonUsage } from "@/lib/neon-usage";
+import { triggerWaits, type JobTimes } from "@/lib/nba/job-timing";
+
+const fmtMin = (m: number | null) => (m == null ? "—" : m.toFixed(1));
 
 type JobRow = { job: string; status: string; detail: string | null; ran_at: Date };
 
@@ -58,7 +61,7 @@ const minutes = (s: number) => `${(s / 60).toFixed(s < 600 ? 1 : 0)} min`;
 /** Vercel CPU of scheduled and background work over the last 24 hours, by job and step. */
 async function computeUse() {
   if (!dbConfigured()) return null;
-  const [bySource, bySteps, [jobs]] = await Promise.all([
+  const [bySource, bySteps, [jobs], waits] = await Promise.all([
     db()<{ source: string; runs: number; ms: number; unchanged: number; known: number }[]>`
       select source,
         (count(*) + coalesce(sum((detail->'held'->>'runs')::int), 0))::int as runs,
@@ -84,8 +87,12 @@ async function computeUse() {
         avg(coalesce(n_moves, jsonb_array_length(moves)))::float as moves
       from sim_jobs where created_at > now() - interval '24 hours'
     `,
+    db()<JobTimes[]>`
+      select trigger, read_at, started_at, outlook_at, done_at from sim_jobs
+      where created_at > now() - interval '7 days' and not asked_only and started_at is not null
+    `.then(triggerWaits),
   ]);
-  return { bySource, bySteps, jobs };
+  return { bySource, bySteps, jobs, waits };
 }
 
 export default async function SettingsPage() {
@@ -260,6 +267,16 @@ export default async function SettingsPage() {
                   `; done in ${(compute.jobs.secs / 60).toFixed(1)} min on average`}
                 .
               </p>
+            )}
+            {compute.waits.length > 0 && (
+              <div className="pt-1 text-xs text-muted-foreground">
+                <p>Minutes from a trigger to its numbers (median, last 7 days):</p>
+                {compute.waits.map((w) => (
+                  <p key={w.kind}>
+                    {`${w.kind} (${w.jobs}): runners ${fmtMin(w.started)} · Outlook ${fmtMin(w.outlook)} · all checks ${fmtMin(w.done)}`}
+                  </p>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

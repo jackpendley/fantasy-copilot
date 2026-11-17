@@ -480,7 +480,8 @@ export async function nextAssignment(
   `;
   if (!taken) return null;
   await db()`
-    update sim_jobs set status = 'running', last_worker_at = now(), updated_at = now()
+    update sim_jobs set status = 'running', last_worker_at = now(), updated_at = now(),
+      started_at = coalesce(started_at, now())
     where id = ${job.id}
   `;
   const chunks = Array.from({ length: count }, (_, i) => taken.next_chunk - count + i).filter(
@@ -946,7 +947,9 @@ async function refreshJob(jobId: number, closing = false): Promise<{ done: boole
   await db()`
     update sim_jobs set outlook_run_id = ${runId}, refreshed_at = now(),
       status = ${done ? "done" : job.status === "queued" ? "running" : job.status},
-      updated_at = now()
+      updated_at = now(),
+      outlook_at = coalesce(outlook_at, case when ${base.seasons >= MIN_BASE_SEASONS} then now() end),
+      done_at = case when ${done} then coalesce(done_at, now()) else done_at end
     where id = ${jobId}
   `;
   return { done };

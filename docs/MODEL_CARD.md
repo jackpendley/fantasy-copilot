@@ -973,6 +973,23 @@ No interval lies below 0, so today's projection stays for the rest of the season
 
 **When:** `DRY=1` first (event counts only, no outcomes), then one evaluation of part 1. Nothing is tuned; nothing is re-run with other thresholds.
 
+### Result, part 1 (2026-11-17): failed, nothing changes
+
+One evaluation (`scripts/backtest-teammate-return-3.ts`, pre-registration on main at 308b42f). `scripts/fetch-history.ts` cached every player who played in 2017-18, 2018-19 and 2019-20 (534, 528 and 487), and 2016-17's logs for 2017-18's 534 players; no failed fetch. `DRY=1` first: 660, 736, 800 and 866 player-events (2017-18 to 2020-21), 314 of them in the set (66, 68, 81 and 99), none without a position. As a harness check (counts only), test 2's seasons give 308 in the same set.
+
+| Set                                   | n                 | MAE today | MAE halfway | Halfway − today | 97.5% CI (by player) |
+| ------------------------------------- | ----------------- | --------- | ----------- | --------------- | -------------------- |
+| Same-position backups, minutes up ≥ 6 | 314 (238 players) | 3.80      | 3.95        | +0.148          | [−0.134, 0.442]      |
+
+The interval isn't below 0, so halfway doesn't ship now; per the pre-registration it ships only if part 2 (this season, judged after Apr 20, 2027) passes.
+
+**Described, not tested:**
+
+- **The whole set:** signed error (predicted − actual) today **+0.07**, halfway **−1.63**. Today's projection is close to unbiased for big-minute backups overall; halfway takes too much away.
+- **Centers in the set, n = 12:** today **+3.19**, halfway −0.65; MAE today 5.89, halfway 3.14.
+
+**Reading:** the hypothesis as registered (every position group) fails, and its sign is the wrong way. The center pattern from test 2's exploration appears again in seasons it wasn't drawn from: 43 events across seven seasons, today too high by 2–3 FP/G each time. But 12 events can't carry a test, and the subgroup was found by looking. **For Reed:** nothing changes; his 27.1 stays. The center lead is still a lead.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

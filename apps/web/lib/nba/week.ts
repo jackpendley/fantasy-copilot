@@ -4,6 +4,7 @@
 import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { optimizeLineup, playProbability, type Position } from "@fantasy-copilot/fantasy-core";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
+import { afterReturn } from "./teammate-return";
 import {
   gameEnvironment,
   matchupFactor,
@@ -86,6 +87,12 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   const projectedByDay = new Map<number, number>();
   const asOf = input.asOf ?? input.fromPeriod;
   const fppg = new Map(roster.map((p) => [p.id, perGameProjection(p, asOf).fppg]));
+  // A fill-in's projection drops from the day the regular he replaced returns (ADR-064).
+  const fppgOn = (p: RosterPlayer, sp: number) => {
+    const v = fppg.get(p.id) ?? 0;
+    const c = p.teammateReturn;
+    return c && sp >= c.day ? afterReturn(v, c) : v;
+  };
   const chance = (p: RosterPlayer, sp: number, ahead: number) => {
     const back = input.outUntil?.get(p.id);
     if (back != null) return sp < back ? 0 : 1;
@@ -122,7 +129,7 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
           ? chance(p, sp, ahead) *
             (sp === asOf && input.todayValues?.has(p.id)
               ? input.todayValues.get(p.id)!
-              : (fppg.get(p.id) ?? 0) * env(p))
+              : fppgOn(p, sp) * env(p))
           : 0,
       currentSlot: "BE",
     }));

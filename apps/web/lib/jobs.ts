@@ -39,6 +39,8 @@ import { syncTransactions } from "./nba/move-history";
 import { refreshTradeTargets } from "./nba/trade-view";
 import { pruneTasks } from "./nba/worker-tasks";
 import { fingerprintOf } from "./view-cache";
+import { forgetResponses } from "./fetch-memo";
+import { refreshTeammateReturns } from "./nba/teammate-return-run";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -367,6 +369,20 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     );
     // Every league matchup's state, for calibrating the weekly win probability.
     const states = await metered("matchup-states", () => recordMatchupStates(), [20_000]);
+    // Fill-ins whose regular is out or back (ADR-064), before the simulations read the league.
+    const returns = await metered("teammate-returns", async () => {
+      const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
+      const [league, free] = await Promise.all([loadLeague(sp, gameDate()), loadFreeAgents(sp)]);
+      const r = await refreshTeammateReturns(
+        [...league.ahead.teams.flatMap((t) => t.roster), ...free.map((f) => f.player)],
+        league.games,
+        league.settings.scoring,
+        sp,
+      );
+      // The league as loaded carries the old effects: the simulations reload it.
+      forgetResponses();
+      return r;
+    });
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
     // deep move checks arrive within minutes), otherwise here.
     const queued = workerEnabled()
@@ -418,6 +434,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       transactions,
       defense,
       neon,
+      teammateReturns: returns,
       ...states,
       ...market,
     };

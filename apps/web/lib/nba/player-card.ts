@@ -50,6 +50,7 @@ import { propsForGames } from "./market-data";
 import { scoreGames, summarize } from "./player";
 import { loadPlayer, loadPlayerPool } from "./pool";
 import { gameEnvironment, matchupFactor, perGameProjection } from "./projection";
+import { afterReturn } from "./teammate-return";
 import { teamValue, valueContext } from "./trade";
 import { vegasProjection } from "./vegas";
 
@@ -162,6 +163,8 @@ export interface PlayerCardData {
     adp: number | null;
     owned: number | null;
     ownedChange: number | null;
+    /** His FP/G now and from the day the regular he filled in for returns (ADR-064). */
+    teammateReturn: { teammate: string; date: string; now: number; after: number } | null;
   };
   schedule: CardGame[];
   /** Before his first game this season, form comes from last season. */
@@ -256,6 +259,8 @@ export async function loadPlayerCard(
   const nextGame = upcoming.find((g) => g.scoringPeriodId >= (absence?.outUntil ?? sp)) ?? null;
 
   const model = (day: number) => perGameProjection(pl, day);
+  // A fill-in's projection drops once the regular he replaced returns (ADR-064).
+  const tr = pl.teammateReturn;
   const blendWeight = (await blendSetting().catch(() => null))?.weight ?? 0;
 
   // Projections for the next game.
@@ -487,7 +492,22 @@ export async function loadPlayerCard(
     nbaId: pbpNow?.nbaId ?? pbpLast?.nbaId ?? null,
     rest: {
       gamesLeft: restGames.length,
-      projectedPoints: restGames.length * model(sp).fppg,
+      projectedPoints: restGames.reduce(
+        (a, g) =>
+          a +
+          (tr && g.scoringPeriodId >= tr.day ? afterReturn(model(sp).fppg, tr) : model(sp).fppg),
+        0,
+      ),
+      teammateReturn: tr
+        ? {
+            teammate: tr.teammate,
+            date: new Date(
+              `${dateForScoringPeriod(Math.max(tr.day, sp))}T12:00:00Z`,
+            ).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+            now: model(sp).fppg,
+            after: afterReturn(model(sp).fppg, tr),
+          }
+        : null,
       starts: usage
         ? {
             ...usage,

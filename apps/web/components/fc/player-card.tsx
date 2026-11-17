@@ -856,6 +856,11 @@ function SeasonTab({ card }: { card: PlayerCardData }) {
           <Tile
             label="Projected points"
             value={Math.round(card.rest.projectedPoints).toLocaleString("en-US")}
+            sub={
+              card.rest.teammateReturn
+                ? `${card.rest.teammateReturn.now.toFixed(1)}/g now · ${card.rest.teammateReturn.after.toFixed(1)}/g once ${card.rest.teammateReturn.teammate.split(" ").at(-1)} is back (${card.rest.teammateReturn.date})`
+                : undefined
+            }
           />
           {card.rest.starts && (
             <Tile

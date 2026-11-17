@@ -90,6 +90,13 @@ export interface Row {
   sameGroup: boolean;
   /** The return game's time. */
   at: number;
+  /** Described, not used by any rule: his FP/G and minutes before the absence, during it, and after the return; T's FP/G over his last 10 games before it. */
+  fpBefore: number;
+  fpDuring: number;
+  minBefore: number;
+  minDuring: number;
+  minAfter: number;
+  tFp: number;
 }
 
 export function analyze(season: number, scoring: ScoringMap): Row[] {
@@ -195,6 +202,12 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
           same: group != null && group === groupOf(positions.get(t)) && minShift >= SAME_SHIFT,
           sameGroup: group != null && group === groupOf(positions.get(t)),
           at: back.t,
+          fpBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.fp)) : NaN,
+          fpDuring: mean(during.map((g) => g.fp)),
+          minBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.min)) : NaN,
+          minDuring: mean(during.map((g) => g.min)),
+          minAfter: mean(rest.map((g) => g.min)),
+          tFp: mean(before.map((g) => g.fp)),
         });
       }
     }

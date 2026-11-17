@@ -2,7 +2,7 @@
 // and 3 (MODEL_CARD): a regular comes back from 5+ missed team games; each teammate's projection
 // as of that day by today's rule and by the reverting candidates, and his rest-of-season FP/G.
 
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
@@ -26,6 +26,8 @@ interface G {
   t: number;
   fp: number;
   min: number;
+  /** Rebounds plus blocks (a big's role, by stats rather than ESPN's label). */
+  rb: number;
 }
 
 export const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
@@ -97,6 +99,17 @@ export interface Row {
   minDuring: number;
   minAfter: number;
   tFp: number;
+  /**
+   * Described (test 5's exploration): the returning player, his group, both players' eligible
+   * positions that season (ESPN slot ids 0-4: PG, SG, SF, PF, C; empty if unknown), and rebounds
+   * plus blocks per 36 minutes (P over his games before the return, T over his last 10).
+   */
+  teammate: number;
+  tGroup: string | null;
+  pElig: number[];
+  tElig: number[];
+  pRb36: number;
+  tRb36: number;
 }
 
 export function analyze(season: number, scoring: ScoringMap): Row[] {
@@ -111,6 +124,18 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
       >,
     ).map(([id, pos]) => [Number(id), pos]),
   );
+  const eligibleFile = new URL(`eligible-${season}.json`, CACHE);
+  const eligible = new Map(
+    Object.entries(
+      existsSync(eligibleFile)
+        ? (JSON.parse(readFileSync(eligibleFile, "utf8")) as Record<string, number[]>)
+        : {},
+    ).map(([id, slots]) => [Number(id), slots]),
+  );
+  const rb36 = (gs: G[]) => {
+    const min = gs.reduce((a, g) => a + g.min, 0);
+    return min ? (36 * gs.reduce((a, g) => a + g.rb, 0)) / min : NaN;
+  };
   const files = readdirSync(CACHE).filter((f) => /^\d+-\d+\.json$/.test(f));
   const ids = [...new Set(files.map((f) => Number(f.split("-")[0])))];
   const logs = new Map<number, G[]>();
@@ -137,6 +162,7 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
         t: Date.parse(g.date),
         fp: fp(g),
         min: g.line.MIN ?? 0,
+        rb: (g.line.REB ?? 0) + (g.line.BLK ?? 0),
       }))
       .sort((a, b) => a.t - b.t);
     for (const g of cur) sideTeam.set(`${g.gameId}:${g.home ? "A" : "H"}`, g.opponent);
@@ -208,6 +234,12 @@ export function analyze(season: number, scoring: ScoringMap): Row[] {
           minDuring: mean(during.map((g) => g.min)),
           minAfter: mean(rest.map((g) => g.min)),
           tFp: mean(before.map((g) => g.fp)),
+          teammate: t,
+          tGroup: groupOf(positions.get(t)),
+          pElig: eligible.get(p) ?? [],
+          tElig: eligible.get(t) ?? [],
+          pRb36: rb36(so),
+          tRb36: rb36(before),
         });
       }
     }

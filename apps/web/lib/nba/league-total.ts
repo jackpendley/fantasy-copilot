@@ -6,15 +6,16 @@ import "server-only";
 // team-games were in. Before that, or without a database, the 2025-26 average stands in.
 
 import { db, dbConfigured } from "@/lib/db";
+import { readSinceNightly } from "@/lib/nightly-fresh";
 
 const MIN_TEAM_GAMES = 40;
-const FRESH_MS = 3 * 3600_000;
 let cached: { before: string; at: number; value: Promise<number | null> } | null = null;
 
 /** The average implied team total over games before `date` (an ET game date); null if too few. */
 export function leagueTeamTotal(date: string): Promise<number | null> {
   if (!dbConfigured()) return Promise.resolve(null);
-  if (cached && cached.before === date && Date.now() - cached.at < FRESH_MS) return cached.value;
+  // Lines for games before the date are all in by then: read once a day (lib/nightly-fresh.ts).
+  if (cached && cached.before === date && readSinceNightly(cached.at)) return cached.value;
   // 9:00 UTC is 4-5 AM ET: after the latest West Coast tip of the day before.
   const cutoff = new Date(`${date}T09:00:00Z`);
   const value = db()<{ games: number; total: number | null }[]>`

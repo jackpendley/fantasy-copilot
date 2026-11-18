@@ -266,6 +266,9 @@ export async function queueLockJob(firstTip: number): Promise<"queued" | "curren
   return "queued";
 }
 
+/** Jack's roster key and watch list the latest job was last found to match (per instance). */
+let currentSeen: string | null = null;
+
 /**
  * `later`: queue the job after the response (a page visit), so the caller gets the decision at
  * once.
@@ -287,6 +290,10 @@ export async function simRosterCheck(
   };
   if (!workerEnabled()) return "current";
   const key = rosterKeyOf(roster, injuries);
+  // The same roster, news and watch list this instance last found current: no query (the
+  // 5-minute job sees league-wide changes that aren't Jack's far more often than his own).
+  const seen = `${key}|${watchKeyOf(watchList)}`;
+  if (seen === currentSeen) return "current";
   const saver = saverOn();
   const [j] = await db()<
     {
@@ -309,7 +316,10 @@ export async function simRosterCheck(
     await queue("You changed your watch list");
     return "queued";
   }
-  if (!j?.roster_key || j.roster_key === key) return "current";
+  if (!j?.roster_key || j.roster_key === key) {
+    if (j?.roster_key === key && !watchChanged) currentSeen = seen;
+    return "current";
+  }
   const news = samePlayers(j.roster_key, key);
   // Minimal mode: injury news waits for the nightly job or Jack's own move.
   if (news && minimal) return "current";

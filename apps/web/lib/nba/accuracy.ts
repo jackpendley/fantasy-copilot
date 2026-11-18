@@ -7,6 +7,7 @@ import "server-only";
 
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import { db, dbConfigured } from "@/lib/db";
+import { readSinceNightly } from "@/lib/nightly-fresh";
 import { evaluateProps, type EvalRow, type PropsEvaluation } from "./props-eval";
 
 export interface ScoredGame {
@@ -81,10 +82,10 @@ export interface BlendSetting {
 let cached: { at: number; value: BlendSetting | null } | null = null;
 const CACHE_MS = 30 * 60_000;
 
-/** The current blend setting (cached for 30 minutes; none without a database). */
+/** The current blend setting (set nightly, so read once after each nightly run; null without one). */
 export async function blendSetting(): Promise<BlendSetting | null> {
   if (!dbConfigured()) return null;
-  if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
+  if (cached && readSinceNightly(cached.at)) return cached.value;
   const rows = await db()<{ value: BlendSetting }[]>`
     select value from model_settings where key = 'props_blend'
   `.catch(() => []);

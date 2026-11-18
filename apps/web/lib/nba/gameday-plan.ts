@@ -15,7 +15,16 @@ export interface GamedayPlan {
   availability: boolean;
   /** Record the pregame win-chance point if it's missing (needs no league). */
   snapshot: boolean;
+  /**
+   * Store the logs held since the last store (statuses, official report, timeline), on the
+   * hour and half hour: one wake of Neon instead of one every run (docs/COMPUTE.md §10). A run
+   * that queries the database anyway stores them too.
+   */
+  store: boolean;
 }
+
+/** How often the held logs are stored (minutes). */
+export const STORE_EVERY_MIN = 30;
 
 export function gamedayPlan(a: {
   t: number;
@@ -57,5 +66,6 @@ export function gamedayPlan(a: {
     load: a.moveSeen || window || timeline || availability || darko,
     availability,
     snapshot: games && a.t < first && a.etHour >= 8,
+    store: a.minute % STORE_EVERY_MIN < 5,
   };
 }

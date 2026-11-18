@@ -29,6 +29,13 @@ describe("what the 5-minute job does each run", () => {
     expect(at("2026-11-07T00:30:00Z", 19).snapshot).toBe(false);
   });
 
+  it("stores the held logs on the hour and half hour only (one wake of Neon each)", () => {
+    expect(at("2026-11-06T23:00:00Z", 18).store).toBe(true);
+    expect(at("2026-11-06T23:30:00Z", 18).store).toBe(true);
+    for (const m of ["05", "10", "15", "20", "25", "35", "45", "55"])
+      expect(at(`2026-11-06T23:${m}:00Z`, 18).store).toBe(false);
+  });
+
   it("keeps the timeline going until 3.5 hours after the last tip", () => {
     expect(at("2026-11-07T06:15:00Z", 1).load).toBe(true);
     expect(at("2026-11-07T06:20:00Z", 1).load).toBe(false);

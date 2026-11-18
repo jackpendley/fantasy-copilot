@@ -380,6 +380,32 @@ ESPN / NBA feeds ──► Vercel ingest (cheap: fetch, hash, store when changed
   - **Trade ideas after injury news or other teams' moves:** at most hourly on the worker (was every 15 minutes). On Nov 16 news launched the worker every 20 minutes from mid-afternoon, one 8-second trade search each, and each run kept Neon awake ~7 minutes. Jack's own moves and the nightly job still refresh right away.
   - **The task runner leaves after 30 s idle** (was 2 minutes of asks every 15 s); a new task dispatches a run anyway.
 
+**Awake-time check, Nov 17 (the first full day on Launch):**
+
+- **Measured:** 3.5 CU-hours, awake 14 h, since the 3:55 PM upgrade. That's **104 CU-hours a month at this rate**: over the budget (60) and over Free (100). Transfer is fine: 0.04 GB, 1.1 GB a month.
+- **Neon's monitoring graph:** the database was awake almost continuously from 4:40 PM to about 11 PM (the game window). The rest of the day was 20- to 50-minute stretches every hour or so.
+- **Causes, from the code:**
+  - **Nightly values re-read on a timer.** Every league load re-read the teammate-return effects every 10 minutes (new on Nov 17), and the defense table and props blend every 30. The league's average total re-read every 3 hours. The 5-minute job loads the league from 9 AM ET on game days, so these alone woke Neon about every 10 minutes all day. They change only at the nightly run.
+  - **In the game window, some write or check landed on nearly every 5-minute run:**
+    - a new status (lineups, injury feed);
+    - an official report with a change (every 15 minutes);
+    - a timeline point (every 15 minutes);
+    - a closing-line capture (each of the last 20 minutes before every tip);
+    - the simulation-trigger check on any league-wide change (47% of runs);
+    - a repeated alert's dedupe check.
+
+**Cuts (Nov 17):**
+
+- **Nightly values:** each server instance reads them once after each nightly run (11:30 UTC; `lib/nightly-fresh.ts`). Missing teammate effects are looked for again every 10 minutes, so a gameday compute still shows up.
+- **Held logs:** status events, official-report statuses and timeline points are held in memory with the time they were seen. They are stored together on the hour and half hour, or sooner on any run that queries anyway (`gamedayPlan().store`).
+  - **No precision is lost:** rows keep `observed_at`, the report's `published_at` and `taken_at`. Only the write waits.
+  - **The risk:** a server instance recycled before a store loses what it held. A status still current is seen again by the next run, a little later. Points on the Matchup chart's line would be missing for that half hour.
+- **Closing lines:** only the last run before each tip captures them (8 minutes, down from 20). Only the final capture ever counted.
+- **Remembered per instance:**
+  - Jack's roster, news and watch list that the latest job was found to match: a league change that isn't his sends no query.
+  - Alert keys already sent.
+- **Expected:** the game window drops from about 100% awake to one wake per half hour (about a third of the time), and the daytime 10-minute wakes stop. **The check:** Settings' "a month at this rate", after two full days on this change, against the budget of 60 CU-hours.
+
 **Transfer cuts (Nov 16, second PR):**
 
 | Read                                                         | Before                                                                         | After                                                                                          |

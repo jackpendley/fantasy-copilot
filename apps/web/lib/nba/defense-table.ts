@@ -3,6 +3,7 @@ import "server-only";
 // the league loader can read them without importing what builds them.
 
 import { db, dbConfigured } from "@/lib/db";
+import { readSinceNightly } from "@/lib/nightly-fresh";
 import type { DefenseTable } from "./projection";
 
 export const DEFENSE_KEY = "defense_by_position";
@@ -16,12 +17,12 @@ export interface DefenseSetting {
 }
 
 let cached: { at: number; value: DefenseTable | null } | null = null;
-const CACHE_MS = 30 * 60_000;
 
 /** The stored factors (null without a database or before the first nightly run). */
 export async function defenseTable(): Promise<DefenseTable | null> {
   if (!dbConfigured()) return null;
-  if (cached && Date.now() - cached.at < CACHE_MS) return cached.value;
+  // Built nightly: read once after each nightly run (lib/nightly-fresh.ts).
+  if (cached && readSinceNightly(cached.at)) return cached.value;
   const rows = await db()<{ value: DefenseSetting }[]>`
     select value from model_settings where key = ${DEFENSE_KEY}
   `.catch(() => []);

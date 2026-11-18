@@ -72,15 +72,20 @@ export function parseBox(gameId: number, data: any): BoxGame {
 /**
  * A season's games as the event code should see them. ESPN keeps empty records (no players: in
  * some older seasons a game exists again under a second id, often with a missing or
- * spelled-out team name), and could keep a game twice. Dropped: a record where a side has no
- * players, one with a team that isn't the season's (40+ appearances), and an exact duplicate
- * (within 2 days, 10+ shared players, every shared line identical; the lower id is kept).
- * Two real games between the same teams on consecutive days share players but not lines, so
- * both stay.
+ * spelled-out team name), and could keep a game twice. From 2012-13 it gives no minutes ("--")
+ * for any Chicago or New Orleans side, and now and then for one player beside teammates who
+ * have them. The event code counts a game as played only with minutes, so such a player would
+ * look absent: a side where any player with stats lacks minutes is treated as missing (its
+ * players are dropped from that game; it can't then fake an absence; the other side stays).
+ * Dropped: a record where a side has no players, a side lacking minutes, a game with a team
+ * that isn't the season's (40+ appearances), and an exact duplicate (within 2 days, 10+ shared
+ * players, every shared line identical; the lower id is kept). Two real games between the same
+ * teams on consecutive days share players but not lines, so both stay.
  */
 export function cleanSeason(games: BoxGame[]): {
   kept: BoxGame[];
   empty: number;
+  noMinutes: number;
   odd: number;
   duplicates: number;
 } {
@@ -88,7 +93,21 @@ export function cleanSeason(games: BoxGame[]): {
   for (const g of games)
     for (const s of g.sides) appearances.set(s.team, (appearances.get(s.team) ?? 0) + 1);
   const withPlayers = games.filter((g) => g.sides.every((s) => s.players.length));
-  const real = withPlayers.filter((g) =>
+  const played = (l: Record<string, number>) =>
+    (l.PTS ?? 0) + (l.REB ?? 0) + (l.AST ?? 0) + (l.FGA ?? 0) + (l.FTA ?? 0) > 0;
+  const sideOk = (s: BoxGame["sides"][number]) =>
+    s.players.some((p) => (p.line.MIN ?? 0) > 0) &&
+    s.players.every((p) => (p.line.MIN ?? 0) > 0 || !played(p.line));
+  // A side lacking minutes loses its players; a game left with neither side is dropped.
+  let noMinutes = 0;
+  const withMinutes = withPlayers
+    .map((g) => {
+      const bad = g.sides.filter((s) => !sideOk(s)).length;
+      noMinutes += bad;
+      return bad ? { ...g, sides: g.sides.map((s) => (sideOk(s) ? s : { ...s, players: [] })) } : g;
+    })
+    .filter((g) => g.sides.some((s) => s.players.length));
+  const real = withMinutes.filter((g) =>
     g.sides.every((s) => s.team && (appearances.get(s.team) ?? 0) >= 40),
   );
   const byTime = [...real].sort(
@@ -116,7 +135,8 @@ export function cleanSeason(games: BoxGame[]): {
   return {
     kept: real.filter((g) => !dropped.has(g.gameId)),
     empty: games.length - withPlayers.length,
-    odd: withPlayers.length - real.length,
+    noMinutes,
+    odd: withMinutes.length - real.length,
     duplicates: dropped.size,
   };
 }

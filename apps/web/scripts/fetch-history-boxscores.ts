@@ -90,7 +90,7 @@ async function season(end: number) {
   }
   // Every game is in: without duplicates, each player's log, oldest first, and his (current)
   // position label. The season's earlier logs are removed first (a rebuild starts clean).
-  const { kept, empty, odd, duplicates } = cleanSeason(
+  const { kept, empty, noMinutes, odd, duplicates } = cleanSeason(
     ids.map((id) => JSON.parse(readFileSync(new URL(`${id}.json`, BOX), "utf8")) as BoxGame),
   );
   for (const f of readdirSync(CACHE))
@@ -124,7 +124,7 @@ async function season(end: number) {
   writeFileSync(new URL(`positions-${end}.json`, CACHE), JSON.stringify(pos));
   const counts = [...perTeam.values()];
   console.log(
-    `${end - 1}-${String(end).slice(2)}: ${kept.length} games (dropped: ${empty} empty, ${odd} odd-team, ${duplicates} duplicate records), ` +
+    `${end - 1}-${String(end).slice(2)}: ${kept.length} games (dropped: ${empty} empty, ${noMinutes} without minutes, ${odd} odd-team, ${duplicates} duplicate records), ` +
       `${perTeam.size} teams with ${Math.min(...counts)}-${Math.max(...counts)} games each, ${logs.size} players, logs written`,
   );
   return true;

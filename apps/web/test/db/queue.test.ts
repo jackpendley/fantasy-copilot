@@ -1,7 +1,7 @@
 // The worker queue against a real Postgres (test/db/test-db.ts): simulation chunks
 // (lib/nba/sim-jobs.ts) and worker tasks (lib/nba/worker-tasks.ts). Every row here is synthetic.
-// All database tests live in this one file: vitest runs files in parallel, and they share one
-// database.
+// Database test files share one database and run in parallel, so each truncates only the
+// tables it uses.
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { testDatabaseUrl } from "./test-db";

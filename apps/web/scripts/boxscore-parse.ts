@@ -68,3 +68,55 @@ export function parseBox(gameId: number, data: any): BoxGame {
     }),
   };
 }
+
+/**
+ * A season's games as the event code should see them. ESPN keeps empty records (no players: in
+ * some older seasons a game exists again under a second id, often with a missing or
+ * spelled-out team name), and could keep a game twice. Dropped: a record where a side has no
+ * players, one with a team that isn't the season's (40+ appearances), and an exact duplicate
+ * (within 2 days, 10+ shared players, every shared line identical; the lower id is kept).
+ * Two real games between the same teams on consecutive days share players but not lines, so
+ * both stay.
+ */
+export function cleanSeason(games: BoxGame[]): {
+  kept: BoxGame[];
+  empty: number;
+  odd: number;
+  duplicates: number;
+} {
+  const appearances = new Map<string, number>();
+  for (const g of games)
+    for (const s of g.sides) appearances.set(s.team, (appearances.get(s.team) ?? 0) + 1);
+  const withPlayers = games.filter((g) => g.sides.every((s) => s.players.length));
+  const real = withPlayers.filter((g) =>
+    g.sides.every((s) => s.team && (appearances.get(s.team) ?? 0) >= 40),
+  );
+  const byTime = [...real].sort(
+    (a, b) => Date.parse(a.date) - Date.parse(b.date) || a.gameId - b.gameId,
+  );
+  const lines = new Map(
+    byTime.map((g) => [
+      g.gameId,
+      new Map(g.sides.flatMap((s) => s.players.map((p) => [p.id, JSON.stringify(p.line)]))),
+    ]),
+  );
+  const dropped = new Set<number>();
+  for (let i = 0; i < byTime.length; i++) {
+    for (let j = i + 1; j < byTime.length; j++) {
+      const a = byTime[i]!;
+      const b = byTime[j]!;
+      if (Date.parse(b.date) - Date.parse(a.date) > 2 * 86_400_000) break;
+      const la = lines.get(a.gameId)!;
+      const lb = lines.get(b.gameId)!;
+      const shared = [...la.keys()].filter((id) => lb.has(id));
+      if (shared.length >= 10 && shared.every((id) => la.get(id) === lb.get(id)))
+        dropped.add(Math.max(a.gameId, b.gameId));
+    }
+  }
+  return {
+    kept: real.filter((g) => !dropped.has(g.gameId)),
+    empty: games.length - withPlayers.length,
+    odd: withPlayers.length - real.length,
+    duplicates: dropped.size,
+  };
+}

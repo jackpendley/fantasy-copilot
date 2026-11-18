@@ -3,15 +3,16 @@
 // scripts/fetch-history.ts caches, so scripts/teammate-return-events.ts reads them unchanged
 // (HISTORY_CACHE=data/local/backtest-boxscores/). Public ESPN site API, no cookies; at most four
 // requests at a time. Each game's player lines are kept as they arrive, so a re-run resumes; a
-// failed game isn't kept, and a season's logs are written only once every game is in.
+// failed game isn't kept, and a season's logs are written only once every game is in, without
+// ESPN's empty and duplicate game records (cleanSeason, scripts/boxscore-parse.ts).
 // Positions are ESPN's current labels (it has no past ones): kept for description only.
 //
 //   node --conditions=react-server --import tsx scripts/fetch-history-boxscores.ts 1994 2017
-//   (seasons by end year: 1993-94 to 2016-17)
+//   (seasons by end year: 1993-94 to 2016-17; BUILD_ONLY=1 rebuilds logs from cached games)
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
-import { parseBox, type BoxGame } from "./boxscore-parse";
+import { cleanSeason, parseBox, type BoxGame } from "./boxscore-parse";
 
 const CACHE = new URL("../data/local/backtest-boxscores/", import.meta.url);
 const BOX = new URL("box/", CACHE);
@@ -52,8 +53,18 @@ async function gameIds(end: number): Promise<number[]> {
 const posId = (abbr: string) => (/^C/.test(abbr) ? 5 : /G/.test(abbr) ? 1 : 3);
 
 async function season(end: number) {
-  const ids = await gameIds(end);
-  const todo = ids.filter((id) => !existsSync(new URL(`${id}.json`, BOX)));
+  let ids: number[];
+  try {
+    ids = await gameIds(end);
+  } catch (e) {
+    console.log(
+      `${end - 1}-${String(end).slice(2)}: schedules failed (${(e as Error).message}); re-run`,
+    );
+    return false;
+  }
+  const todo = process.env.BUILD_ONLY
+    ? []
+    : ids.filter((id) => !existsSync(new URL(`${id}.json`, BOX)));
   let failed = 0;
   for (let i = 0; i < todo.length; i += 4) {
     await Promise.all(
@@ -73,11 +84,22 @@ async function season(end: number) {
     console.log(`${end - 1}-${String(end).slice(2)}: ${failed} games failed; re-run to finish`);
     return false;
   }
-  // Every game is in: each player's log, oldest first, and his (current) position label.
+  if (ids.some((id) => !existsSync(new URL(`${id}.json`, BOX)))) {
+    console.log(`${end - 1}-${String(end).slice(2)}: games missing; fetch before building`);
+    return false;
+  }
+  // Every game is in: without duplicates, each player's log, oldest first, and his (current)
+  // position label. The season's earlier logs are removed first (a rebuild starts clean).
+  const { kept, empty, odd, duplicates } = cleanSeason(
+    ids.map((id) => JSON.parse(readFileSync(new URL(`${id}.json`, BOX), "utf8")) as BoxGame),
+  );
+  for (const f of readdirSync(CACHE))
+    if (f.endsWith(`-${end}.json`) && /^\d+-\d+\.json$/.test(f)) rmSync(new URL(f, CACHE));
   const logs = new Map<number, GameLogEntry[]>();
   const pos: Record<number, number> = {};
-  for (const id of ids) {
-    const box = JSON.parse(readFileSync(new URL(`${id}.json`, BOX), "utf8")) as BoxGame;
+  const perTeam = new Map<string, number>();
+  for (const box of kept) {
+    for (const side of box.sides) perTeam.set(side.team, (perTeam.get(side.team) ?? 0) + 1);
     for (const side of box.sides)
       for (const p of side.players) {
         pos[p.id] = posId(p.pos);
@@ -100,8 +122,10 @@ async function season(end: number) {
     writeFileSync(new URL(`${id}-${end}.json`, CACHE), JSON.stringify(log));
   }
   writeFileSync(new URL(`positions-${end}.json`, CACHE), JSON.stringify(pos));
+  const counts = [...perTeam.values()];
   console.log(
-    `${end - 1}-${String(end).slice(2)}: ${ids.length} games, ${logs.size} players, logs written`,
+    `${end - 1}-${String(end).slice(2)}: ${kept.length} games (dropped: ${empty} empty, ${odd} odd-team, ${duplicates} duplicate records), ` +
+      `${perTeam.size} teams with ${Math.min(...counts)}-${Math.max(...counts)} games each, ${logs.size} players, logs written`,
   );
   return true;
 }

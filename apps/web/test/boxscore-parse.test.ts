@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseBox } from "../scripts/boxscore-parse";
+import { cleanSeason, parseBox } from "../scripts/boxscore-parse";
 
 // Synthetic box score in the shape of ESPN's site API `summary` (not real data).
 const KEYS = [
@@ -88,5 +88,55 @@ describe("box scores as player lines", () => {
     expect(() => parseBox(8, { header: box.header, boxscore: { players: [] } })).toThrow(
       /no box score/,
     );
+  });
+});
+
+// Synthetic season pieces for cleanSeason (not real data).
+const player = (id: number, pts: number) => ({ id, pos: "", line: { MIN: 30, PTS: pts } });
+const game = (gameId: number, date: string, teams: [string, string], pts: number, n = 6) => ({
+  gameId,
+  date,
+  sides: teams.map((team, k) => ({
+    team,
+    opponent: teams[1 - k]!,
+    home: k === 0,
+    players: Array.from({ length: n }, (_, i) => player((k + 1) * 100 + i, pts + i)),
+  })),
+});
+
+describe("a season's games", () => {
+  // Two real teams with 40+ appearances each.
+  const filler = Array.from({ length: 40 }, (_, i) =>
+    game(
+      1000 + i,
+      `2005-0${1 + (i % 3)}-${String(10 + (i % 18)).padStart(2, "0")}T00:00Z`,
+      ["AAA", "BBB"],
+      20 + i,
+    ),
+  );
+
+  it("drops empty records, odd-team records and exact duplicates", () => {
+    const empty = {
+      ...game(1, "2005-01-01T00:00Z", ["AAA", "BBB"], 5),
+      sides: game(1, "2005-01-01T00:00Z", ["AAA", "BBB"], 5).sides.map((s) => ({
+        ...s,
+        players: [],
+      })),
+    };
+    const odd = game(2, "2005-01-02T00:00Z", ["AAA", "VANCOUVER"], 5);
+    const original = game(3, "2005-01-03T00:00Z", ["AAA", "BBB"], 9);
+    const copy = { ...game(400003, "2005-01-03T05:00Z", ["AAA", "BBB"], 9) };
+    const out = cleanSeason([...filler, empty, odd, original, copy]);
+    expect(out).toMatchObject({ empty: 1, odd: 1, duplicates: 1 });
+    expect(out.kept.map((g) => g.gameId)).toContain(3);
+    expect(out.kept.map((g) => g.gameId)).not.toContain(400003);
+  });
+
+  it("keeps two real games between the same teams on consecutive days", () => {
+    const first = game(4, "2005-01-04T00:00Z", ["AAA", "BBB"], 11);
+    const second = game(5, "2005-01-05T00:00Z", ["AAA", "BBB"], 12);
+    const out = cleanSeason([...filler, first, second]);
+    expect(out.duplicates).toBe(0);
+    expect(out.kept.map((g) => g.gameId)).toEqual(expect.arrayContaining([4, 5]));
   });
 });

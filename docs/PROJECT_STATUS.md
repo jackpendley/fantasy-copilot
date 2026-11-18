@@ -47,9 +47,16 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 
 **The other session (Jack's), same day:**
 
-- #180: fetch timeouts (open);
-- #187: queue tests on real Postgres in CI;
-- #190 (ADR-066): quiet jobs close, runners retry, chunks are counted once (migration 0031).
+- **Merged:**
+  - #187: queue tests on real Postgres in CI;
+  - #190 (ADR-066): quiet jobs close, runners retry, chunks are counted once (migration 0031);
+  - #180: timeouts on every read; an unanswered ESPN write is audited.
+- **Checked locally, end to end:** the real worker bundle against a local app, with two failed posts (retried) and a `SIGKILL` holding 16 chunks. A fresh worker finished the rest, and after the quiet window one Moves poll closed the job: `done`, Outlook `final`.
+- **Open, waiting for Jack's merge** (this session's merge was refused by its permission check):
+  - #194 (ADR-067): constant-time login, 10 wrong passwords per address in 15 min → 429 (migration 0032);
+  - #195: confirm dialogs close after an unknown outcome (found in a browser check of #180), and valid HTML in the loading skeleton;
+  - #196: **teammate returns: events with undefined values left out; MODEL_CARD erratum** (see "Waiting on Jack");
+  - #197: failure pushes (nightly/pregame at once, other steps after 3 in a row), 60-day log retention, a `refresh_log` index (migration 0033), Settings → "Database storage".
 
 ## Follow-ups Jack asked for (Nov 17)
 
@@ -66,6 +73,11 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 
 ## Waiting on Jack
 
+- **Test 4 (teammate returns) doesn't pass on clean events** (#196, MODEL_CARD erratum). 28 of its 556 events had no games before the absence or none with the returning player. Without them, set 1 is −0.097 [−0.214, +0.014]: not passed. Production now skips those cases (a bug fix). Two decisions:
+  - whether test 4's model stays shipped (CLAUDE.md requires a passed test; the Nov 17 "no pulling mid-season" decision predates this);
+  - whether to amend test 3 part 2 and test 4's forward check to clean events, before their data exists.
+- **Baselines (review finding):** the teammate tests compare only against today's projection. CLAUDE.md asks for ESPN's projection and a simple baseline too. Decide whether that rule covers adjustments to today's projection.
+- **Merge #194–#197** (CI green; this session couldn't merge).
 - **Neon, Dec 1 decision:** the Nov 30 push says whether a month at this rate fits Free. Then stay on Launch (about $6 a month at the budget) or switch back in Vercel.
 - **Check on the phone:**
   - **Player cards:** a fill-in shows "X/g now · Y/g once … is back (date)".
@@ -83,6 +95,7 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 6. **After Apr 20, 2027** (both feed the between-seasons refit, not a removal):
    - teammate returns test 3 part 2: `fetch-history.ts 2026 2027`, then `FORWARD=1 DRY=1`, then one `FORWARD=1` run;
    - test 4's forward check.
+   - Both use the events as registered unless Jack amends them to clean events first (#196).
 7. **Still open:**
    - the partner's simulated odds on trades;
    - the official-statuses forward test;

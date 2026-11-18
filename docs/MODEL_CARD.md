@@ -1219,6 +1219,31 @@ Shares fitted on 2017-18 to 2023-24: test 4's grouping G 0.23, F 0.07, C 0.49; c
 
 **When:** pushed before any fetch. Then fetch, then `DRY=1`, then (if the gate passes) one evaluation. Nothing is tuned or re-run.
 
+### Result (2026-11-17): gate not met (48 events); not evaluated, nothing changes
+
+**Data.** `scripts/fetch-history-boxscores.ts` cached every regular-season box score of 1993-94 to 2016-17 (28,329 records). Validation (team names, dates, which fields are present; never outcomes) found three problems in ESPN's data. Each was handled by a rule decided before any event count, and pushed first (52f15ba, 2ddf4dd):
+
+- **Empty records:** some games exist again under a second id with no players (86 in 1999-00, 50 in 1998-99, a few elsewhere). Dropped. After this, 1998-99 has exactly 725 games, 50 per team.
+- **No minutes from 2012-13:** every game involving Chicago or New Orleans has "--" for minutes on both sides. In 51 player-games, a player with stats lacks minutes beside teammates who have them. The event code counts a game as played only with minutes, so such a player would look absent. A side where any player with stats lacks minutes is treated as missing; a missing game can't create an absence. Chicago and New Orleans are therefore absent for 2012-13 to 2016-17, and the other teams keep 75–77 of 82 games.
+- **Coverage elsewhere:** a few games have no box score (1993-94 and 1995-96 to 1999-00, at most 27 games a season). 2000-01 to 2011-12 are complete.
+
+**Gate (`DRY=1`, counts only).** 11 events (1994-95 to 2002-03), 19 (2003-04 to 2009-10) and 18 (2010-11 to 2016-17): **48, below the gate of 110.** As registered, the test stops. **No outcome was computed**, so these seasons remain unseen for outcomes.
+
+**Why so few (counts only):**
+
+| Per season         | Regulars back from 5+ missed games | Of them bigs | Big-for-big events | Minutes up ≥ 6 |
+| ------------------ | ---------------------------------- | ------------ | ------------------ | -------------- |
+| 1994-95 to 2002-03 | 62                                 | 7.9          | 5.7                | 1.2            |
+| 2003-04 to 2009-10 | 80                                 | 8.9          | 5.1                | 2.7            |
+| 2010-11 to 2016-17 | 63                                 | 7.4          | 6.4                | 2.6            |
+| 2017-18 to 2025-26 | 121                                | 17.1         | 13.2               | 5.8            |
+
+Long absences were about half as common before 2017, and a backup big's minutes rose ≥ 6 less often.
+
+**Broader sets, checked on the explored 2017-26 seasons only:** dropping the minutes condition gives ~131 events in these seasons, but the training effect shrinks (−0.33 FP/G, effect/SD 0.19). Power would be about 58% if it held and 19% at half. No design these data allow reaches useful power, so none is pre-registered.
+
+**Consequence:** the pre-registration covers a pass and a fail, not a gate miss. No test supports a teammate-return adjustment: test 4 doesn't pass on clean events (erratum), and test 6 couldn't be run. Whether test 4's model stays in production is Jack's decision.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

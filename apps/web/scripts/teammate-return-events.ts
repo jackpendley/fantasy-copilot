@@ -8,12 +8,17 @@
 // to reproduce what was recorded.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
-import { perGameProjection } from "../lib/nba/projection";
+import { minutesTrend, perGameProjection } from "../lib/nba/projection";
 
-const CACHE = new URL("../data/local/backtest/", import.meta.url);
+/** The cached logs: data/local/backtest/, or HISTORY_CACHE (test 6's box-score seasons). */
+const CACHE = process.env.HISTORY_CACHE
+  ? pathToFileURL(`${resolve(process.env.HISTORY_CACHE)}/`)
+  : new URL("../data/local/backtest/", import.meta.url);
 const MIN_MISSED = 5;
 const REGULAR_MIN = 20;
 /** B reverts after this many team games. */
@@ -67,6 +72,12 @@ function asPlayer(prior: { fp: number; min: number; gp: number } | null, games: 
   } as unknown as RosterPlayer;
 }
 
+/** The live projection's minutes: its minutes estimate times the recent-minutes trend. */
+function minutesOf(p: RosterPlayer): number | null {
+  const m = perGameProjection(p).minutes;
+  return m == null ? null : m * minutesTrend(p);
+}
+
 /** A tiny seeded generator (reproducible bootstrap). */
 function rng(seed: number) {
   let s = seed >>> 0;
@@ -100,6 +111,9 @@ export interface Row {
   /** His games before the absence, and with the returning player (0 only with includeUndefined). */
   nBefore: number;
   nWithT: number;
+  /** Today's minutes (the projection's minutes × the minutes trend), and from games with him. */
+  baseMin: number | null;
+  aMin: number | null;
   /** Described, not used by any rule: his FP/G and minutes before the absence, during it, and after the return; T's FP/G over his last 10 games before it. */
   fpBefore: number;
   fpDuring: number;
@@ -130,8 +144,9 @@ export function analyze(
 ): Row[] {
   const fp = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
   const read = (file: string): GameLogEntry[] => {
-    let log = parsed.get(file);
-    if (!log) parsed.set(file, (log = JSON.parse(readFileSync(new URL(file, CACHE), "utf8"))));
+    const url = new URL(file, CACHE);
+    let log = parsed.get(url.href);
+    if (!log) parsed.set(url.href, (log = JSON.parse(readFileSync(url, "utf8"))));
     return log!;
   };
   const positions = new Map(
@@ -251,6 +266,8 @@ export function analyze(
           at: back.t,
           nBefore: beforeAbsence.length,
           nWithT: withT.length,
+          baseMin: minutesOf(asPlayer(prior, so)),
+          aMin: minutesOf(asPlayer(prior, withT)),
           fpBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.fp)) : NaN,
           fpDuring: mean(during.map((g) => g.fp)),
           minBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.min)) : NaN,

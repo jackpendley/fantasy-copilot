@@ -95,14 +95,45 @@ async function computeUse() {
   return { bySource, bySteps, jobs, waits };
 }
 
+/** Neon Free's storage limit (docs/DECISIONS.md ADR-010). */
+const STORAGE_LIMIT_BYTES = 0.5e9;
+
+/** The database's size and its largest tables (from the catalog: a few hundred bytes). */
+async function storageUse() {
+  if (!dbConfigured()) return null;
+  const [[total], tables] = await Promise.all([
+    db()<{ bytes: number }[]>`select pg_database_size(current_database())::float8 as bytes`,
+    db()<{ name: string; bytes: number; rows: number }[]>`
+      select c.relname as name, pg_total_relation_size(c.oid)::float8 as bytes,
+        c.reltuples::float8 as rows
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r'
+      order by pg_total_relation_size(c.oid) desc limit 8
+    `,
+  ]);
+  // Postgres's row estimate is -1 until it has sampled the table: unknown, not 0.
+  return {
+    bytes: total?.bytes ?? 0,
+    tables: tables.map((t) => ({ ...t, rows: t.rows < 0 ? null : t.rows })),
+  };
+}
+
+const fmtBytes = (b: number) =>
+  b >= 1e9
+    ? `${(b / 1e9).toFixed(2)} GB`
+    : b >= 1e6
+      ? `${(b / 1e6).toFixed(1)} MB`
+      : `${(b / 1e3).toFixed(0)} KB`;
+
 export default async function SettingsPage() {
-  const [jobs, status, cpu, compute, rankingsAt, neon] = await Promise.all([
+  const [jobs, status, cpu, compute, rankingsAt, neon, storage] = await Promise.all([
     recentJobs().catch(() => []),
     jobStatus().catch(() => []),
     simulationCpu().catch(() => null),
     computeUse().catch(() => null),
     rankingsImportedAt().catch(() => null),
     neonUsage().catch(() => null),
+    storageUse().catch(() => null),
   ]);
   const pace = neon ? onPace(neon, new Date()) : null;
   const neonEnd = neon ? periodEnd(neon) : null;
@@ -193,6 +224,29 @@ export default async function SettingsPage() {
                 <span className={over ? "text-destructive" : "text-muted-foreground"}>
                   {used}
                   {projected && ` · a month at this rate: ${projected}`}
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+      {storage && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Database storage</CardTitle>
+            <CardDescription>
+              {fmtBytes(storage.bytes)} of Neon Free&apos;s {fmtBytes(STORAGE_LIMIT_BYTES)} (
+              {Math.round((100 * storage.bytes) / STORAGE_LIMIT_BYTES)}%). The largest tables,
+              indexes included; the job log and sent alerts keep 60 days, simulation jobs 2.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm tabular-nums">
+            {storage.tables.map((t) => (
+              <div key={t.name} className="flex justify-between gap-2">
+                <span className="truncate font-mono text-xs">{t.name}</span>
+                <span className="text-muted-foreground">
+                  {fmtBytes(t.bytes)}
+                  {t.rows != null && ` · ~${Math.round(t.rows).toLocaleString("en-US")} rows`}
                 </span>
               </div>
             ))}

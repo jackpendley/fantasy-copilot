@@ -11,6 +11,9 @@ import { fetchLeague, parseSettings } from "@fantasy-copilot/espn";
 import { espnConfig } from "../lib/env";
 import { analyze, mean, type Row } from "./teammate-return-events";
 
+// As recorded in MODEL_CARD: events with undefined values included (erratum, Nov 17).
+const RECORDED = { includeUndefined: true };
+
 const SEASONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024];
 const PF = 3;
 const C = 4;
@@ -84,7 +87,7 @@ function table(title: string, sets: [string, Row[]][]) {
 
 async function main() {
   const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
-  const up = SEASONS.flatMap((s) => analyze(s, scoring)).filter((r) => r.minShift >= 6);
+  const up = SEASONS.flatMap((s) => analyze(s, scoring, RECORDED)).filter((r) => r.minShift >= 6);
   const known = up.filter((r) => r.pElig.length && r.tElig.length);
   console.log(
     `Seasons 2017-18 to 2023-24: ${up.length} fill-in events (minutes up ≥ 6), ${known.length} with both players' eligibility.`,

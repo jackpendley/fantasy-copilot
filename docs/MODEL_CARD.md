@@ -1007,6 +1007,8 @@ No interval lies below 0, so today's projection stays for the rest of the season
 
 **Part 2, forward (this season):** returns on or after **Nov 17, 2026**, with the same rules; 2025-26 is the prior. It's evaluated **once, after the regular season** (the script refuses before Apr 20, 2027), when every event's rest of the season is known. It will be small (test 2 found about 140 same-position backups a season at ≥ 4 minutes, so fewer at ≥ 6, and only from Nov 17), so it may not have the power to pass alone.
 
+**Amendment (2026-11-17, Jack; before any part 2 data):** part 2 judges **clean events only**: a teammate is in only if he has games before the absence and games with the returning player (see the erratum under test 4). The rest of part 2 is unchanged. Without those games his minutes rise and the "with him" projection are undefined, and production no longer adjusts him. No 2026-27 game log had been fetched when this was written (`data/local/backtest` held none), so no part 2 outcome had been seen. The script applies it (`FORWARD=1` reads clean events; part 1 keeps the recorded rule).
+
 **Metric:** per (P, event), |halfway − actual| − |today − actual|; the mean with a bootstrap interval (4,000 resamples, clustered by player; seed 20261118 for part 1, 20270420 for part 2). Two comparisons (one per part), so each uses a **97.5% interval** (Bonferroni for 95% overall). A part passes if its interval lies entirely below 0.
 
 **Ships:**
@@ -1091,6 +1093,37 @@ One evaluation (pre-registration on main at fc09d44). `DRY=1` first: guards/forw
 - **Reading:** Jack's logic holds: the fill-in loses production when the regular returns. Today's projection already expected most of it for guards and forwards; for centers it expected too little, and the fitted share takes about half of the gap between today's projection and his projection from games with the regular.
 - **Forward check:** this season's returns from Nov 17, judged once after Apr 20, 2027; if the model's MAE is worse than today's there, it comes out.
 - **Consequence revised (2026-11-17, Jack; before any forward data):** no model is pulled mid-season or after it on a schedule. The forward check still runs once after Apr 20, 2027, as registered; its result feeds the between-seasons refit of the shares and position grouping (with the history), not a removal. The test itself is unchanged.
+- **Amendment (2026-11-17, Jack; before any forward data):** the forward check judges **clean events only**: the teammate has games before the absence and games with the returning player (see the erratum below). These are the events production adjusts. Everything else is as registered. No 2026-27 game log had been fetched when this was written.
+
+### Erratum (2026-11-17): events with undefined values; test 4 doesn't pass without them
+
+**The defect.** `scripts/teammate-return-events.ts` (tests 2–5) kept teammates whose values are undefined:
+
+- **No games before the absence** (a call-up, rookie or player traded in): `minShift` subtracted 0, so all his minutes counted as a rise, and he entered every "minutes up ≥ 4/6" set.
+- **No games with the returning player:** the "with him" projection (A) came from no games: last season's average, or 0 without one. Every candidate built on A (B, C, test 4's model) used that value.
+
+The same two cases were in production (`lib/nba/teammate-return.ts`, ADR-064). The cached logs hold no games outside their season (checked: 0 of ~279,000), so the point-in-time concern raised in review did not occur.
+
+**Measured.** The shared module now leaves both cases out. Every recorded script passes `includeUndefined` and reproduces its recorded numbers exactly. With the clean events (fixture scoring, identical to `LEAGUE.md`):
+
+| Test                         | Recorded                                   | Clean events                                   | Verdict changes |
+| ---------------------------- | ------------------------------------------ | ---------------------------------------------- | --------------- |
+| 2 (six comparisons)          | none passed (n 2,928 / 429)                | none passed (n 2,841 / 414)                    | no              |
+| 3 part 1                     | +0.148 [−0.134, +0.442], n 314             | +0.107 [−0.188, +0.399], n 296                 | no              |
+| **4, set 1**                 | **−0.103 [−0.214, −0.000], n 556: passed** | **−0.097 [−0.214, +0.014], n 528: not passed** | **yes**         |
+| 4, set 2 (centers)           | −1.188 [−2.389, +0.065], n 41              | −1.047 [−2.250, +0.176], n 38                  | no              |
+| 5                            | not passed [−0.049, +0.138]                | not passed [−0.047, +0.143]                    | no              |
+| Shares, seven seasons        | G 0.23, F 0.07, C 0.49                     | G 0.25, F 0.09, C 0.48                         | —               |
+| Shares, nine (in production) | G 0.22, F 0.06, C 0.34                     | G 0.25, F 0.09, C 0.33                         | —               |
+
+Test 4's set 1 held 30 such events (18 without games before the absence, all of which also had none with the returning player); 28 fall in tested seasons. Without them the estimate barely moves (−0.103 → −0.097) and the shares barely change, but the interval's top crosses zero: **under its pre-registered rule, test 4 does not pass on clean events.**
+
+**Done now (a bug fix, not a model change):** production no longer adjusts a teammate in either undefined case; he keeps today's projection. The shares and every other part of test 4's model are unchanged.
+
+**For Jack to decide:**
+
+1. Whether test 4's model stays shipped. It was shipped on a pass that depended on these events; CLAUDE.md requires a passed pre-registered test. Your Nov 17 decision not to pull models mid-season predates this finding.
+2. ~~Whether to amend test 3 part 2 and test 4's forward check to clean events.~~ **Decided (Jack, Nov 17): amended**, before any of their data existed; see the amendments under each.
 
 ## Exploration: positions for teammate returns, both directions (2026-11-17, not a test)
 

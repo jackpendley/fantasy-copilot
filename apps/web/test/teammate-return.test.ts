@@ -65,6 +65,29 @@ describe("teammate returns", () => {
     expect(e.gap).toBeGreaterThan(0);
   });
 
+  it("leaves a fill-in alone when he has no games before the absence or none with the regular", () => {
+    // A call-up who first played during the absence: no minutes to have risen from.
+    const callUp = player(5, "C", 15, 15);
+    // He arrived as the regular left and never played beside him... and has games before the
+    // absence only on days the regular sat (the regular's log starts at period 4 here).
+    const late = new Map(logs)
+      .set(
+        5,
+        games(range(11, 20), () => 28),
+      )
+      .set(
+        1,
+        games(range(4, 10), () => 30),
+      )
+      .set(
+        6,
+        games([1, 2, 3, ...range(11, 20)], (sp) => (sp <= 3 ? 15 : 28)),
+      );
+    const apart = player(6, "C", 15, 15);
+    const effects = teammateEffects([star, backup, callUp, apart], late, schedule);
+    expect(effects.map((e) => e.player)).toEqual([2]);
+  });
+
   it("needs 5 straight missed games and a regular", () => {
     const short = new Map(logs).set(
       1,

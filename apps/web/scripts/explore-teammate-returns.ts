@@ -9,6 +9,9 @@ import { fetchLeague, parseSettings } from "@fantasy-copilot/espn";
 import { espnConfig } from "../lib/env";
 import { analyze, mean, type Row } from "./teammate-return-events";
 
+// As recorded in MODEL_CARD: events with undefined values included (erratum, Nov 17).
+const RECORDED = { includeUndefined: true };
+
 const SEASONS = [2018, 2019, 2020, 2021, 2022, 2023, 2024];
 const f1 = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : "–");
 const sgn = (x: number) => `${x >= 0 ? "+" : ""}${x.toFixed(2)}`;
@@ -66,7 +69,7 @@ function table(title: string, sets: [string, Row[]][]) {
 
 async function main() {
   const scoring = parseSettings(await fetchLeague(espnConfig(), ["mSettings"])).scoring;
-  const all = SEASONS.flatMap((s) => analyze(s, scoring));
+  const all = SEASONS.flatMap((s) => analyze(s, scoring, RECORDED));
   const backups = all.filter((r) => r.sameGroup && r.minShift >= 6);
   // The returning player's quality: thirds of T's FP/G over his last 10 games, among these.
   const tq = backups.map((r) => r.tFp).sort((a, b) => a - b);

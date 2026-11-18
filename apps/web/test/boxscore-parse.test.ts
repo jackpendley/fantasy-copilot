@@ -132,6 +132,27 @@ describe("a season's games", () => {
     expect(out.kept.map((g) => g.gameId)).not.toContain(400003);
   });
 
+  it("treats a game as missing when a player with stats has no minutes", () => {
+    const whole = game(6, "2005-01-06T00:00Z", ["AAA", "BBB"], 13);
+    const noMinutes = {
+      ...whole,
+      sides: whole.sides.map((s) => ({
+        ...s,
+        players: s.players.map((p) => ({ ...p, line: { ...p.line, MIN: 0 } })),
+      })),
+    };
+    const partial = game(7, "2005-01-07T00:00Z", ["AAA", "BBB"], 14);
+    partial.sides[0]!.players[0]!.line.MIN = 0;
+    // A player listed with nothing at all (no minutes, no stats) doesn't make it missing.
+    const fine = game(8, "2005-01-08T00:00Z", ["AAA", "BBB"], 15);
+    fine.sides[0]!.players[0]!.line = { MIN: 0, PTS: 0 };
+    const out = cleanSeason([...filler, noMinutes, partial, fine]);
+    expect(out.noMinutes).toBe(2);
+    expect(out.kept.map((g) => g.gameId)).toContain(8);
+    expect(out.kept.map((g) => g.gameId)).not.toEqual(expect.arrayContaining([6]));
+    expect(out.kept.map((g) => g.gameId)).not.toEqual(expect.arrayContaining([7]));
+  });
+
   it("keeps two real games between the same teams on consecutive days", () => {
     const first = game(4, "2005-01-04T00:00Z", ["AAA", "BBB"], 11);
     const second = game(5, "2005-01-05T00:00Z", ["AAA", "BBB"], 12);

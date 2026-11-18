@@ -132,7 +132,7 @@ describe("a season's games", () => {
     expect(out.kept.map((g) => g.gameId)).not.toContain(400003);
   });
 
-  it("treats a game as missing when a player with stats has no minutes", () => {
+  it("treats a side as missing when a player with stats has no minutes", () => {
     const whole = game(6, "2005-01-06T00:00Z", ["AAA", "BBB"], 13);
     const noMinutes = {
       ...whole,
@@ -147,10 +147,13 @@ describe("a season's games", () => {
     const fine = game(8, "2005-01-08T00:00Z", ["AAA", "BBB"], 15);
     fine.sides[0]!.players[0]!.line = { MIN: 0, PTS: 0 };
     const out = cleanSeason([...filler, noMinutes, partial, fine]);
-    expect(out.noMinutes).toBe(2);
-    expect(out.kept.map((g) => g.gameId)).toContain(8);
-    expect(out.kept.map((g) => g.gameId)).not.toEqual(expect.arrayContaining([6]));
-    expect(out.kept.map((g) => g.gameId)).not.toEqual(expect.arrayContaining([7]));
+    // Game 6: both sides lack minutes (2 sides, game dropped). Game 7: one side (kept, that
+    // side without players).
+    expect(out.noMinutes).toBe(3);
+    const kept = new Map(out.kept.map((g) => [g.gameId, g]));
+    expect(kept.has(6)).toBe(false);
+    expect(kept.get(7)!.sides.map((s) => s.players.length)).toEqual([0, 6]);
+    expect(kept.get(8)!.sides.map((s) => s.players.length)).toEqual([6, 6]);
   });
 
   it("keeps two real games between the same teams on consecutive days", () => {

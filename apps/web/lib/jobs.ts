@@ -26,12 +26,15 @@ import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { queueLockJob, rosterWatch, simRosterCheck, workerEnabled } from "./nba/outlook-refresh";
-import { statusEventsFrom, type StatusEvent } from "./nba/news";
-import { logOfficialReport } from "./nba/official-report";
+import { statusEventsFrom } from "./nba/news";
+import { holdStatusEvents, statusHeld, storeStatusEvents } from "./nba/status-log";
+import { logOfficialReport, officialHeld, storeOfficialReports } from "./nba/official-report";
 import {
   recordMatchupSnapshot,
   recordMatchupStates,
   recordTimeline,
+  storeTimeline,
+  timelineHeld,
 } from "./nba/matchup-snapshots";
 import { latestOutlook, runOutlook } from "./nba/outlook-run";
 import { closeQuietJobs, enqueueSimJob, ensureWorker, pruneSimJobs } from "./nba/sim-jobs";
@@ -87,10 +90,11 @@ async function step<T>(
 
 /**
  * Games tipping within this window get their props captured as the closing line. Each capture
- * overwrites the last, so only the final one counts; 20 minutes leaves a few tries (it was 90,
- * which kept Neon awake through every evening for captures that were overwritten).
+ * overwrites the last, so only the final one counts: 8 minutes is the last run before the tip
+ * (runs come every 5), with slack for a late one. It was 90, then 20, and each extra capture
+ * woke Neon for a row that was overwritten (docs/COMPUTE.md §10).
  */
-const CLOSE_WINDOW_MS = 20 * 60_000;
+const CLOSE_WINDOW_MS = 8 * 60_000;
 /** The lock job is queued by the first gameday run within this long after the first tip. */
 const LOCK_JOB_WINDOW_MS = 60 * 60_000;
 
@@ -164,7 +168,10 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   });
   if (!plan.load) {
     if (plan.snapshot) await m.step("snapshot", () => snapshotIfMissing(sp, now));
-    return { ...watch, skipped: "nothing due" };
+    // Logs held by earlier runs (the timeline's last points after the games) are stored on time.
+    const stored =
+      plan.store && logsHeld() ? await m.step("store", () => storeHeldLogs(new Set())) : null;
+    return { ...watch, stored, skipped: "nothing due" };
   }
 
   let data;
@@ -235,12 +242,18 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   const t = now.getTime();
 
   // The Matchup chart's line through the day: every 15 minutes (30 in minimal mode) from the
-  // first tip until the last game is surely over (3.5 hours after the last tip).
+  // first tip until the last game is surely over (3.5 hours after the last tip). Held, with
+  // its time, until the next store.
   const timeline =
     t >= Math.min(...tips) &&
     t <= Math.max(...tips) + TIMELINE_AFTER_MS &&
     now.getUTCMinutes() % (minimalOn(t) ? 30 : 15) < 5
-      ? await m.step("timeline", () => step("matchup-timeline", () => recordTimeline(data, sp)))
+      ? await m.step("timeline", () =>
+          recordTimeline(data, sp, now).catch(async (e: Error) => {
+            await log("matchup-timeline", "error", errorText(e)).catch(() => {});
+            return null;
+          }),
+        )
       : null;
 
   // Today's win-chance point, if the nightly job couldn't record it (before the first tip only,
@@ -259,22 +272,28 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       )
     : null;
 
-  const morningNews =
-    availability && "rosteredNews" in availability ? availability.rosteredNews : 0;
-  // New injury news changes trade values: refresh the stored trade ideas (in minimal mode they
-  // wait for the nightly run or Jack's own move).
-  const refreshTrades = async () =>
-    minimalOn(t)
-      ? null
-      : m.step("trades", () =>
-          refreshTradeTargets().catch(async (e: Error) => {
-            await log("trade-targets", "error", e.message);
-            return null;
-          }),
-        );
+  // Store what the runs held (on the hour and half hour, or now if this run woke the database
+  // anyway). New injury news for a rostered player changes trade values: refresh the stored
+  // trade ideas (in minimal mode they wait for the nightly run or Jack's own move).
+  const storeHeld = async () => {
+    if (!(plan.store || dbUse.queries > queries) || !logsHeld())
+      return { stored: null, trades: null };
+    const rostered = new Set(data.teams.flatMap((team) => team.roster.map((p) => p.id)));
+    const stored = await m.step("store", () => storeHeldLogs(rostered));
+    const trades =
+      stored.rosteredNews && !minimalOn(t)
+        ? await m.step("trades", () =>
+            refreshTradeTargets().catch(async (e: Error) => {
+              await log("trade-targets", "error", e.message);
+              return null;
+            }),
+          )
+        : null;
+    return { stored, trades };
+  };
 
   if (t < Math.min(...tips) - BEFORE_FIRST_TIP_MS || t > Math.max(...tips) + AFTER_LAST_TIP_MS) {
-    const trades = morningNews ? await refreshTrades() : null;
+    const { stored, trades } = await storeHeld();
     return {
       ...watch,
       leagueChanged,
@@ -283,6 +302,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       returns,
       timeline,
       availability,
+      stored,
       tradesRefreshed: trades,
       skipped: "outside game window",
     };
@@ -307,8 +327,9 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
         )
       : null;
 
-  const { events, newEvents } = await m.step("status", () => logStatusEvents(data, date));
-  const trades = newEvents + morningNews ? await refreshTrades() : null;
+  const events = await m.step("status", async () =>
+    holdStatusEvents(rosterStatuses(data, date), now),
+  );
 
   // Closing lines: re-captured every 5 minutes until tip for games starting soon.
   const closing = games.filter((g) => g.date > t && g.date - t <= CLOSE_WINDOW_MS);
@@ -347,6 +368,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     );
     if (ok) sent++;
   }
+  const { stored, trades } = await storeHeld();
   const result = {
     date,
     ...watch,
@@ -358,9 +380,9 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     timeline,
     closingProps: market?.props ?? 0,
     tradesRefreshed: trades,
-    events: events.length,
-    newEvents,
+    events,
     availability,
+    stored,
     alerts: alerts.length,
     sent,
   };
@@ -490,7 +512,8 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
   });
   const snap = darko ? await snapshotDarko(players) : {};
   // Injury statuses and estimated returns, twice a day even without the 5-minute job.
-  const status = await logStatusEvents(data, date);
+  holdStatusEvents(rosterStatuses(data, date), new Date());
+  const newStatusEvents = (await storeStatusEvents()).length;
   // Yesterday's box scores, to score those projections against.
   const results =
     snapshot === "morning" && sp > 1
@@ -513,7 +536,7 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
   return {
     [`${snapshot}Props`]: lines.props,
     gamesWithLines: lines.games,
-    newStatusEvents: status.newEvents,
+    newStatusEvents,
     ...snap,
     ...results,
     ...blend,
@@ -569,14 +592,16 @@ const etHour = (at: Date) =>
     }).format(at),
   );
 
-/** The availability test's inputs: ESPN's whole injury feed and the latest official report. */
+/**
+ * The availability test's inputs: ESPN's whole injury feed and the latest official report, held
+ * until the next store.
+ */
 async function logAvailabilitySources(
   data: Awaited<ReturnType<typeof loadLeague>>,
   date: string,
   now: Date,
 ) {
-  const rostered = data.teams.flatMap((team) => team.roster);
-  const fresh = await insertStatusEvents(
+  const espnEvents = holdStatusEvents(
     statusEventsFrom({
       rostered: [],
       injuries: data.injuries,
@@ -584,75 +609,48 @@ async function logAvailabilitySources(
       gameDate: date,
       everyInjury: true,
     }),
+    now,
   );
-  const ids = new Set(rostered.map((p) => p.id));
   const official = await logOfficialReport({
     now,
-    rostered,
+    rostered: data.teams.flatMap((team) => team.roster),
     injuries: data.injuries,
     games: data.games,
   });
-  return {
-    ...official,
-    espnEvents: fresh.length,
-    /** New injury news for rostered players (it moves trade values). */
-    rosteredNews: fresh.filter((id) => ids.has(id)).length,
-  };
+  return { ...official, espnEvents };
 }
 
-/** Record status changes (injury feed, NBA.com lineups, ESPN fantasy) for every rostered player. */
-async function logStatusEvents(
-  data: Awaited<ReturnType<typeof loadLeague>>,
-  date: string,
-): Promise<{ events: StatusEvent[]; newEvents: number }> {
-  const events = statusEventsFrom({
+/** Status events (injury feed, NBA.com lineups, ESPN fantasy) for every rostered player. */
+function rosterStatuses(data: Awaited<ReturnType<typeof loadLeague>>, date: string) {
+  return statusEventsFrom({
     rostered: data.teams.flatMap((team) => team.roster),
     injuries: data.injuries,
     lineups: data.lineups,
     gameDate: date,
   });
-  return { events, newEvents: (await insertStatusEvents(events)).length };
 }
+
+/** Whether this instance holds logs not stored yet. */
+const logsHeld = () => statusHeld() || officialHeld() || timelineHeld();
 
 /**
- * Insert status events (a status is stored once per source and game day until it changes); the
- * players with a new one.
+ * Store everything the 5-minute runs held (status events, official report statuses, timeline
+ * points) in one wake of the database. Each is stored with the time it was seen, so only the
+ * write waits, not the data (docs/COMPUTE.md §10). One failing leaves the others stored and
+ * itself held for the next store.
  */
-async function insertStatusEvents(events: StatusEvent[]): Promise<number[]> {
-  // Statuses this instance has already stored skip the database (the 5-minute job sees the
-  // same ones all day; a query would keep Neon awake for nothing).
-  const unseen = events.filter((e) => !storedEvents.has(eventKey(e)));
-  if (!unseen.length) return [];
-  const rows = unseen.map((e) => ({
-    player_id: e.playerId,
-    source: e.source,
-    status: e.status,
-    detail: e.detail,
-    published_at: e.publishedAt,
-    game_date: e.gameDate,
-    return_date: e.returnDate ?? null,
-  }));
-  const inserted = await db()`
-    insert into status_events ${db()(
-      rows,
-      "player_id",
-      "source",
-      "status",
-      "detail",
-      "published_at",
-      "game_date",
-      "return_date",
-    )}
-    on conflict do nothing
-    returning player_id
-  `;
-  // Inserted or already there: either way it's stored now.
-  if (storedEvents.size > 20_000) storedEvents.clear();
-  for (const e of unseen) storedEvents.add(eventKey(e));
-  return inserted.map((r) => r.player_id as number);
+async function storeHeldLogs(rostered: Set<number>) {
+  const failed = (job: string) => async (e: unknown) => {
+    await log(job, "error", errorText(e)).catch(() => {});
+    return null;
+  };
+  const events = await storeStatusEvents().catch(failed("status-events"));
+  const official = await storeOfficialReports().catch(failed("official-report"));
+  const timeline = timelineHeld() ? await step("matchup-timeline", storeTimeline) : null;
+  return {
+    events: events?.length ?? null,
+    rosteredNews: events?.filter((id) => rostered.has(id)).length ?? 0,
+    official,
+    timeline,
+  };
 }
-
-/** Status events known to be stored, by the table's dedupe key (per server instance). */
-const storedEvents = new Set<string>();
-const eventKey = (e: StatusEvent) =>
-  [e.playerId, e.source, e.status, e.gameDate, e.returnDate ?? ""].join("|");

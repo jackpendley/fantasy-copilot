@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ProGame } from "@fantasy-copilot/espn";
 import type { InjuryReport, OfficialInjuryReport } from "@fantasy-copilot/nba-data";
-import { matchPool, officialStatusRows } from "@/lib/nba/official-report";
+import { matchPool, officialStatusRows, statusChanges } from "@/lib/nba/official-report";
 import { statusEventsFrom } from "@/lib/nba/news";
 
 // Synthetic players and report (made-up names); ESPN team ids 18 = NY, 20 = PHI.
@@ -119,5 +119,41 @@ describe("statusEventsFrom everyInjury", () => {
     expect(
       statusEventsFrom({ rostered: [], injuries: [injury], lineups: null, gameDate: "2026-11-01" }),
     ).toEqual([]);
+  });
+});
+
+describe("statusChanges (held reports, stored together)", () => {
+  const row = (playerId: number, status: string, publishedAt: string) =>
+    ({
+      playerId,
+      gameId: 501,
+      gameDate: "2026-11-01",
+      tip: null,
+      status,
+      reason: "",
+      publishedAt,
+    }) as Parameters<typeof statusChanges>[0][number];
+
+  it("keeps each change in report order, each with its own report's time", () => {
+    const held = [
+      row(1, "Questionable", "2026-11-01T20:00:00Z"),
+      row(1, "Out", "2026-11-01T20:15:00Z"),
+      row(1, "Out", "2026-11-01T20:30:00Z"),
+      row(2, "Out", "2026-11-01T20:15:00Z"),
+    ];
+    const latest = [{ player_id: 2, game_date: "2026-11-01", status: "Out" }];
+    expect(statusChanges(held, latest).map((r) => [r.playerId, r.status, r.publishedAt])).toEqual([
+      [1, "Questionable", "2026-11-01T20:00:00Z"],
+      [1, "Out", "2026-11-01T20:15:00Z"],
+    ]);
+  });
+
+  it("logs a status that flips back (Questionable, Out, Questionable)", () => {
+    const held = [
+      row(1, "Out", "2026-11-01T20:15:00Z"),
+      row(1, "Questionable", "2026-11-01T20:30:00Z"),
+    ];
+    const latest = [{ player_id: 1, game_date: "2026-11-01", status: "Questionable" }];
+    expect(statusChanges(held, latest).map((r) => r.status)).toEqual(["Out", "Questionable"]);
   });
 });

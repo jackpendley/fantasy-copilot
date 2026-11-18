@@ -96,8 +96,18 @@ export async function matchupStatesHistory(matchupPeriod: number, homeId: number
   `;
 }
 
-/** Every league matchup's win chance now, with the props blend (matchup_timeline). */
-export async function recordTimeline(data: Awaited<ReturnType<typeof loadLeague>>, sp: number) {
+/** Timeline points taken but not stored yet (this server instance). */
+const heldTimeline: Record<string, number | Date>[] = [];
+
+/**
+ * Every league matchup's win chance now, with the props blend: held with the time it was
+ * taken, for `storeTimeline` (the 5-minute job stores every 30 minutes, so Neon sleeps between).
+ */
+export async function recordTimeline(
+  data: Awaited<ReturnType<typeof loadLeague>>,
+  sp: number,
+  now = new Date(),
+) {
   const mp = matchupPeriodOf(sp);
   const perGame = await bestPerGame(
     data.teams.flatMap((t) => t.roster),
@@ -107,6 +117,7 @@ export async function recordTimeline(data: Awaited<ReturnType<typeof loadLeague>
   const rows = leagueMatchups(data, sp, mp, perGame)
     .filter((m) => m.pHome != null)
     .map((m) => ({
+      taken_at: now,
       matchup_period: mp,
       scoring_period: sp,
       home_id: m.homeId,
@@ -115,7 +126,18 @@ export async function recordTimeline(data: Awaited<ReturnType<typeof loadLeague>
       away_points: m.away,
       p_home: m.pHome!,
     }));
+  heldTimeline.push(...rows);
+  return rows.length;
+}
+
+/** Whether this instance holds timeline points not stored yet. */
+export const timelineHeld = () => heldTimeline.length > 0;
+
+/** Store the held timeline points (matchup_timeline); how many. */
+export async function storeTimeline(): Promise<number> {
+  const rows = heldTimeline.slice();
   if (rows.length) await db()`insert into matchup_timeline ${db()(rows)}`;
+  heldTimeline.splice(0, rows.length);
   return rows.length;
 }
 

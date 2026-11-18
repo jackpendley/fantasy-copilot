@@ -8,6 +8,7 @@ import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import { fetchGameLog } from "@fantasy-copilot/nba-data";
 import { dbConfigured } from "../db";
+import { readSinceNightly } from "../nightly-fresh";
 import { readView, viewStamp, writeView } from "../view-cache";
 import {
   groupOf,
@@ -23,20 +24,27 @@ const KEY = "teammate-returns";
 const CANDIDATE_MIN = 20;
 /** Logs fetched a few at a time (ESPN's site API refuses bursts). */
 const BATCH = 4;
-/** Stored effects are re-read at most this often per server instance. */
-const READ_TTL_MS = 10 * 60_000;
+/** No stored effects yet: looked for again this often (the gameday run computes missing ones). */
+const EMPTY_TTL_MS = 10 * 60_000;
 
-let cached: { at: number; effects: Promise<TeammateEffect[]> } | null = null;
+let cached: { at: number; effects: Promise<TeammateEffect[]>; empty?: boolean } | null = null;
 
 /** The stored effects (none without a database, or before the first nightly run). */
 export function teammateReturnEffects(): Promise<TeammateEffect[]> {
   if (!dbConfigured()) return Promise.resolve([]);
-  if (cached && Date.now() - cached.at < READ_TTL_MS) return cached.effects;
-  const effects = readView<TeammateEffect[]>(KEY)
+  // Computed nightly: read once after each nightly run (lib/nightly-fresh.ts).
+  if (
+    cached &&
+    (cached.empty ? Date.now() - cached.at < EMPTY_TTL_MS : readSinceNightly(cached.at))
+  )
+    return cached.effects;
+  const entry: NonNullable<typeof cached> = { at: Date.now(), effects: Promise.resolve([]) };
+  entry.effects = readView<TeammateEffect[]>(KEY)
     .then((v) => v?.value ?? [])
-    .catch(() => []);
-  cached = { at: Date.now(), effects };
-  return effects;
+    .catch(() => [])
+    .then((effects) => ((entry.empty = !effects.length), effects));
+  cached = entry;
+  return entry.effects;
 }
 
 /**

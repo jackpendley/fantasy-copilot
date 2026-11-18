@@ -77,26 +77,34 @@ export async function sendToAll(
   };
 }
 
+/** Keys this server instance knows were sent: a rule that keeps firing sends no query. */
+const sentKeys = new Set<string>();
+
 /**
  * Send an alert unless its key was already sent. Returns whether it went out now. Without
  * push keys it does nothing; if every device failed, the key is released so the next check
  * tries again.
  */
 export async function sendAlertOnce(key: string, msg: PushMessage): Promise<boolean> {
-  if (!pushConfigured()) return false;
+  if (!pushConfigured() || sentKeys.has(key)) return false;
   const inserted = await db()`
     insert into alerts_sent (dedupe_key, title, body)
     values (${key}, ${msg.title}, ${msg.body})
     on conflict (dedupe_key) do nothing
     returning id
   `;
-  if (!inserted.length) return false;
+  if (sentKeys.size > 5_000) sentKeys.clear();
+  if (!inserted.length) {
+    sentKeys.add(key);
+    return false;
+  }
   const release = () => db()`delete from alerts_sent where dedupe_key = ${key}`;
   try {
     const r = await sendToAll(msg);
     if (!r.sent && r.failed) {
       throw new Error(`push failed on every device (${r.errors.join(", ")})`);
     }
+    sentKeys.add(key);
     return r.sent > 0;
   } catch (e) {
     await release().catch(() => {});

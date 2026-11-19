@@ -1246,6 +1246,77 @@ Long absences were about half as common before 2017, and a backup big's minutes 
 
 - **Decided (Jack, Nov 19):** test 4's adjustment is turned off for everyone (ADR-064). Fill-ins keep today's projection. The 2026-27 forward checks still run as amended.
 
+## Pre-registration: teammate returns, test 7 — every big beside a returning big, next 10 games (2026-11-19, before any outcome)
+
+**Why another test:** Jack (Nov 19) still holds that a returning big costs the bigs behind him, even if the effect is small, and asked whether the approach itself could be better. A review of tests 1–6 found that their designs threw away most of the evidence:
+
+- **Too narrow:** "minutes up ≥ 6" kept 48 of the 132 big-for-big events in the unseen seasons. The minutes model doesn't need that filter: its correction is λ × (today's minutes − minutes with him), which is near 0 when his minutes didn't move.
+- **Too long a horizon:** rest-of-season FP/G averages the return's effect with everything after it. The live projection's minutes trend catches the drop within a few games, so the error to correct is concentrated right after the return.
+- **Too long an absence:** 5+ missed games was test 1's choice, never compared; 3+ games still shifts the projection.
+- **Kept:** clean events, bigs by their own stats (no look-ahead labels), the minutes-only model, and λ = 0.33 frozen (test 6), so nothing is refitted.
+
+**How the design was chosen (explored seasons only, disclosed):** on 2017-18 to 2025-26, already explored, about ten variants were compared (absence 3/4/5+ games, regular 15/20+ minutes, minutes-rise filter or none, next 10 games or rest of season, FP or minutes). This one had the highest effect per unit of noise. Choosing the best of ten flatters it, so the training numbers below are optimistic.
+
+- **Training (2017-26, explored, optimistic):** 184 events. Per event, FP/G over the next 10 games: model − today **−0.382**, effect/SD 0.28; minutes −0.439, effect/SD 0.32. Today's projection ran **+1.85 FP/G high** for these bigs.
+- **Not uniform:** the gain comes from 2017-18 to 2022-23. In 2023-24 to 2025-26 it is about zero (+0.09, +0.14, −0.18 FP/G by season), as test 5 also found.
+- **Counts on the unseen seasons:** while comparing variants, event counts were read from the 1994-2017 box scores (counts only; no outcome computed or printed): about 215 for this design. The exact count comes from `DRY=1` after this is pushed.
+- **Power at ~215 events:** about 98% if the training effect holds, about 54% at half of it.
+
+**Events (`scripts/teammate-return-events.ts` with `minMissed: 3`, clean events):**
+
+- **The returning regular (T):** 20+ minutes over his last 10 games; misses **3+** straight team games; plays again for the same team (game R). A big over his last 10 games before the absence: rebounds + blocks per 36 ≥ 11.5 (test 6's cutoff).
+- **The teammate (P):** on T's team at R; 10+ games before R this season, 3+ during the absence, 10+ after. Has games before the absence and games with T. A big over his games before R. **No minutes-rise condition.**
+- **As of R's day:** only games before R count. An event without a minutes estimate is left out and counted.
+
+**Target:** P's mean over his **next 10 games** from R: FP/G (league scoring from the anonymized fixture, identical to `LEAGUE.md`), and minutes.
+
+**Today's rule (baseline):** `perGameProjection` from all his games so far, the previous season as prior. This is production now that test 4's adjustment is off. It's an adjustment, not a full projection model, so ESPN's projection isn't a baseline (CLAUDE.md).
+
+**Model:** test 6's, unchanged: `pred = today × (m − λ (m − m_with)) / m`, with m his minutes estimate (projection minutes × minutes trend), m_with the same from only games with T, and **λ = 0.33**.
+
+**Data:** 1994-95 to 2016-17, the box scores test 6 cached and cleaned (no test has computed an outcome from them). 1993-94 is only a prior.
+
+**Comparisons, in a fixed sequence (each at 95%, which keeps the overall error at 5%):**
+
+1. **FP/G over the next 10 games** decides shipping. Per event |model − actual| − |today − actual|; the mean, with a 95% interval from 4,000 resamples clustered by player-season (seed 20261122). Passes if the interval lies entirely below 0.
+2. **Minutes over the next 10 games,** tested only if 1 passes, the same way: does the mechanism hold, not just the points?
+
+**Described, not tested:** by era (as test 6); absences of 5+ games only; minutes up ≥ 6 only; pairs ESPN labels C today (look-ahead, disclosed); the rest-of-season horizon; signed errors.
+
+**Consequence:**
+
+- **1 passes:** the adjustment comes back in this form, in its own PR with an ADR-064 amendment. When a big regular's estimated return is known, each big teammate (by this stats rule) has his minutes moved by λ = 0.33 toward his minutes with the regular, at his current rate, for his next 10 games from the return; after that, today's projection. It applies in the simulator, `teamValue`, the week projection and the card. Guards and forwards get nothing. It needs rebounds and blocks in production's game logs.
+- **1 fails:** the adjustment stays off, and these seasons are used up for this question. What's left is forward data (about 20 such events a season from 2026-27), judged between seasons.
+
+**When:** pushed before anything else is run. Then `DRY=1` (counts only), then one evaluation. Nothing is tuned or re-run.
+
+### Result (2026-11-19): not passed (just); the adjustment stays off
+
+One evaluation (`scripts/backtest-teammate-return-7.ts`, pre-registration pushed at 948a1dd). `DRY=1` first: 79, 59 and 77 events (by era), **215** in all (183 player-seasons), none without a minutes estimate.
+
+| Comparison             | n         | MAE today | MAE model | Model − today | 95% CI (by player-season) |
+| ---------------------- | --------- | --------- | --------- | ------------- | ------------------------- |
+| 1. FP/G, next 10 games | 215 (183) | 5.09      | 4.94      | −0.145        | [−0.306, +0.004]          |
+
+The interval's top is just above 0, so **1 does not pass**, and 2 (minutes) is not tested. Per the pre-registration, the adjustment stays off and these seasons are used up for this question.
+
+**Described, not tested:**
+
+| Events                                 | n   | FP: model − today | Minutes: model − today | Signed FP today → model | Signed minutes today → model |
+| -------------------------------------- | --- | ----------------- | ---------------------- | ----------------------- | ---------------------------- |
+| All                                    | 215 | −0.145            | −0.261                 | +0.80 → +0.09           | +1.17 → +0.26                |
+| 1994-95 to 2002-03                     | 79  | +0.031            | −0.075                 | +1.38 → +0.90           | +1.00 → +0.36                |
+| 2003-04 to 2009-10                     | 59  | −0.273            | −0.241                 | +0.43 → −0.42           | +1.33 → +0.19                |
+| 2010-11 to 2016-17                     | 77  | −0.227            | −0.466                 | +0.49 → −0.35           | +1.21 → +0.21                |
+| Absences of 5+ games                   | 132 | −0.144            | −0.323                 | +1.31 → +0.51           | +1.56 → +0.56                |
+| Minutes up ≥ 6 during the absence      | 83  | −0.365            | −0.528                 | +0.40 → −0.89           | +0.97 → −0.68                |
+| Pairs ESPN labels C today (look-ahead) | 89  | −0.379            | −0.514                 | +0.46 → −0.46           | +1.48 → +0.32                |
+| Rest of season instead of next 10      | 215 | −0.142            | —                      | +0.48 → −0.23           | —                            |
+
+- **The mechanism shows up:** in every era, today's projection overstated these bigs' minutes over the next 10 games by 1.0–1.3 a game, and the model removed most of that. This matches 2017-26.
+- **The points gain is small:** −0.145 FP/G per affected big (MAE 5.09 → 4.94, 3%), about 40% of the explored seasons' effect, which the pre-registration flagged as optimistic. Part of the minutes drop doesn't reach points: these bigs score a little more per minute when they play less.
+- **What it means:** the direction Jack expects holds in 32 seasons of data, but the size is about 0.15 FP/G for one or two players on a team, for 10 games. That's too small for this test to confirm at 95%, and too small to change a decision. No unseen seasons are left; the 2026-27 forward checks continue.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

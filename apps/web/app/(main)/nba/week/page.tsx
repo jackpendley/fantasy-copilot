@@ -58,6 +58,7 @@ import { fmtPts, fmtTip } from "@/lib/format";
 import { bestPerGame } from "@/lib/nba/best";
 import { asTeam, leagueMatchups, matchupView, type LeagueMatchup } from "@/lib/nba/matchup";
 import { winChanceLabel } from "@/lib/nba/week";
+import { factorOn } from "@/lib/nba/context";
 import { cn } from "@/lib/utils";
 import { PRO_TEAM_BY_ID, type FantasyTeam, type RosterPlayer } from "@fantasy-copilot/espn";
 
@@ -599,7 +600,7 @@ export default async function WeekPage({
     }
     const outThatDay = (p: { id: number }) => (out.get(p.id)?.outUntil ?? 0) > day;
     const projAhead = (p: Parameters<typeof perGameProjection>[0]) =>
-      outThatDay(p) ? 0 : perGameProjection(p, sp).fppg;
+      outThatDay(p) ? 0 : perGameProjection(p, sp).fppg * factorOn(p, day);
     // A later week shows only who's ruled out: today's day-to-day tags don't reach it.
     const statusAhead = (p: Parameters<typeof perGameProjection>[0]) =>
       outThatDay(p) ? "OUT" : out.has(p.id) || mode === "later" ? "ACTIVE" : statusFor(p);

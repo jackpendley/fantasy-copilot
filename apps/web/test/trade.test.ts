@@ -64,6 +64,21 @@ describe("teamValue", () => {
     expect(v.playoffs).toBeCloseTo(4 * perDay, 6);
   });
 
+  it("follows each player's factor for teammates out, day by day (the context-aware projection)", () => {
+    // The 10-point guard doubles until day 4 (a teammate back that day); the 26-point center
+    // rises 50% from day 5 (a teammate out from then), past the 30.
+    const days = (...d: [number, number][]) => ({
+      adj: [],
+      days: d.map(([day, factor]) => ({ day, factor, out: [] })),
+    });
+    const guard = { ...mine[3]!, context: days([1, 2], [4, 1]) };
+    const center = { ...mine[2]!, context: days([5, 1.5]) };
+    const v = teamValue([mine[0]!, mine[1]!, center, guard], ctx);
+    // Days 1-3: 30 + 28 + 20; day 4: 30 + 28 + 10; days 5-6 and the playoffs: 39 + 30 + 10.
+    expect(v.regular).toBeCloseTo((3 * 78 + 68 + 2 * 79) * k, 6);
+    expect(v.playoffs).toBeCloseTo(4 * 79 * k, 6);
+  });
+
   it("drops a fill-in's value from the day the regular he replaced returns", () => {
     // The 30-point center drops to 20 from day 4: from then the 28 and the 26 start ahead of him.
     const fill = { ...mine[0]!, teammateReturn: { day: 4, shift: -10, teammate: "T" } };

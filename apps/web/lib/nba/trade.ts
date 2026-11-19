@@ -19,6 +19,7 @@ import { matchupPeriodOf } from "./calendar";
 import { acceptance, marketValue, type Acceptance, type MarketContext } from "./market";
 import { perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
+import { factorOn } from "./context";
 
 export interface ValueContext {
   /** proTeamId -> days with a game, from `fromDay` to `lastDay`. */
@@ -76,7 +77,8 @@ const perGameCache = new WeakMap<object, number>();
 
 /** Expected points per game he plays, discounted for the games he's projected to miss. */
 export function perGameValue(p: RosterPlayer): number {
-  const key = p.games ?? p.season ?? p.projection;
+  // The context changes his projection (de-inflated games): cache on it when he has one.
+  const key = p.context ?? p.games ?? p.season ?? p.projection;
   const hit = key && perGameCache.get(key);
   if (hit !== undefined && hit !== null) return hit;
   const proj = p.projection;
@@ -139,20 +141,29 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   const players = roster
     .map((p) => ({ p, v: perGameValue(p) }))
     .filter((x) => x.v > 0 || x.p.slot !== "IR");
-  // A fill-in's value drops from the day the regular he replaced returns (ADR-064): the day's
-  // lineups are then keyed by which drops have happened too.
-  const changes = players
-    .map(({ p, v }, k) => ({ k, day: p.teammateReturn?.day ?? Infinity, after: valueAfter(p, v) }))
-    .filter((c) => c.day <= ctx.lastDay);
+  // A player's value changes on some days: a fill-in's from the day the regular he replaced
+  // returns (ADR-064), and anyone's with who's out of his team (the context-aware projection,
+  // ADR-069). Every value is then a step function of the day, so the day's lineups are keyed by
+  // how many of those days have passed.
+  const after = players.map(({ p, v }) => valueAfter(p, v));
   const vOn = (k: number, d: number) => {
-    for (const c of changes) if (c.k === k && d >= c.day) return c.after;
-    return players[k]!.v;
+    const { p, v } = players[k]!;
+    const c = p.teammateReturn;
+    return (c && d >= c.day ? after[k]! : v) * factorOn(p, d);
   };
+  const changeDays = [
+    ...new Set(
+      players.flatMap(({ p }) => [
+        ...(p.teammateReturn ? [p.teammateReturn.day] : []),
+        ...(p.context?.days.map((x) => x.day) ?? []),
+      ]),
+    ),
+  ]
+    .filter((d) => d <= ctx.lastDay)
+    .sort((a, b) => a - b);
   const phaseOf = (d: number) => {
     let ph = 0;
-    changes.forEach((c, j) => {
-      if (d >= c.day) ph |= 1 << j;
-    });
+    while (ph < changeDays.length && changeDays[ph]! <= d) ph++;
     return ph;
   };
   const first = players.map(({ p }) =>
@@ -168,7 +179,7 @@ export function teamValue(roster: RosterPlayer[], ctx: ValueContext): TeamValue 
   // (roster fit) where the season's days are counted.
   const memo = new Map<number, { starters: number[]; room?: Holes }>();
   const lineupOf = (mask: number, d: number, withRoom = false) => {
-    const ph = changes.length ? phaseOf(d) : 0;
+    const ph = changeDays.length ? phaseOf(d) : 0;
     const key = mask + ph * 2 ** 31;
     let s = memo.get(key);
     if (!s || (withRoom && !s.room)) {

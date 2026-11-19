@@ -541,7 +541,9 @@ describe(
         t.id === 1
           ? {
               ...t,
-              roster: t.roster.map((r) => (r.id === 100 ? { ...r, change: { day, fppg: 20 } } : r)),
+              roster: t.roster.map((r) =>
+                r.id === 100 ? { ...r, changes: [{ day, fppg: 20 }] } : r,
+              ),
             }
           : t,
       ),
@@ -580,6 +582,34 @@ describe(
       const later = (out: number[][][]) =>
         out.reduce((a, season) => a + season[0]!.slice(4, 7).reduce((x, y) => x + y, 0), 0);
       expect(later(changed)).toBeLessThan(later(base));
+    });
+
+    it("takes the latest of several changes that have come (a teammate out, then back)", () => {
+      const input = goldenInput();
+      const fppg = input.teams.find((t) => t.id === 1)!.roster.find((r) => r.id === 100)!.fppg;
+      // Up to 20 and straight back on the same day: as if nothing changed.
+      const back: SimInput = {
+        ...input,
+        teams: input.teams.map((t) =>
+          t.id === 1
+            ? {
+                ...t,
+                roster: t.roster.map((r) =>
+                  r.id === 100
+                    ? {
+                        ...r,
+                        changes: [
+                          { day: input.fromDay, fppg: 20 },
+                          { day: input.fromDay, fppg },
+                        ],
+                      }
+                    : r,
+                ),
+              }
+            : t,
+        ),
+      };
+      expect(weekPoints(back)).toEqual(weekPoints(input));
     });
   },
 );

@@ -30,10 +30,11 @@ export interface SimPlayer {
   /** He's in the IR slot now: activating him later costs the roster its weakest player. */
   reserve?: boolean;
   /**
-   * His expected points per game change from `day` on: a fill-in once the regular he replaced
-   * returns (MODEL_CARD, teammate returns test 4).
+   * His expected points per game from each `day` on (ascending): while teammates are out of
+   * his team or once they're back (the context-aware projection, ADR-069), or a fill-in once
+   * the regular he replaced returns (ADR-064).
    */
-  change?: { day: number; fppg: number };
+  changes?: { day: number; fppg: number }[];
 }
 
 export interface SimTeam {
@@ -292,14 +293,14 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const healthIndex = new Map<number, number>();
   const idOf: number[] = [];
   const wrapped = new Map<SimPlayer, P>();
-  /** Players whose points per game change on a later day (`SimPlayer.change`). */
+  /** Players whose points per game change on a later day (`SimPlayer.changes`). */
   const changing: P[] = [];
   /** Sets their points per game as of day `d`; whether any changed. */
   const pointsAsOf = (d: number) => {
     let changed = false;
     for (const x of changing) {
-      const c = x.src.change!;
-      const v = d >= c.day ? c.fppg : x.src.fppg;
+      let v = x.src.fppg;
+      for (const c of x.src.changes!) if (d >= c.day) v = c.fppg;
       if (x.fppg !== v) {
         x.fppg = v;
         changed = true;
@@ -322,7 +323,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       });
       x = { src: sp, fppg: sp.fppg, h, ...tablesOf(sp.proTeamId), elig };
       wrapped.set(sp, x);
-      if (sp.change) changing.push(x);
+      if (sp.changes?.length) changing.push(x);
     }
     return x;
   };

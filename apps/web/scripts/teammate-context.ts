@@ -14,26 +14,17 @@ import { readdirSync, readFileSync } from "node:fs";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
+import { absencesByGame, contextFactor, REGULAR_MIN, type Absent } from "../lib/nba/context";
 import { perGameProjection } from "../lib/nba/projection";
 
 /** The 2017-26 logs; the box-score seasons are read from their own cache. */
 const CACHE = new URL("../data/local/backtest/", import.meta.url);
 /** A player-game is scored once he has this many games this season. */
 const MIN_SO = 5;
-/** An absent teammate counts with 10+ minutes a game over his last 10 (5+ games). */
-const ROTATION_MIN = 10;
 
 export const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 
-export interface Absent {
-  /** His share of the team's fantasy points (last 10 games each). */
-  share: number;
-  /** Straight team games he has missed, this one included. */
-  idx: number;
-  group: string | null;
-  /** His minutes a game over his last 10. */
-  min10: number;
-}
+export type { Absent } from "../lib/nba/context";
 
 export interface PlayerGame {
   season: number;
@@ -145,59 +136,16 @@ export function playerGames(season: number, scoring: ScoringMap, cache = CACHE):
     for (const g of gs) sideFp.set(g.side, (sideFp.get(g.side) ?? 0) + g.fp);
     if (gs.length) logs.set(id, gs);
   }
-  // Each team's games in order, and everyone who played for it.
-  const schedules = new Map<string, { side: string; t: number }[]>();
-  const members = new Map<string, Set<number>>();
-  const seen = new Set<string>();
-  for (const [id, gs] of logs)
-    for (const g of gs) {
-      const team = sideTeam.get(g.side);
-      if (!team) continue;
-      if (!members.has(team)) members.set(team, new Set());
-      members.get(team)!.add(id);
-      if (seen.has(g.side)) continue;
-      seen.add(g.side);
-      schedules.set(team, [...(schedules.get(team) ?? []), { side: g.side, t: g.t }]);
-    }
-  for (const list of schedules.values()) list.sort((a, b) => a.t - b.t);
-  const played = new Map([...logs].map(([id, gs]) => [id, new Set(gs.map((g) => g.side))]));
-  const teamBefore = (id: number, t: number) => {
-    const g = logs.get(id)!.findLast((x) => x.t < t);
-    return g && sideTeam.get(g.side);
-  };
-  const teamAfter = (id: number, t: number) => {
-    const g = logs.get(id)!.find((x) => x.t > t);
-    return g && sideTeam.get(g.side);
-  };
-
-  // Who was absent from each team game.
-  const absentAt = new Map<string, Absent[]>();
-  for (const [team, schedule] of schedules)
-    schedule.forEach((tg, k) => {
-      const last10 = schedule.slice(Math.max(0, k - 10), k);
-      const out: Absent[] = [];
-      absentAt.set(tg.side, out);
-      if (last10.length < 5) return;
-      const teamFp = mean(last10.map((x) => sideFp.get(x.side) ?? 0));
-      for (const id of members.get(team)!) {
-        if (played.get(id)!.has(tg.side)) continue;
-        const before = logs.get(id)!.filter((g) => g.t < tg.t);
-        if (before.length < 5 || teamBefore(id, tg.t) !== team) continue;
-        const next = teamAfter(id, tg.t);
-        if (next && next !== team) continue;
-        const b10 = before.slice(-10);
-        const min10 = mean(b10.map((g) => g.min));
-        if (min10 < ROTATION_MIN) continue;
-        let idx = 0;
-        for (let j = k; j >= 0 && !played.get(id)!.has(schedule[j]!.side); j--) idx++;
-        out.push({
-          share: mean(b10.map((g) => g.fp)) / teamFp,
-          idx,
-          group: groupOf(positions.get(id)),
-          min10,
-        });
-      }
-    });
+  // Who was absent from each team-game (lib/nba/context.ts, shared with production).
+  const absentAt = absencesByGame(
+    new Map(
+      [...logs].map(([id, gs]) => [
+        id,
+        gs.map((g) => ({ side: g.side, team: sideTeam.get(g.side), t: g.t, fp: g.fp, min: g.min })),
+      ]),
+    ),
+    (id) => groupOf(positions.get(id)),
+  );
 
   const rows: PlayerGame[] = [];
   for (const [p, gs] of logs) {
@@ -229,39 +177,17 @@ export function playerGames(season: number, scoring: ScoringMap, cache = CACHE):
 
 // The model (MODEL_CARD, teammate absences by impact), as tested on Nov 19.
 
-/** Chosen on the exploration seasons (lowest MAE of the grid). */
-export const K = 0.75;
-export const SAME = 2;
-export const FLOOR = 0.1;
-export const CAP = 0.6;
-/** Regulars only: 20+ minutes a game over the last 10. */
-export const REGULAR_MIN = 20;
+export { REGULAR_MIN } from "../lib/nba/context";
 /** Described: a star has this share or more. */
 export const STAR = 0.18;
-
-/** A game's context factor for a player in this group: 1 when no regular above the floor is out. */
-export const context = (absent: Absent[], group: string | null) =>
-  1 +
-  K *
-    Math.min(
-      CAP,
-      absent.reduce(
-        (t, a) =>
-          t +
-          (a.min10 >= REGULAR_MIN
-            ? Math.max(0, a.share - FLOOR) * (a.group === group ? SAME : 1)
-            : 0),
-        0,
-      ),
-    );
 
 /** The context model: full-strength games (each ÷ its factor), then × tonight's factor. */
 export function predict(r: PlayerGame) {
   const full = r.past.map((g) => {
-    const x = context(g.absent, r.group);
+    const x = contextFactor(g.absent, r.group);
     return { fp: g.fp / x, min: g.min / x };
   });
-  return perGameProjection(asPlayer(r.prior, full)).fppg * context(r.absent, r.group);
+  return perGameProjection(asPlayer(r.prior, full)).fppg * contextFactor(r.absent, r.group);
 }
 
 /** Mean of per-player-season mean differences, with a normal 95% interval. */

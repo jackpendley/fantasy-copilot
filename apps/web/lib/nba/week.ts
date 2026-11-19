@@ -5,6 +5,7 @@ import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { optimizeLineup, playProbability, type Position } from "@fantasy-copilot/fantasy-core";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
 import { afterReturn } from "./teammate-return";
+import { factorOn } from "./context";
 import {
   gameEnvironment,
   matchupFactor,
@@ -91,7 +92,8 @@ export function projectTeamWeek(roster: RosterPlayer[], input: WeekInputs): Team
   const fppgOn = (p: RosterPlayer, sp: number) => {
     const v = fppg.get(p.id) ?? 0;
     const c = p.teammateReturn;
-    return c && sp >= c.day ? afterReturn(v, c) : v;
+    // And who's out of his team that day (the context-aware projection).
+    return (c && sp >= c.day ? afterReturn(v, c) : v) * factorOn(p, sp);
   };
   const chance = (p: RosterPlayer, sp: number, ahead: number) => {
     const back = input.outUntil?.get(p.id);

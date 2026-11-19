@@ -56,12 +56,19 @@ function seasonBefore(
   if (avg == null || total == null) return null;
   const minutes = p.season?.stats?.MIN ?? null;
   const later = asOf == null ? [] : (p.games ?? []).filter((g) => g.scoringPeriodId >= asOf);
-  if (!later.length) return { avg, total, minutes };
+  // The context-aware projection (lib/nba/context.ts): each earlier game at full strength, its
+  // teammates' absences taken out.
+  const adj = (p.context?.adj ?? []).filter(([, sp]) => asOf == null || sp < asOf);
+  if (!later.length && !adj.length) return { avg, total, minutes };
   const all = avg ? Math.round(total / avg) : 0;
   const gp = all - later.length;
-  const rest = total - later.reduce((a, g) => a + g.points, 0);
+  const rest = total - later.reduce((a, g) => a + g.points, 0) - adj.reduce((a, x) => a + x[3], 0);
   const restMin =
-    minutes == null ? null : minutes * all - later.reduce((a, g) => a + (g.line.MIN ?? 0), 0);
+    minutes == null
+      ? null
+      : minutes * all -
+        later.reduce((a, g) => a + (g.line.MIN ?? 0), 0) -
+        adj.reduce((a, x) => a + x[4], 0);
   return gp > 0
     ? { avg: rest / gp, total: rest, minutes: restMin == null ? null : restMin / gp }
     : null;
@@ -72,9 +79,11 @@ function seasonBefore(
  * (clipped to 0.6-1.4, half strength). Only games before `asOf` count.
  */
 export function minutesTrend(p: RosterPlayer, asOf?: number): number {
+  // Each game's minutes at full strength (the context-aware projection).
+  const factor = new Map((p.context?.adj ?? []).map(([game, , x]) => [game, x]));
   const mins = (p.games ?? [])
     .filter((g) => asOf == null || g.scoringPeriodId < asOf)
-    .map((g) => g.line.MIN ?? 0)
+    .map((g) => (g.line.MIN ?? 0) / (factor.get(g.gameId) ?? 1))
     .filter((m) => m > 0);
   if (mins.length < TREND_MIN_GAMES) return 1;
   const avg = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;

@@ -26,6 +26,7 @@ import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
 import { collectMarketData, recordFinished, snapshotDarko, type Snapshot } from "./nba/market-data";
 import { holdLineups, lineupsHeld, storeLineups } from "./nba/lineup-log";
+import { contextDue, refreshContext } from "./nba/context-run";
 import { queueLockJob, rosterWatch, simRosterCheck, workerEnabled } from "./nba/outlook-refresh";
 import { statusEventsFrom } from "./nba/news";
 import { holdStatusEvents, statusHeld, storeStatusEvents } from "./nba/status-log";
@@ -242,9 +243,23 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       )
     : null;
 
+  // The nightly computes the context; a day without it (the first after a deploy, or a failed
+  // nightly) gets it now, once per instance a day.
+  const context = (await contextDue(date))
+    ? await m.step("context", () => step("context", () => contextStep(date, data)))
+    : null;
+
   const games = data.games.filter((g) => g.scoringPeriodId === sp);
   if (!games.length)
-    return { ...watch, leagueChanged, simRoster, darko, returns, skipped: "no games today" };
+    return {
+      ...watch,
+      leagueChanged,
+      simRoster,
+      darko,
+      returns,
+      context,
+      skipped: "no games today",
+    };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
   // NBA.com's lineups for every player (active, inactive, starters) as they change before the
@@ -429,6 +444,24 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
   return result;
 }
 
+/**
+ * The context-aware projection's nightly data (ADR-069), from this season's recorded games and
+ * the league's player pool (rostered and free players, for positions and names).
+ */
+async function contextStep(ymd: string, league?: Awaited<ReturnType<typeof loadLeague>>) {
+  const sp = Math.min(Math.max(scoringPeriodForDate(ymd), 1), LAST_SCORING_PERIOD);
+  const data = league ?? (await loadLeague(sp, ymd));
+  const free = await loadFreeAgents(sp).catch(() => []);
+  const r = await refreshContext(
+    data.games,
+    [...data.ahead.teams.flatMap((t) => t.roster), ...free.map((f) => f.player)],
+    sp,
+  );
+  // The league as loaded carries the old context: pages and the simulations reload it.
+  forgetResponses();
+  return r;
+}
+
 /** Fill-ins whose regular is out or back (ADR-064): every rostered and free player's effects. */
 async function refreshReturns(sp: number, league: Awaited<ReturnType<typeof loadLeague>>) {
   const free = await loadFreeAgents(sp);
@@ -479,6 +512,9 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
         RESULTS_PER_NIGHT,
       );
     });
+    // Who was out of every team-game this season and each team's regulars now (ADR-069), after
+    // last night's box scores and before the simulations read the league.
+    const context = await metered("context", () => contextStep(gameDate()));
     // A job left running by runners that went quiet is closed first (the new one replaces it).
     if (workerEnabled()) await metered("quiet-jobs", () => closeQuietJobs());
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
@@ -537,6 +573,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       neon,
       teammateReturns: returns,
       results,
+      context,
       ...states,
       ...market,
     };
@@ -589,8 +626,8 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
 
 /** Finished games this instance has recorded (a recycled instance asks the database again). */
 const recordedGames = new Set<number>();
-/** The nightly's catch-up: at most this many box scores a night (about a second each). */
-const RESULTS_PER_NIGHT = 60;
+/** The nightly's catch-up: at most this many box scores a night (about half a second each). */
+const RESULTS_PER_NIGHT = 120;
 
 /** Scoring periods whose win-chance snapshot is known to exist (per server instance). */
 const snapshotted = new Set<number>();

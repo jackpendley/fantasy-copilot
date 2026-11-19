@@ -425,6 +425,18 @@ Not yet cut, small this early in the season and measured with the traffic log be
 - Fallbacks run inside work that already has the database awake, never on a timer of their own.
 - Check Settings' "Database this month" line weekly; the alerts cover the rest.
 
+**Who played and the context-aware projection (Nov 20, ADR-068, ADR-069): what each queries, and how often:**
+
+- **Box scores** (`game_participation` with `game_results`):
+  - The gameday runs write them only at the half-hourly store, when the held logs wake the database anyway.
+  - The nightly catches up any finished game without rows: one check of the season's game ids, then at most 120 summaries (ESPN, not the database).
+- **NBA.com's lineups** (`lineup_log`): held with the other logs, stored at the same moments.
+- **The context step:**
+  - **Nightly:** reads the season's played rows once (game, player, team, FP, minutes: about 1 MB at season's end) and writes one gzipped `view_cache` row.
+  - **Instances:** each reads that row once per nightly run (`readSinceNightly`).
+  - **Gameday:** one freshness check per instance a day, inside a run that has loaded the league.
+- **Settings' "Who played" card:** two aggregate queries per page view.
+
 ## 11. Tiered simulation jobs (plan 4c)
 
 Jack's goal (Nov 17): after a trigger, the Outlook and the moves involving the changed players land first, without losing accuracy. Today every trigger re-runs every move, and the newest job replaces the one under way.

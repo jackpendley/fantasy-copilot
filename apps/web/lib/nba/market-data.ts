@@ -26,6 +26,7 @@ import {
   type GameLine,
 } from "./projection";
 import { vegasProjection } from "./vegas";
+import { factorOn } from "./context";
 
 export type Snapshot = "morning" | "pregame" | "close";
 
@@ -214,14 +215,21 @@ async function storeProjections(
       p.positions,
     );
     const props = byPlayer.get(p.id) ?? [];
+    // Who's out of his team tonight (the context-aware projection), and his projection without it.
+    const context = factorOn(p, ctx.sp);
     rows.push({
       game_id: g.gameId,
       player_id: p.id,
       snapshot,
       captured_at: now,
       tip: new Date(g.date),
-      model_fppg: base * env * matchup,
+      model_fppg: base * env * matchup * context,
       matchup_factor: matchup,
+      context_factor: context,
+      context_free_fppg:
+        (p.context ? perGameProjection({ ...p, context: undefined }, ctx.sp).fppg : base) *
+        env *
+        matchup,
       vegas_fppg: vegasProjection(props, p.projection?.stats, base, ctx.scoring)?.fppg ?? null,
       espn_fppg: p.projection?.avg ?? null,
     });
@@ -235,6 +243,8 @@ async function storeProjections(
     "tip",
     "model_fppg",
     "matchup_factor",
+    "context_factor",
+    "context_free_fppg",
     "vegas_fppg",
     "espn_fppg",
   ] as const;
@@ -243,7 +253,8 @@ async function storeProjections(
         insert into pregame_projections ${db()(rows, ...cols)}
         on conflict (game_id, player_id, snapshot) do update set
           captured_at = excluded.captured_at, model_fppg = excluded.model_fppg,
-          matchup_factor = excluded.matchup_factor, vegas_fppg = excluded.vegas_fppg
+          matchup_factor = excluded.matchup_factor, context_factor = excluded.context_factor,
+          context_free_fppg = excluded.context_free_fppg, vegas_fppg = excluded.vegas_fppg
       `
     : db()`insert into pregame_projections ${db()(rows, ...cols)} on conflict do nothing`);
 }

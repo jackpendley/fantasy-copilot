@@ -11,7 +11,7 @@ import "server-only";
 
 import { percentileOf } from "./pbp-metrics";
 import { after } from "next/server";
-import { PRO_TEAM_BY_ID } from "@fantasy-copilot/espn";
+import { PRO_TEAM_BY_ID, type RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, normalizeStatus, withDerived } from "@fantasy-copilot/fantasy-core";
 import {
   fetchGameLog,
@@ -49,6 +49,7 @@ import { marketContext, marketValue } from "./market";
 import { propsForGames } from "./market-data";
 import { scoreGames, summarize } from "./player";
 import { loadPlayer, loadPlayerPool } from "./pool";
+import { factorOn } from "./context";
 import { gameEnvironment, matchupFactor, perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
 import { teamValue, valueContext } from "./trade";
@@ -118,6 +119,8 @@ export interface PlayerCardData {
     environment: number;
     /** The opponent's defense against his position (1 = average). */
     matchup: number;
+    /** Teammates out for the next game (the context-aware projection; 1 = none). */
+    context: { factor: number; out: string[] };
     /** Minutes our model expects (minutes x rate), when it has them. */
     minutes: number | null;
   };
@@ -276,6 +279,9 @@ export async function loadPlayerCard(
         pl.positions,
       )
     : 1;
+  // Regulars out of his team for that game (the context-aware projection).
+  const contextDay = pl.context?.days.findLast((d) => d.day <= (nextGame?.scoringPeriodId ?? sp));
+  const context = { factor: contextDay?.factor ?? 1, out: contextDay?.out ?? [] };
   const nextProps =
     nextGame && nextGame.scoringPeriodId === sp
       ? ((await propsForGames([nextGame.gameId]).catch(() => new Map())).get(id) ?? [])
@@ -338,7 +344,8 @@ export async function loadPlayerCard(
           data.defense,
           home ? todayGame.awayProTeamId : todayGame.homeProTeamId,
           pl.positions,
-        ),
+        ) *
+        factorOn(pl, sp),
       null,
       blendWeight,
     );
@@ -429,8 +436,12 @@ export async function loadPlayerCard(
     live,
     next: nextGame ? { ...asGame(nextGame), today: nextGame.scoringPeriodId === sp } : null,
     projection: {
-      best: bestProjection(ours.fppg * environment * matchup, vegas?.fppg ?? null, blendWeight),
-      ours: ours.fppg * environment * matchup,
+      best: bestProjection(
+        ours.fppg * environment * matchup * context.factor,
+        vegas?.fppg ?? null,
+        blendWeight,
+      ),
+      ours: ours.fppg * environment * matchup * context.factor,
       espn: pl.projection?.avg ?? null,
       vegas: vegas?.fppg ?? null,
       vegasLines: nextProps.map((l: { market: string; line: number }) => ({
@@ -439,6 +450,7 @@ export async function loadPlayerCard(
       })),
       environment,
       matchup,
+      context,
       minutes: ours.minutes ?? null,
     },
     form: {
@@ -495,19 +507,18 @@ export async function loadPlayerCard(
       projectedPoints: restGames.reduce(
         (a, g) =>
           a +
-          (tr && g.scoringPeriodId >= tr.day ? afterReturn(model(sp).fppg, tr) : model(sp).fppg),
+          (tr && g.scoringPeriodId >= tr.day ? afterReturn(model(sp).fppg, tr) : model(sp).fppg) *
+            factorOn(pl, g.scoringPeriodId),
         0,
       ),
       teammateReturn: tr
         ? {
             teammate: tr.teammate,
-            date: new Date(
-              `${dateForScoringPeriod(Math.max(tr.day, sp))}T12:00:00Z`,
-            ).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" }),
+            date: shortDate(Math.max(tr.day, sp)),
             now: model(sp).fppg,
             after: afterReturn(model(sp).fppg, tr),
           }
-        : null,
+        : contextReturn(pl, sp, model(sp).fppg),
       starts: usage
         ? {
             ...usage,
@@ -576,4 +587,29 @@ function logGames(rows: ReturnType<typeof scoreGames>): LogGame[] {
     rolling: r.rolling != null ? Math.round(r.rolling * 10) / 10 : null,
     line: r.line as Record<string, number>,
   }));
+}
+
+const shortDate = (sp: number) =>
+  new Date(`${dateForScoringPeriod(sp)}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+
+/**
+ * The next change in his projection as teammates come back (the context-aware projection):
+ * who returns, when, and his FP/G now and after. Null when nobody out is expected back.
+ */
+function contextReturn(p: RosterPlayer, sp: number, fppg: number) {
+  const days = p.context?.days ?? [];
+  const now = days.findLast((d) => d.day <= sp);
+  const next = days.find((d) => d.day > sp);
+  if (!now || !next) return null;
+  const back = now.out.filter((name) => !next.out.includes(name));
+  return {
+    teammate: back.join(" and ") || now.out.join(" and "),
+    date: shortDate(next.day),
+    now: fppg * now.factor,
+    after: fppg * next.factor,
+  };
 }

@@ -509,11 +509,14 @@ function NextTab({ card }: { card: PlayerCardData }) {
           The number under his score is the most accurate source we have: our model until the Vegas
           blend passes its accuracy test. Our model expects his minutes from this season (they move
           fast when a role changes) times his points per minute, adjusted for the game&apos;s Vegas
-          total{p.environment !== 1 && ` (×${p.environment.toFixed(2)} for this game)`} and how the
+          total{p.environment !== 1 && ` (×${p.environment.toFixed(2)} for this game)`}, how the
           opponent defends his position
           {p.matchup !== 1 &&
             card.next &&
             ` (${card.next.opponent} ×${p.matchup.toFixed(2)} for ${card.positions[0]}s)`}
+          , and which of his team&apos;s regulars are out
+          {p.context.factor !== 1 &&
+            ` (+${Math.round((p.context.factor - 1) * 100)}% with ${p.context.out.join(" and ")} out)`}
           . Vegas posts player lines a few hours before tip and reflects late news. DARKO is a
           public daily projection, shown for comparison.{" "}
           <Link href="/nba/model" className="text-primary hover:underline">

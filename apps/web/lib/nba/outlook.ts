@@ -6,6 +6,7 @@ import type { Position, SimInput, SimPlayer, SimTeam } from "@fantasy-copilot/fa
 import { LAST_SCORING_PERIOD, matchupPeriodOf } from "./calendar";
 import { perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
+import { factorOn } from "./context";
 import { teamValue, valueContext, type ValueContext } from "./trade";
 
 /** A daily manager makes ~2.5 lineup moves per day (2025-26: ~400 over the season). */
@@ -43,6 +44,17 @@ export function managerActivity(current: Counts, prior: Counts, daysPlayed: numb
   };
 }
 
+/** The days his points per game change on, and to what (none without either model). */
+function changesOf(p: RosterPlayer, fppg: number): Pick<SimPlayer, "changes"> {
+  const tr = p.teammateReturn;
+  const days = [
+    ...new Set([...(tr ? [tr.day] : []), ...(p.context?.days.map((d) => d.day) ?? [])]),
+  ].sort((a, b) => a - b);
+  if (!days.length) return {};
+  const on = (d: number) => (tr && d >= tr.day ? afterReturn(fppg, tr) : fppg) * factorOn(p, d);
+  return { changes: days.map((day) => ({ day, fppg: on(day) })) };
+}
+
 export function toSimPlayer(p: RosterPlayer, outUntil?: number): SimPlayer {
   const proj = perGameProjection(p);
   const projectedGames =
@@ -59,10 +71,9 @@ export function toSimPlayer(p: RosterPlayer, outUntil?: number): SimPlayer {
     // in place of the roster's weakest player.
     ...(outUntil != null ? { outUntil } : {}),
     ...(p.slot === "IR" ? { reserve: true } : {}),
-    // A fill-in drops once the regular he replaced returns (ADR-064).
-    ...(p.teammateReturn
-      ? { change: { day: p.teammateReturn.day, fppg: afterReturn(proj.fppg, p.teammateReturn) } }
-      : {}),
+    // His points per game while teammates are out or once they're back (ADR-069), and a
+    // fill-in's once the regular he replaced returns (ADR-064).
+    ...changesOf(p, proj.fppg),
   };
 }
 

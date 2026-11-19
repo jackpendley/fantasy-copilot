@@ -75,6 +75,16 @@ export interface RosterPlayer {
    * returns (set by the app; MODEL_CARD, teammate returns test 4).
    */
   teammateReturn?: { day: number; shift: number; teammate: string };
+  /**
+   * The context-aware projection (set by the app; MODEL_CARD, teammate absences by impact):
+   * what each of his games loses at full strength ([game id, scoring period, factor, FP,
+   * minutes], games with a factor above 1), and his factor from each day on, with the
+   * regulars out that set it.
+   */
+  context?: {
+    adj: [number, number, number, number, number][];
+    days: { day: number; factor: number; out: string[] }[];
+  };
   /** Current lineup slot name, e.g. "UTIL", "BE", "IR". */
   slot: string | null;
   /** ESPN's injury status (ACTIVE, DAY_TO_DAY, OUT, ...). */

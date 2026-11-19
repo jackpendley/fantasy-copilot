@@ -424,3 +424,88 @@ Not yet cut, small this early in the season and measured with the traffic log be
 - Every new scheduled step says how often it queries the database; a run with nothing new sends no query.
 - Fallbacks run inside work that already has the database awake, never on a timer of their own.
 - Check Settings' "Database this month" line weekly; the alerts cover the rest.
+
+## 11. Tiered simulation jobs (plan 4c)
+
+Jack's goal (Nov 17): after a trigger, the Outlook and the moves involving the changed players land first, without losing accuracy. Today every trigger re-runs every move, and the newest job replaces the one under way.
+
+**Baseline (Nov 19, 9:45 AM).** Settings' "Minutes from a trigger to its numbers": medians since #186 shipped (Nov 17, 1:10 PM), from the rosters' read.
+
+| Trigger                | Jobs | Runners | Outlook | All checks |
+| ---------------------- | ---: | ------: | ------: | ---------: |
+| Injury news            |    7 |     0.3 |     4.7 |       30.0 |
+| Your moves             |    3 |     0.2 |     5.0 |       26.9 |
+| League moves           |    3 |     0.3 |     3.0 |       44.9 |
+| Nightly or Run outlook |    2 |     0.3 |     2.9 |       43.6 |
+
+- **Runners start within 20 seconds** (#188), and the Outlook lands in 3 to 5 minutes. The long wait is the checks: 27 to 45 minutes.
+- **Last 24 hours:** 5 jobs, about 184 moves each, done in 64 minutes on average.
+- **Worker runs since Nov 17, 1:10 PM:** 17 of 53 were cancelled. They were dispatches waiting behind a run in progress; GitHub keeps one pending run per concurrency group, and the runners already up take the newest job.
+- No tip-off job ran in this window.
+
+**Design (plan 4c):**
+
+- **Tier A:** the Outlook (the base run), on every trigger.
+- **Tier B:** on every trigger, the moves it touches plus the last full sweep's contenders.
+- **Tier C:** the full sweep, at low priority. A newer trigger replaces only tier C, and the nightly run and Jack's own moves always run it to the end.
+- **Moves not yet re-checked** show the last sweep's numbers until C catches up.
+
+### The replay guard (pre-registered Nov 19, before its run)
+
+**Question.** A triggered job re-checks tier B first and shows the last full sweep's numbers for every other move. Does Jack then see the same best moves as a full re-run would show?
+
+**Data.**
+
+- **League state:** the league as read on Nov 19 at about 9:50 AM MST, before the day's first tip. It is saved locally (`data/local/replay-tiers/jobs-2026-11-19T1652.json`, private).
+- **Built with production's code:** `simBuildOf` and `buildSimMoves`.
+- **Never drop:** Jack's list as the Moves page shows it (10 players), passed at run time. It lives in production's database, which isn't readable locally.
+- **Waiver moves only:** 162 to 183 per job. Trade ideas are compared on their own.
+
+**Changes.** 21 changes of the kinds that queue a job. A seeded generator picked them before any simulation, and the dry run listed them.
+
+- **10 league moves:** a random rival drops his lowest-valued player outside IR for one of the 15 best healthy free agents.
+- **10 injury news items on Jack's players:** a random player is ruled out for 2, 7 or 21 days, in turn. A player already out would come back instead; none was.
+- **Today's first tip:** moves count from tomorrow.
+- **Not replayed:** Jack's own moves and the nightly run, because they run every tier to the end.
+
+**Simulation.**
+
+- Every move of every job plays the same 8 chunks of 500 seasons: 4,000 seasons, the top tier's minimum.
+- Each run has 10 playoff replays and production's chunk seeds.
+- The number compared is each move's title change.
+
+**Tier B,** for each change, is the union of:
+
+- moves with a touched player (the add, the drop or the IR move);
+- moves the before job didn't have;
+- the job's opening moves (`top`: each card's first drop, the streams and the watch list);
+- the before job's **20** best moves by title change.
+
+**Two views per change:**
+
+- **Full:** every move's numbers after the change.
+- **Tiered:** after-change numbers for B, before-change numbers for the rest.
+
+**Measures:**
+
+1. **Top 5:** the recommended top 5 is each add's best move, with adds ranked by its title change. It must be identical in both views: the same moves, in the same order.
+2. **Top 10:** every move in the full view's top 10 by title change must be in B.
+
+**Criterion:**
+
+- Measure 1 holds in at least 95% of the 21 changes (at most one miss).
+- Measure 2 holds in all 21.
+
+**Fallback (set now).** If it fails, tier B with the before job's best **60** is evaluated from the same simulations.
+
+- If that passes, tiers ship with 60.
+- If both fail, tiers don't ship as designed, and Jack decides what's next.
+
+**Limits, disclosed:**
+
+- **Precision:** here every move gets 4,000 seasons. Production races contenders to 40,000–160,000 (ADR-063). Both views use the same numbers, so ties near the top are as close here as they are in the comparison.
+- **A rival's dropped player** joins the simulated free-agent pool but isn't evaluated as an add. His moves would be in B anyway, since he's touched.
+- **Fill-ins' projections** (teammate returns, ADR-064) aren't recomputed after an injury.
+- **One league state:** a single morning.
+
+`scripts/replay-tiers.ts` (`DRY=1` lists the changes; the run prints each change and the verdict).

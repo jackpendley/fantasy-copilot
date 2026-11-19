@@ -207,21 +207,6 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
   const [setup, w] = await m.step("inputs", () =>
     Promise.all([outlookSetup(), loadWaiverInputs()]),
   );
-  const { data } = setup;
-  const base = buildOutlookInput({
-    teams: data.teams,
-    previousTeams: setup.previousTeams,
-    freeAgents: setup.freeAgents,
-    games: data.games,
-    matchups: data.matchups,
-    slotCounts: data.settings.slotCounts,
-    addCapPerWeek: data.settings.addsPerWeek ?? 3,
-    regularWeeks: data.settings.regularSeasonWeeks,
-    fromDay: setup.fromDay,
-    bankedNow: setup.bankedNow,
-    injured: setup.injured,
-    seasons: 0,
-  });
   // The best stored trade ideas too, checked after the Moves page's drops.
   const ideas = await readViewHead<StoredIdea>(TRADE_VIEW, TRADE_MOVES).catch(() => []);
   // Trades Jack asked to check, until each has a result.
@@ -230,24 +215,8 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     top: pending.filter((a) => a.top).map((a) => a.spec),
     rest: pending.filter((a) => !a.top).map((a) => a.spec),
   };
-  const build: SimBuildInput = {
-    waiver: w.inputs,
-    extraKeys,
-    streamsTop: !saverOn(),
-    base: toWire(base.input),
-    teamId: data.me.id,
-    roster: data.me.roster,
-    freeAgents: setup.freeAgents,
-    games: data.games,
-    slotCounts: data.settings.slotCounts,
-    fromDay: setup.fromDay,
-    regularWeeks: data.settings.regularSeasonWeeks,
-    injured: setup.injured,
-    injuries: data.injuries,
-    teams: data.teams.map((t) => ({ id: t.id, roster: t.roster })),
-    ideas,
-    asked,
-  };
+  const { build, base } = simBuildOf(setup, w, { extraKeys, ideas, asked, streamsTop: !saverOn() });
+  const { data } = setup;
   const key = rosterKeyOf(w.data.ahead.me.roster, w.data.injuries);
   const ctx: JobContext = {
     trigger,
@@ -276,6 +245,51 @@ async function prepareJob(trigger: string | null, extraKeys: string[], m: CpuMet
     }),
   };
   return { build, ctx };
+}
+
+/**
+ * A job's build from the league as read (outlookSetup, loadWaiverInputs): the base season and
+ * everything its moves are built from. Pure (scripts/replay-tiers.ts builds changed leagues).
+ */
+export function simBuildOf(
+  setup: Awaited<ReturnType<typeof outlookSetup>>,
+  w: Awaited<ReturnType<typeof loadWaiverInputs>>,
+  o: Pick<SimBuildInput, "extraKeys" | "ideas" | "asked" | "streamsTop">,
+) {
+  const { data } = setup;
+  const base = buildOutlookInput({
+    teams: data.teams,
+    previousTeams: setup.previousTeams,
+    freeAgents: setup.freeAgents,
+    games: data.games,
+    matchups: data.matchups,
+    slotCounts: data.settings.slotCounts,
+    addCapPerWeek: data.settings.addsPerWeek ?? 3,
+    regularWeeks: data.settings.regularSeasonWeeks,
+    fromDay: setup.fromDay,
+    bankedNow: setup.bankedNow,
+    injured: setup.injured,
+    seasons: 0,
+  });
+  const build: SimBuildInput = {
+    waiver: w.inputs,
+    extraKeys: o.extraKeys,
+    streamsTop: o.streamsTop,
+    base: toWire(base.input),
+    teamId: data.me.id,
+    roster: data.me.roster,
+    freeAgents: setup.freeAgents,
+    games: data.games,
+    slotCounts: data.settings.slotCounts,
+    fromDay: setup.fromDay,
+    regularWeeks: data.settings.regularSeasonWeeks,
+    injured: setup.injured,
+    injuries: data.injuries,
+    teams: data.teams.map((t) => ({ id: t.id, roster: t.roster })),
+    ideas: o.ideas,
+    asked: o.asked,
+  };
+  return { build, base };
 }
 
 /**

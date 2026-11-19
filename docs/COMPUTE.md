@@ -589,3 +589,51 @@ Such a job would take about as long as the Outlook (3 to 5 minutes) instead of 2
 
 - `DRY=1` lists the changes and how many moves each re-checks.
 - `RESULT=<the guard's result file>` scores the singles from §11's simulations, then simulates the busy days and prints each change and the verdicts.
+
+## 13. Results: the tier guard and the skip test (Nov 19)
+
+### The tier guard (§11): does not pass. Tiers don't ship as designed.
+
+Run from 10:38 AM to 3:43 PM MST: 2,480 chunks on 14 cores, on the saved jobs as pre-registered.
+
+| Tier B with                         | Top 5 identical (need 20 of 21) | Top 10 inside B (need 21 of 21) |
+| ----------------------------------- | ------------------------------: | ------------------------------: |
+| The last sweep's best 20            |                      3/21 (14%) |                            4/21 |
+| The last sweep's best 60 (fallback) |                      8/21 (38%) |                            9/21 |
+
+- **League moves failed in all 10 changes,** at both sizes. With the best 20, 5 to 10 of the full top 10 fell outside B.
+- **Injury news:** 3 of 10 at 20, and 8 of 10 at 60.
+- **Tip-off failed** at both sizes.
+
+**Why (diagnostics, not part of the criterion):**
+
+- **Jack's best moves are nearly tied.** Before the changes, the 30 best moves span 0.83 to 0.58 title-odds points. One move's standard error at 4,000 seasons is 0.29.
+- **The runs share their random draws as intended.** Across a change, each move's numbers correlate 0.89 to 0.997. The spread of their changes (0.05 to 0.30 points) is below independent noise (0.41).
+- **Every change shifts all moves.** A rival's add/drop lowered the average move by 0.10 to 0.75 points. Injury news lowered it by 0.02 to 0.98.
+- **So old numbers are biased, not only noisy.** Moves that keep their before numbers miss the general shift, so they rise above re-checked moves. Some moves also change on their own.
+- **The worst case:** with the best 60 and one 21-day absence, the before job's 61st move kept its +0.45 and showed as #1. Re-checked, it was −0.97: 1.29 points below the true #1.
+- **Cost of the tiered #1** in full numbers, against the full #1: 0 to 0.71 points with the best 20, 0 to 1.29 with the best 60. The full #1 is itself a noisy pick among near-ties, so these overstate the true cost somewhat.
+
+The `tiered-jobs` branch (tier order, carried-over tier B, "first moves" timing) stays unmerged.
+
+### The skip test (§12): does not pass for either kind. Triggered jobs keep re-running every move.
+
+Run from 3:45 PM to 4:24 PM MST. The singles came from the tier guard's simulations, and the two busy days were simulated on the saved jobs, as pre-registered.
+
+| Re-checked                  | Kind         | Top 5 same (need 9) | Within ±0.2 (need 9) | Busy day |
+| --------------------------- | ------------ | ------------------: | -------------------: | -------- |
+| Touched and new             | League moves |                0/10 |                 0/10 | fails    |
+| Touched and new             | Injury news  |                0/10 |                 5/10 | fails    |
+| Plus the best 20 (fallback) | League moves |                0/10 |                 1/10 | fails    |
+| Plus the best 20 (fallback) | Injury news  |                3/10 |                 8/10 | passes   |
+
+- **League moves:** kept numbers for the top 5 were off by 0.22 to 0.81 points. The busy day with 10 rival moves was off by 0.76 at both sizes.
+- **Injury news:** kept numbers were off by 0 to 0.47 points.
+- **Tip-off** (reported, not used): off by 0.34 points with touched and new moves, and 0.24 with the best 20.
+
+**Taken together.** No trigger leaves Jack's top moves' numbers alone:
+
+- a rival's add/drop moves them by more than production's ±0.2;
+- the best moves are close enough that any shift changes the top 5.
+
+Showing a full re-run's numbers, with the last numbers marked "updating" until then (ADR-058), is what both tests support.

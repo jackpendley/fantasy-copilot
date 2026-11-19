@@ -161,6 +161,44 @@ export function parseBoxScore(summary: Json): BoxScoreLine[] {
   return out;
 }
 
+/** One player listed in a game's box score: he played, or dressed and didn't (DNP). */
+export interface Participation {
+  playerId: number;
+  teamId: number;
+  played: boolean;
+  starter: boolean;
+  /** Minutes played (0 for a DNP). */
+  minutes: number;
+  /** ESPN's reason for a DNP ("COACH'S DECISION", an injury); null when he played. */
+  reason: string | null;
+}
+
+/**
+ * Everyone ESPN lists in a game's box score: the players who played and those who dressed
+ * but didn't (DNP, with ESPN's reason). Inactive players aren't listed: a team's regular
+ * missing from a finished game's list was inactive.
+ */
+export function parseParticipation(summary: Json): Participation[] {
+  const out: Participation[] = [];
+  for (const team of summary?.boxscore?.players ?? []) {
+    const block = team.statistics?.[0];
+    const min = (block?.names ?? []).indexOf("MIN");
+    for (const a of block?.athletes ?? []) {
+      const played = !a.didNotPlay && Boolean(a.stats?.length);
+      out.push({
+        playerId: Number(a.athlete?.id),
+        teamId: Number(team.team?.id),
+        played,
+        starter: Boolean(a.starter),
+        minutes: played && min >= 0 ? Number(a.stats[min]) || 0 : 0,
+        // ESPN fills "COACH'S DECISION" for players who played too; only a DNP's reason counts.
+        reason: played ? null : (a.reason ?? null),
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * Who's on the court in a game, from ESPN's summary: each team's starters, then every
  * substitution play in order ("X enters the game for Y"; the entering player is the first

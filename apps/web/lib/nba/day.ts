@@ -20,6 +20,7 @@ import {
   type LineupEntry,
   type ScoreboardGame,
 } from "@fantasy-copilot/nba-data";
+import { activeStatus } from "./active";
 import {
   gameEnvironment,
   matchupFactor,
@@ -96,6 +97,8 @@ export interface DayInputs {
   perGame?: Map<number, number>;
   /** Opponent defense by position (lib/nba/defense.ts). */
   defense?: DefenseTable | null;
+  /** Players the official injury report lists Out today (when this instance has read it). */
+  officialOut?: Set<number>;
 }
 
 /** ESPN's site injury feed is more granular ("Questionable") than the fantasy status. */
@@ -151,11 +154,13 @@ export function buildDayBoard(input: DayInputs): DayBoard {
         }
       : null;
     const injury = statusOf(player, injuries);
-    // NBA.com's inactive list is the final word once a team files it.
-    const status = nba?.inactive ? "OUT" : injury.status;
-    const note = nba?.inactive
-      ? `Inactive (NBA.com)${injury.note ? ` · ${injury.note}` : ""}`
-      : injury.note;
+    // NBA.com's inactive list is the final word once a team files it; then the official report.
+    const { status, note } = activeStatus({
+      espn: injury.status,
+      espnNote: injury.note,
+      nbaInactive: Boolean(nba?.inactive),
+      official: input.officialOut?.has(player.id) ? "Out" : null,
+    });
     const playProb = game ? playProbability(status) : 0;
     const projection = perGameProjection(player, input.games[0]?.scoringPeriodId);
     // Vegas game environment (more expected team points, more fantasy points to go around)

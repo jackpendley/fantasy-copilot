@@ -9,6 +9,7 @@ import {
   parseScoreboard,
   toEspnTeam,
   parseBoxScore,
+  parseParticipation,
 } from "../src/index";
 
 const fixture = (f: string) =>
@@ -179,5 +180,64 @@ describe("parseBoxScore", () => {
         },
       },
     ]);
+  });
+});
+
+describe("parseParticipation", () => {
+  it("lists who played and who dressed but didn't, with the DNP reason (synthetic summary)", () => {
+    const rows = parseParticipation({
+      boxscore: {
+        players: [
+          {
+            team: { id: "2" },
+            statistics: [
+              {
+                names: ["MIN", "PTS"],
+                athletes: [
+                  {
+                    athlete: { id: "11" },
+                    starter: true,
+                    stats: ["31", "38"],
+                    reason: "COACH'S DECISION",
+                  },
+                  {
+                    athlete: { id: "12" },
+                    didNotPlay: true,
+                    stats: [],
+                    reason: "COACH'S DECISION",
+                  },
+                  {
+                    athlete: { id: "13" },
+                    didNotPlay: true,
+                    stats: [],
+                    reason: "Injury/Illness - Knee",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(rows).toEqual([
+      { playerId: 11, teamId: 2, played: true, starter: true, minutes: 31, reason: null },
+      {
+        playerId: 12,
+        teamId: 2,
+        played: false,
+        starter: false,
+        minutes: 0,
+        reason: "COACH'S DECISION",
+      },
+      {
+        playerId: 13,
+        teamId: 2,
+        played: false,
+        starter: false,
+        minutes: 0,
+        reason: "Injury/Illness - Knee",
+      },
+    ]);
+    expect(parseParticipation({})).toEqual([]);
   });
 });

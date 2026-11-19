@@ -24,11 +24,17 @@ import { refreshPbpPlayers } from "./nba/advanced";
 import { refreshSeasonBaselines } from "./nba/season-baselines";
 import { refreshDefense } from "./nba/defense";
 import { buildDayBoard } from "./nba/day";
-import { collectMarketData, recordResults, snapshotDarko, type Snapshot } from "./nba/market-data";
+import { collectMarketData, recordFinished, snapshotDarko, type Snapshot } from "./nba/market-data";
+import { holdLineups, lineupsHeld, storeLineups } from "./nba/lineup-log";
 import { queueLockJob, rosterWatch, simRosterCheck, workerEnabled } from "./nba/outlook-refresh";
 import { statusEventsFrom } from "./nba/news";
 import { holdStatusEvents, statusHeld, storeStatusEvents } from "./nba/status-log";
-import { logOfficialReport, officialHeld, storeOfficialReports } from "./nba/official-report";
+import {
+  logOfficialReport,
+  officialHeld,
+  officialOut,
+  storeOfficialReports,
+} from "./nba/official-report";
 import {
   recordMatchupSnapshot,
   recordMatchupStates,
@@ -241,6 +247,9 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     return { ...watch, leagueChanged, simRoster, darko, returns, skipped: "no games today" };
   const tips = games.map((g) => g.date);
   const t = now.getTime();
+  // NBA.com's lineups for every player (active, inactive, starters) as they change before the
+  // games, held until the next store: who was really out, late scratches included.
+  const lineups = holdLineups(data.lineups, date, now);
 
   // The Matchup chart's line through the day: every 15 minutes (30 in minimal mode) from the
   // first tip until the last game is surely over (3.5 hours after the last tip). Held, with
@@ -254,6 +263,29 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
             await log("matchup-timeline", "error", errorText(e)).catch(() => {});
             return null;
           }),
+        )
+      : null;
+
+  // Tonight's finished games, recorded when the database is awake anyway (the half-hourly store,
+  // or a run that queried): box scores and who played, the same night instead of next morning.
+  const finished = games.filter(
+    (g) =>
+      !recordedGames.has(g.gameId) &&
+      data.scoreboard.find((s) => s.gameId === g.gameId)?.state === "post",
+  );
+  const results =
+    finished.length && (plan.store || dbUse.queries > queries)
+      ? await m.step("results", () =>
+          recordFinished(finished, data.settings.scoring)
+            .then((r) => {
+              // One ESPN doesn't call final yet is tried again at the next store.
+              if (!r.left) for (const g of finished) recordedGames.add(g.gameId);
+              return r;
+            })
+            .catch(async (e: Error) => {
+              await log("results", "error", errorText(e)).catch(() => {});
+              return null;
+            }),
         )
       : null;
 
@@ -302,6 +334,8 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       darko,
       returns,
       timeline,
+      results,
+      lineups,
       availability,
       stored,
       tradesRefreshed: trades,
@@ -355,6 +389,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     scoreboard: data.scoreboard,
     injuries: data.injuries,
     lineups: data.lineups,
+    officialOut: officialOut(date),
     now,
   });
   const alerts = gamedayAlerts(board, date, now, fmtTip);
@@ -379,6 +414,8 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     darko,
     returns,
     timeline,
+    results,
+    lineups,
     closingProps: market?.props ?? 0,
     tradesRefreshed: trades,
     events,
@@ -431,6 +468,17 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
           return refreshReturns(sp, await loadLeague(sp, gameDate()));
         })
       : null;
+    // Box scores and who played (game_participation) for every finished game not recorded yet:
+    // yesterday's, and any an earlier run missed. Before the simulations and the defense table.
+    const results = await metered("results", async () => {
+      const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
+      const data = await loadLeague(sp, gameDate());
+      return recordFinished(
+        data.games.filter((g) => g.scoringPeriodId < sp),
+        data.settings.scoring,
+        RESULTS_PER_NIGHT,
+      );
+    });
     // A job left running by runners that went quiet is closed first (the new one replaces it).
     if (workerEnabled()) await metered("quiet-jobs", () => closeQuietJobs());
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and
@@ -488,6 +536,7 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
       defense,
       neon,
       teammateReturns: returns,
+      results,
       ...states,
       ...market,
     };
@@ -518,15 +567,7 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
   // Injury statuses and estimated returns, twice a day even without the 5-minute job.
   holdStatusEvents(rosterStatuses(data, date), new Date());
   const newStatusEvents = (await storeStatusEvents()).length;
-  // Yesterday's box scores, to score those projections against.
-  const results =
-    snapshot === "morning" && sp > 1
-      ? await recordResults(
-          data.games.filter((g) => g.scoringPeriodId === sp - 1),
-          data.settings.scoring,
-        )
-      : {};
-  // Then re-run the pre-registered props test; the blend weight only moves if it passes.
+  // Then (yesterday's box scores were recorded by the nightly's results step) re-run the pre-registered props test; the blend weight only moves if it passes.
   const blend =
     snapshot === "morning"
       ? await refreshBlend(data.settings.scoring, date)
@@ -542,10 +583,14 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
     gamesWithLines: lines.games,
     newStatusEvents,
     ...snap,
-    ...results,
     ...blend,
   };
 }
+
+/** Finished games this instance has recorded (a recycled instance asks the database again). */
+const recordedGames = new Set<number>();
+/** The nightly's catch-up: at most this many box scores a night (about a second each). */
+const RESULTS_PER_NIGHT = 60;
 
 /** Scoring periods whose win-chance snapshot is known to exist (per server instance). */
 const snapshotted = new Set<number>();
@@ -635,7 +680,7 @@ function rosterStatuses(data: Awaited<ReturnType<typeof loadLeague>>, date: stri
 }
 
 /** Whether this instance holds logs not stored yet. */
-const logsHeld = () => statusHeld() || officialHeld() || timelineHeld();
+const logsHeld = () => statusHeld() || officialHeld() || timelineHeld() || lineupsHeld();
 
 /**
  * Store everything the 5-minute runs held (status events, official report statuses, timeline
@@ -650,11 +695,13 @@ async function storeHeldLogs(rostered: Set<number>) {
   };
   const events = await storeStatusEvents().catch(failed("status-events"));
   const official = await storeOfficialReports().catch(failed("official-report"));
+  const lineups = lineupsHeld() ? await storeLineups().catch(failed("lineup-log")) : null;
   const timeline = timelineHeld() ? await step("matchup-timeline", storeTimeline) : null;
   return {
     events: events?.length ?? null,
     rosteredNews: events?.filter((id) => rostered.has(id)).length ?? 0,
     official,
+    lineups,
     timeline,
   };
 }

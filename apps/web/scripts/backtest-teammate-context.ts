@@ -11,68 +11,20 @@
 
 import { readFileSync } from "node:fs";
 import { parseSettings } from "@fantasy-copilot/espn";
-import { perGameProjection } from "../lib/nba/projection";
-import { asPlayer, mean, playerGames, type Absent, type PlayerGame } from "./teammate-context";
+import {
+  judge,
+  mean,
+  playerGames,
+  predict,
+  REGULAR_MIN,
+  STAR,
+  starBack,
+  starOut,
+  type PlayerGame,
+} from "./teammate-context";
 
 /** Held-out seasons by end year (explored: 2017-18, 2018-19, 2025-26). */
 const SEASONS = [2020, 2021, 2022, 2023, 2024, 2025];
-/** Chosen on the exploration seasons (lowest MAE of the grid). */
-const K = 0.75;
-const SAME = 2;
-const FLOOR = 0.1;
-const CAP = 0.6;
-/** Regulars only: 20+ minutes a game over the last 10. */
-const REGULAR_MIN = 20;
-/** Described: a star has this share or more. */
-const STAR = 0.18;
-
-const context = (absent: Absent[], group: string | null) =>
-  1 +
-  K *
-    Math.min(
-      CAP,
-      absent.reduce(
-        (t, a) =>
-          t +
-          (a.min10 >= REGULAR_MIN
-            ? Math.max(0, a.share - FLOOR) * (a.group === group ? SAME : 1)
-            : 0),
-        0,
-      ),
-    );
-
-function predict(r: PlayerGame) {
-  const full = r.past.map((g) => {
-    const x = context(g.absent, r.group);
-    return { fp: g.fp / x, min: g.min / x };
-  });
-  return perGameProjection(asPlayer(r.prior, full)).fppg * context(r.absent, r.group);
-}
-
-/** Mean of per-player-season mean differences, with a normal 95% interval. */
-function judge(
-  rows: PlayerGame[],
-  pred: Map<PlayerGame, number>,
-  d: (p: number, r: PlayerGame) => number,
-) {
-  const by = new Map<string, number[]>();
-  for (const r of rows) {
-    const k = `${r.season}:${r.player}`;
-    by.set(k, [...(by.get(k) ?? []), d(pred.get(r)!, r)]);
-  }
-  const per = [...by.values()].map(mean);
-  const m = mean(per);
-  const half = (1.96 * Math.sqrt(mean(per.map((x) => (x - m) ** 2)))) / Math.sqrt(per.length);
-  return { n: rows.length, players: per.length, mean: m, lo: m - half, hi: m + half };
-}
-
-const starOut = (r: PlayerGame, lo: number, hi: number) =>
-  r.absent.some((a) => a.min10 >= REGULAR_MIN && a.share >= STAR && a.idx >= lo && a.idx <= hi);
-/** A star missed 3+ of his last 10 games and plays tonight. */
-const starBack = (r: PlayerGame) =>
-  r.past.slice(-10).filter((g) => g.absent.some((a) => a.min10 >= REGULAR_MIN && a.share >= STAR))
-    .length >= 3 && !starOut(r, 1, Infinity);
-
 function main() {
   const scoring = parseSettings(
     JSON.parse(

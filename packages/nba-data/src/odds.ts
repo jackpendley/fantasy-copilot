@@ -106,14 +106,32 @@ export interface GameOdds {
   spread: number;
 }
 
-/** Closing game line (the first book ESPN lists with a total). Kept for past seasons. */
+/** Not a closing market line: in-game books, the opening line, ESPN's consensus. */
+const NOT_CLOSING = /live|^opening$|^consensus$/i;
+
+const median = (xs: number[]) => {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+};
+
+/**
+ * Closing game line for past seasons: the median total and spread over the books ESPN lists
+ * (older games list up to a dozen, plus the opening line and in-game books, which are skipped).
+ */
 export function parseGameOdds(data: Json): GameOdds | null {
-  const item = (data?.items ?? []).find(
-    (i: Json) => typeof i?.overUnder === "number" && typeof i?.spread === "number",
+  const books = (data?.items ?? []).filter(
+    (i: Json) =>
+      typeof i?.overUnder === "number" &&
+      typeof i?.spread === "number" &&
+      !NOT_CLOSING.test(i.provider?.name ?? ""),
   );
-  return item
-    ? { provider: item.provider?.name ?? "", total: item.overUnder, spread: item.spread }
-    : null;
+  if (!books.length) return null;
+  return {
+    provider: books.length === 1 ? (books[0].provider?.name ?? "") : `median of ${books.length}`,
+    total: median(books.map((i: Json) => i.overUnder)),
+    spread: median(books.map((i: Json) => i.spread)),
+  };
 }
 
 export async function fetchGameOdds(

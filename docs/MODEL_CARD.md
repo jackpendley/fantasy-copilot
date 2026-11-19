@@ -1403,6 +1403,100 @@ All three intervals lie below 0. **The context-aware projection ships**, per the
 - **Still conservative:** the model removes about half of the bias in star-out games. A stronger factor might do better, but that would be a new test; nothing here is retuned.
 - **Production:** the lower bound (absences already known the day before) still gains −0.031, so most of the benefit doesn't depend on late scratches.
 
+### Pre-registration: re-run on the full shipped stack, on unseen seasons (2026-11-20, before any run on them)
+
+**Why:** two of Jack's caveats on the result above (Nov 19).
+
+- **The layers were left out:** game environment and opponent defense multiplied neither side. They might already capture part of what the context model does. A star's absence lowers his team's implied total and changes how opponents' defenses look, so the gain could shrink once both sides carry them.
+- **Fresh seasons:** tests 2–5 had used 2019-20 to 2024-25 for other questions.
+
+Jack chose (Nov 19) to decide on unseen seasons now, and to confirm on 2026-27 once the model ships.
+
+**Data: 2010-11 to 2016-17**, the box scores test 6 cached and cleaned (`backtest-boxscores`).
+
+- **Never used for a game-level comparison.** Test 7 used their big-for-big return events (77 events, bigs' next 10 games) and test 6 counted events. Both are disclosed.
+- **CHI and NO** are absent from 2012-13 on (no minutes in ESPN's box scores; test 6's rule).
+- **The prior** is each player's previous season from the same data, as in #208.
+- **Positions** are ESPN's current labels, guard/forward/center only (as in test 6). The context model's position groups and the defense table both use them; production keys defense by five positions.
+- **An older game** than 2019-25: slower pace, fewer threes, fewer rest days. Jack accepted the era.
+
+**Game lines:** ESPN's core API, the median closing line over the books it lists (`parseGameOdds`, which now skips the opening line, consensus and in-game books), fetched by `scripts/fetch-history-odds.ts`. ESPN has no lines for 2010-11 or 2011-12, so environment is 1 on both sides there. Coverage by season is reported with the result. Lines are pregame inputs, not outcomes.
+
+**Both sides carry the shipped layers (`scripts/backtest-teammate-context-2.ts`):**
+
+- **Environment:** (team's implied total ÷ the mean implied team total of earlier days)^0.75. The mean counts once 40+ team-games have a line. A game without a line gets 1.
+- **Opponent defense:** per opponent and position group, f = (n·r + 200) / (n + 200), where r = actual ÷ predicted-before-defense over earlier days' player-games. Same-day games don't see each other, and it starts at 1 each season.
+  - **Each side learns its own table from its own predictions:** today's from today's, the model's from the model's. That's how production would run once the model ships, since the nightly table divides only `matchup_factor` out of the logged projection.
+- **Not included:** the props blend (no player-prop history for these seasons) and DARKO (not wired into projections).
+
+**Model:** unchanged from the test above: k 0.75, floor 0.10, same position ×2, cap 0.6, regulars 20+ minutes. The code moved into `scripts/teammate-context.ts` and reproduces #208 exactly: the recorded script, and the new harness with no layers on 2019-25 (`CHECK=1`: −0.036 [−0.044, −0.029]).
+
+**Gate (counts only):** ≥ 60,000 player-games, or nothing is evaluated.
+
+**Comparisons, fixed sequence, each at 95%:** per player-season, the mean of model − today; the mean of those, with a normal 95% interval.
+
+1. **Absolute error, every player-game**, environment and defense on both sides. This decides.
+2. **Squared error,** the same.
+3. **Absolute error, games after a star's return,** the same.
+
+**Described, not tested:**
+
+- 2010-17 with no layers, environment only, and defense only;
+- by season, and games with a line;
+- star out (games 1–3), and same position group;
+- no regular out;
+- only absences already ongoing;
+- centers after a star's return;
+- 2019-25 under every set of layers (#208's seasons, already used).
+
+**Consequence (Jack, Nov 19):**
+
+- **1 passes:** the context-aware projection ships with its switch on, after the participation tracking (plan Phase 2) is in. The 2026-27 forward check is then pre-registered on logged pregame projections and real pregame statuses, judged once on Jan 15, 2027.
+- **1 fails:** it isn't switched on. The result goes to Jack. The participation tracking ships anyway.
+
+**When:** pushed before any run on 2010-17. Then `DRY=1` (counts only), then one evaluation. Nothing is tuned or re-run.
+
+#### Result (2026-11-20): passed, all three; the model ships with its switch on
+
+One evaluation (`scripts/backtest-teammate-context-2.ts`, pre-registration pushed at e921194).
+
+**Game lines** (`fetch-history-odds.ts`, counts only, before the run): ESPN has none for 2010-11 or 2011-12. It has one for 100% of games in 2012-13 to 2016-17, and 93–100% in 2019-20 to 2024-25.
+
+**`DRY=1`:** 18,307 to 22,803 player-games a season, **141,303** in all (gate met), 100,193 of them with a line.
+
+| Comparison (2010-11 to 2016-17, environment + defense on both sides) | n (player-seasons) | Model − today | 95% CI           |
+| -------------------------------------------------------------------- | ------------------ | ------------- | ---------------- |
+| 1. Absolute error, every player-game                                 | 141,303 (3,018)    | −0.014        | [−0.019, −0.010] |
+| 2. Squared error, every player-game                                  | 141,303 (3,018)    | −0.539        | [−0.641, −0.436] |
+| 3. Absolute error, games after a star's return                       | 10,242 (1,268)     | −0.061        | [−0.077, −0.045] |
+
+All three intervals lie below 0. **Per the pre-registration, the context-aware projection ships with its switch on**, after the participation tracking (#210, merged Nov 20).
+
+**Described, not tested:**
+
+| Games                                             | n       | MAE: model − today (95% CI)                            | Signed error today → model |
+| ------------------------------------------------- | ------- | ------------------------------------------------------ | -------------------------- |
+| 2010-17, no layers                                | 141,303 | −0.010 [−0.015, −0.006]                                | −0.26 → −0.15              |
+| 2010-17, environment only                         | 141,303 | −0.012 [−0.017, −0.007]                                | −0.17 → −0.07              |
+| 2010-17, defense only                             | 141,303 | −0.012 [−0.017, −0.008]                                | −0.24 → −0.17              |
+| 2010-17, both (the test)                          | 141,303 | −0.014 [−0.019, −0.010]                                | −0.17 → −0.10              |
+| By season, 2010-11 … 2016-17                      | 18–23k  | −0.016, −0.007, −0.008, −0.009, −0.017, −0.021, −0.024 | —                          |
+| Star out, his games 1–3                           | 9,194   | +0.005 [−0.038, +0.048]                                | −2.08 → −0.84              |
+| Star out, same position group                     | 5,495   | −0.039 [−0.124, +0.046]                                | −2.68 → −1.39              |
+| No regular out                                    | 57,488  | −0.037 [−0.042, −0.032]                                | +0.65 → +0.49              |
+| Only absences already known the day before        | 68,929  | −0.006 [−0.017, +0.004]                                | −0.74 → −0.53              |
+| Centers after a star's return                     | 1,759   | −0.082 [−0.116, −0.048]                                | −0.57 → −0.94              |
+| 2019-25 (#208's seasons), no layers               | 132,968 | −0.036 [−0.044, −0.029]                                | −0.52 → −0.34              |
+| 2019-25, both layers                              | 132,968 | −0.045 [−0.053, −0.038]                                | −0.34 → −0.22              |
+| 2019-25, both layers, games after a star's return | 15,260  | −0.119 [−0.136, −0.102]                                | +0.65 → +0.15              |
+
+- **The layers don't absorb it:** environment and defense make the gain larger, on both sets of seasons (2010-17 −0.010 → −0.014; 2019-25 −0.036 → −0.045). A likely reason: a star's absence lowers his team's implied total, which pulls everyone's projection down, while the context model moves the teammates who take on his role back up.
+- **Smaller in the older game:** −0.014 against −0.045 in 2019-25. Possibly fewer rest days and different rotations then, the era difference Jack expected. Every 2010-17 season leans the same way (four of seven intervals below 0).
+- **Star-out games:** the model halves today's bias (−2.08 → −0.84), but per-game MAE there doesn't move in 2010-17. Most of the gain is in the full-strength games and the returns: no regular out −0.037, a star back −0.061.
+- **Known the day before only:** −0.006, not separable from 0 in 2010-17 (−0.031 in 2019-25). In the older game most of the gain needs tonight's actual absences, so the participation tracking and NBA.com's inactive list (#210) matter.
+- **Centers after a star's return:** better on MAE, but the signed error goes from −0.57 to −0.94. The model takes back too much from centers in that era. That's for the between-seasons refit, not a change now.
+- **Forward check:** pre-registered at ship on 2026-27's logged pregame projections (real pregame statuses), judged once on Jan 15, 2027.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

@@ -1368,6 +1368,41 @@ The interval's top is just above 0, so **1 does not pass**, and 2 (minutes) is n
 
 **When:** pushed before anything else is run. Then `DRY=1` (counts only), then one evaluation. Nothing is tuned or re-run.
 
+### Result (2026-11-19): passed, all three; ships
+
+One evaluation (`scripts/backtest-teammate-context.ts`, pre-registration pushed at 43bcdc9). `DRY=1` first: 19,580 to 23,455 player-games a season (463–521 players), 132,968 in all. A star was out in 25,073 of them, and a star had just returned in 15,260.
+
+| Comparison                                     | n (player-seasons) | Model − today | 95% CI           |
+| ---------------------------------------------- | ------------------ | ------------- | ---------------- |
+| 1. Absolute error, every player-game           | 132,968 (2,998)    | −0.036        | [−0.044, −0.029] |
+| 2. Squared error, every player-game            | 132,968 (2,998)    | −1.388        | [−1.616, −1.160] |
+| 3. Absolute error, games after a star's return | 15,260 (1,677)     | −0.097        | [−0.114, −0.081] |
+
+All three intervals lie below 0. **The context-aware projection ships**, per the pre-registration.
+
+**Described, not tested:**
+
+| Games                                            | n      | MAE: model − today (95% CI) | Signed error today → model (FP) |
+| ------------------------------------------------ | ------ | --------------------------- | ------------------------------- |
+| 2019-20                                          | 19,580 | −0.028 [−0.043, −0.013]     | −0.49 → −0.35                   |
+| 2020-21                                          | 20,294 | −0.023 [−0.040, −0.006]     | −0.56 → −0.36                   |
+| 2021-22                                          | 23,160 | −0.045 [−0.064, −0.027]     | −0.52 → −0.34                   |
+| 2022-23                                          | 23,053 | −0.048 [−0.065, −0.030]     | −0.47 → −0.32                   |
+| 2023-24                                          | 23,426 | −0.020 [−0.042, +0.003]     | −0.59 → −0.36                   |
+| 2024-25                                          | 23,455 | −0.052 [−0.072, −0.032]     | −0.50 → −0.31                   |
+| Star out, his games 1–3                          | 13,799 | −0.033 [−0.078, +0.011]     | −2.57 → −1.06                   |
+| Star out, games 4+                               | 12,213 | −0.019 [−0.062, +0.024]     | −1.75 → −0.82                   |
+| Star out, same position group                    | 8,173  | −0.128 [−0.209, −0.047]     | −3.14 → −1.49                   |
+| No regular out                                   | 32,612 | −0.066 [−0.074, −0.057]     | +0.76 → +0.50                   |
+| Only absences already ongoing (known day before) | 84,748 | −0.031 [−0.041, −0.021]     | −0.96 → −0.64                   |
+| Centers after a star's return                    | 2,378  | −0.186 [−0.232, −0.140]     | +0.73 → +0.22                   |
+
+- **Jack's theory holds:** with a star out, teammates beat today's projection by 2.6 FP in his first three games out (3.1 at his position). Today's projection misses it, and the model takes away more than half of the miss. After the star returns, today's projection runs high, most of all for centers (+0.73). The model brings that to +0.22.
+- **Held up out of sample:** the held-out effect (−0.036) is larger than the exploration's (−0.020), and every season improves (5 of 6 intervals below 0).
+- **Size:** about as large as minutes × rate (−0.038 on its held-out season), the biggest projection change shipped so far; opponent defense gained −0.010. Most of it comes from games where it matters: stars out, stars back, full-strength nights.
+- **Still conservative:** the model removes about half of the bias in star-out games. A stronger factor might do better, but that would be a new test; nothing here is retuned.
+- **Production:** the lower bound (absences already known the day before) still gains −0.031, so most of the benefit doesn't depend on late scratches.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

@@ -37,6 +37,8 @@ import { loadWaiverInputs } from "../lib/nba/waivers-view";
 /** Seasons per move in every job (the top tier's minimum, TOP_TIER.minSeasons). */
 const SEASONS = 4_000;
 const CHUNKS = SEASONS / CHUNK_SEASONS;
+/** One core's loop (a worker thread). */
+const chunkFile = new URL("./replay-tiers-chunk.ts", import.meta.url).href;
 /** Tier B's contenders: the last sweep's best moves by title change (fallback 60, §11). */
 const CONTENDERS = [20, 60];
 const LEAGUE_MOVES = 10;
@@ -259,7 +261,12 @@ async function simulate(jobs: Job[]): Promise<Map<string, Effect>[]> {
   let next = 0;
   const pool = Array.from(
     { length: cores },
-    () => new Worker(new URL("./replay-tiers-chunk.ts", import.meta.url)),
+    // TypeScript in the worker threads too: they don't inherit tsx, so each registers it first.
+    () =>
+      new Worker(
+        `import("tsx/esm/api").then((t) => { t.register(); return import(${JSON.stringify(chunkFile)}); })`,
+        { eval: true },
+      ),
   );
   await Promise.all(
     pool.map(async (w) => {

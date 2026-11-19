@@ -100,6 +100,8 @@ export interface Row {
   actual: number;
   /** His minutes during the absence minus before it. */
   minShift: number;
+  /** Straight team games the returning player missed. */
+  missed: number;
   /** P's position group, and whether it's T's. */
   group: string | null;
   /** Same group as T, and minutes up ≥ 4 (test 2's set 2). */
@@ -120,6 +122,9 @@ export interface Row {
   minBefore: number;
   minDuring: number;
   minAfter: number;
+  /** His FP/G and minutes over his next 10 games from the return (test 7's target). */
+  next10: number;
+  min10: number;
   tFp: number;
   /**
    * Described (test 5's exploration): the returning player, his group, both players' eligible
@@ -140,7 +145,14 @@ const parsed = new Map<string, GameLogEntry[]>();
 export function analyze(
   season: number,
   scoring: ScoringMap,
-  { includeUndefined = false }: { includeUndefined?: boolean } = {},
+  {
+    includeUndefined = false,
+    minMissed = MIN_MISSED,
+  }: {
+    includeUndefined?: boolean;
+    /** Straight team games the regular must miss (5; test 7: 3). */
+    minMissed?: number;
+  } = {},
 ): Row[] {
   const fp = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
   const read = (file: string): GameLogEntry[] => {
@@ -227,7 +239,7 @@ export function analyze(
       if (mean(before.map((g) => g.min)) < REGULAR_MIN) continue;
       const schedule = teamGames.get(team)!;
       const missed = schedule.filter((g) => g.t > last.t && g.t < back.t);
-      if (missed.length < MIN_MISSED) continue;
+      if (missed.length < minMissed) continue;
       const missedSides = new Set(missed.map((g) => g.side));
       const tGroup = groupOf(positions.get(t));
       // The team's games from the return on (known on the day): B's weights.
@@ -260,6 +272,7 @@ export function analyze(
           C: (base + A) / 2,
           actual: mean(rest.map((g) => g.fp)),
           minShift,
+          missed: missed.length,
           group,
           same: sameGroup && minShift >= SAME_SHIFT,
           sameGroup,
@@ -273,6 +286,8 @@ export function analyze(
           minBefore: beforeAbsence.length ? mean(beforeAbsence.map((g) => g.min)) : NaN,
           minDuring: mean(during.map((g) => g.min)),
           minAfter: mean(rest.map((g) => g.min)),
+          next10: mean(rest.slice(0, 10).map((g) => g.fp)),
+          min10: mean(rest.slice(0, 10).map((g) => g.min)),
           tFp: mean(before.map((g) => g.fp)),
           teammate: t,
           tGroup,

@@ -994,3 +994,36 @@
   - play probabilities;
   - `status_events` (its dedupe and forward tests stay as registered);
   - the official report's read rate (one file per quarter hour).
+
+## ADR-069: the projection knows who's missing (2026-11-20)
+
+- **Why:**
+  - Jack's theory: when a player misses games, from one game to the whole season, his teammates produce more, the more so when he's a star. When he returns, they produce less.
+  - The test: "teammate absences by impact" passed on 2019-20 to 2024-25 (−0.036 FP/game [−0.044, −0.029]). It passed again on the unseen 2010-11 to 2016-17 with game environment and opponent defense on both sides (−0.014 [−0.019, −0.010]; after a star's return −0.061). See MODEL_CARD.
+  - Supersedes ADR-031's "no teammate role boost". ADR-064's event model stays off.
+- **The model** (`lib/nba/context.ts`, pure; the backtest uses the same code):
+  - **Factor:** a game's factor for a player is 1 + 0.75 × min(0.6, Σ over regulars out of max(0, share − 0.10) × (2 in his position group, else 1)).
+  - **Regular out:** 20+ minutes a game over his last 10. His share is his FP/G over his last 10 ÷ the team's FP per game over its last 10.
+  - **De-inflation:** each of his earlier games is divided by its factor (FP and minutes), so his projection is built from full-strength games.
+  - **Each game:** the projection is multiplied by that game's factor.
+- **Nightly** (`lib/nba/context-run.ts`, step `context`, after `results`, before the simulations):
+  - **Reads:** this season's box scores (ADR-068).
+  - **Stores (gzipped `view_cache` row `context`):**
+    - for each player, every game with a factor above 1: its id, day, factor, and the FP and minutes it loses at full strength;
+    - for each team, its regulars now, with their shares and names.
+  - **Waits** until no more than 2% of finished games are missing, so the first nights after deploy, while the catch-up fills the season, change nothing.
+  - **Gameday fallback:** a gameday run computes the context when none is stored or it's over 26 hours old.
+- **Attached** as players load (`lib/nba/data.ts`: league, free agents, players by id), as `RosterPlayer.context`:
+  - **`adj`:** the earlier games' losses;
+  - **`days`:** his factor from each day on.
+  - **Who's out:** each regular counts until his estimated return (`absenceOf`: ESPN ruled out; the whole season if not back), or for today when NBA.com lists him inactive.
+- **Used everywhere a projection is:**
+  - **Inside `perGameProjection`:** the season line minus the earlier games' losses, and the minutes trend on full-strength minutes. That covers every consumer, the worker included (it's JSON on the player).
+  - **Per game:** × `factorOn(p, day)` in the day board (Today, alerts, lineup apply), the week projection and week page, best/props, logged projections, the player card, and Waivers' rest-of-season games.
+  - **Season-long:**
+    - `teamValue`: lineups keyed by how many change days have passed, so any number of changes is fine;
+    - the simulator: `SimPlayer.change` is now `changes`, a list.
+  - **The card:** "+45% with Duren out", and "X/g now · Y/g once Duren is back (date)".
+- **Logged:** `pregame_projections` gets `context_factor` and `context_free_fppg` (migration 0035), the whole projection without the model, for the forward check. Defense keeps dividing out only `matchup_factor`: its table learns from the model's own predictions, as in the re-run.
+- **Switch:** `CONTEXT_ON` in `lib/nba/context-run.ts`. Off means no player carries a context; the nightly still computes it.
+- **Forward check:** 2026-27's logged pregame projections, judged once on Jan 15, 2027 (MODEL_CARD). Its result feeds the between-seasons refit, not a mid-season removal (Jack, Nov 17).

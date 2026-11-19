@@ -1497,6 +1497,29 @@ All three intervals lie below 0. **Per the pre-registration, the context-aware p
 - **Centers after a star's return:** better on MAE, but the signed error goes from −0.57 to −0.94. The model takes back too much from centers in that era. That's for the between-seasons refit, not a change now.
 - **Forward check:** pre-registered at ship on 2026-27's logged pregame projections (real pregame statuses), judged once on Jan 15, 2027.
 
+### Pre-registration: forward check on 2026-27 (2026-11-20, at ship, before any 2026-27 outcome)
+
+**Why:** both tests above used past seasons, box scores for who sat, and last season as the prior. This check uses production as it runs: ESPN's preseason projection as the prior, ESPN and NBA.com statuses as known at each snapshot, and the live environment and defense. No 2026-27 outcome had been compared when this was written: the context model wasn't attached to any player yet (ADR-069; it waits for the season's box scores).
+
+**Data:** `pregame_projections`, snapshot `pregame` (22:00 UTC), with `game_results` for the players who played.
+
+- **Window:** every game from the first day a logged row has `context_factor` (the first nightly with the season's box scores; the date is reported) through games played Jan 14, 2027.
+- **Both projections at the same moment:** `model_fppg` (with the model) and `context_free_fppg` (the same projection without de-inflation or factor).
+- **Players:** league-rostered players and the free agents the snapshot logs (as the props test).
+
+**Comparison (one):** per player, the mean of |model − actual| − |context-free − actual| over his games. The mean of those, with a normal 95% interval. **Passes** if the whole interval is below 0.
+
+**Described, not tested:**
+
+- games with a factor above 1;
+- games where the two differ only by de-inflation (factor 1);
+- signed errors;
+- the late-scratch count over the window (Settings' "Who played").
+
+**When:** judged once, on Jan 15, 2027. The evaluation reads production's tables, so it's built as a Model-page job before then, with this comparison unchanged.
+
+**Consequence (Jack, Nov 17):** the result feeds the between-seasons refit of k, floor and same-position weight (with 2026-27 added to the history). The model isn't pulled mid-season. If it fails, Jack is told, with the described rows.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

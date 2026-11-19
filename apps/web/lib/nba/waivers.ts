@@ -19,6 +19,7 @@ import {
 } from "@fantasy-copilot/fantasy-core";
 import { etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
 import { perGameProjection } from "./projection";
+import { factorOn } from "./context";
 import { teamValue, weighted, type Holes, type ValueContext } from "./trade";
 import { projectTeamWeek, winProbability, type WeekInputs } from "./week";
 
@@ -150,12 +151,11 @@ export function waiverCandidates(
 ): { candidates: WaiverCandidate[]; availableFrom: Map<number, number> } {
   const { week } = a;
   const lastWeekDay = Math.max(...week.periods);
-  const gamesBetween = (pro: number, from: number, to: number) =>
-    countGames(week.games, pro, from, to);
+  // Each game counted at his factor for teammates out that day (the context-aware projection).
   const ros = (p: RosterPlayer) =>
     perGameProjection(p).fppg *
     availability(p) *
-    gamesBetween(p.proTeamId, lastWeekDay + 1, a.lastDay);
+    countGames(week.games, p.proTeamId, lastWeekDay + 1, a.lastDay, (sp) => factorOn(p, sp));
   // When each free agent can first play: after his claim processes, and not in a game already
   // under way (or not today at all once the roster has locked). Starts from the week's own
   // windows (players added after today's lock).
@@ -175,7 +175,7 @@ export function waiverCandidates(
         status: f.status,
         waiverUntil: f.waiverUntil,
         fppg: perGameProjection(f.player).fppg,
-        weekGames: gamesBetween(f.player.proTeamId, from, lastWeekDay),
+        weekGames: countGames(week.games, f.player.proTeamId, from, lastWeekDay),
         ros: ros(f.player),
       };
     })
@@ -205,12 +205,11 @@ export function waiverAnalysis(a: WaiverInputs): {
 } {
   const { week } = a;
   const lastWeekDay = Math.max(...week.periods);
-  const gamesBetween = (pro: number, from: number, to: number) =>
-    countGames(week.games, pro, from, to);
+  // Each game counted at his factor for teammates out that day (the context-aware projection).
   const ros = (p: RosterPlayer) =>
     perGameProjection(p).fppg *
     availability(p) *
-    gamesBetween(p.proTeamId, lastWeekDay + 1, a.lastDay);
+    countGames(week.games, p.proTeamId, lastWeekDay + 1, a.lastDay, (sp) => factorOn(p, sp));
 
   const { candidates, availableFrom } = waiverCandidates(a);
 
@@ -500,11 +499,18 @@ function bestForSeason(options: StreamOption[]): StreamOption | null {
     .sort((x, y) => y.deltaPts - x.deltaPts || y.seasonScore - x.seasonScore)[0]!;
 }
 
-function countGames(games: ProGame[], pro: number, from: number, to: number) {
+/** A team's games from `from` to `to`, each counted `weight` (1 by default). */
+function countGames(
+  games: ProGame[],
+  pro: number,
+  from: number,
+  to: number,
+  weight: (sp: number) => number = () => 1,
+) {
   let n = 0;
   for (const g of games) {
     if (g.scoringPeriodId < from || g.scoringPeriodId > to) continue;
-    if (g.homeProTeamId === pro || g.awayProTeamId === pro) n++;
+    if (g.homeProTeamId === pro || g.awayProTeamId === pro) n += weight(g.scoringPeriodId);
   }
   return n;
 }

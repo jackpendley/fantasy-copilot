@@ -21,6 +21,7 @@ import {
   type ScoreboardGame,
 } from "@fantasy-copilot/nba-data";
 import { activeStatus } from "./active";
+import { factorOn } from "./context";
 import {
   gameEnvironment,
   matchupFactor,
@@ -174,7 +175,9 @@ export function buildDayBoard(input: DayInputs): DayBoard {
               game.home ? pro.awayProTeamId : pro.homeProTeamId,
               player.positions,
             )
-          : 1)
+          : 1) *
+        // Teammates out tonight (the context-aware projection).
+        factorOn(player, input.games[0]?.scoringPeriodId ?? 0)
       : 1;
     return {
       player,

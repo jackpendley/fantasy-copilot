@@ -7,6 +7,7 @@ import type { LeagueSettings, ProGame, RosterPlayer } from "@fantasy-copilot/esp
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import { bestProjection, blendSetting } from "./accuracy";
 import { propsForGames } from "./market-data";
+import { factorOn } from "./context";
 import { gameEnvironment, matchupFactor, perGameProjection, type DefenseTable } from "./projection";
 import { vegasProjection } from "./vegas";
 
@@ -36,7 +37,8 @@ export async function bestPerGame(
         data.scoreboard.find((s) => s.gameId === g.gameId),
         home,
       ) *
-      matchupFactor(data.defense, home ? g.awayProTeamId : g.homeProTeamId, p.positions);
+      matchupFactor(data.defense, home ? g.awayProTeamId : g.homeProTeamId, p.positions) *
+      factorOn(p, sp);
     const vegas = vegasProjection(
       props.get(p.id) ?? [],
       p.projection?.stats,

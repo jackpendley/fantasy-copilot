@@ -37,6 +37,8 @@ import { LAST_SCORING_PERIOD, dateForScoringPeriod } from "./calendar";
 import { defenseTable } from "./defense-table";
 import { withTeammateReturns } from "./teammate-return";
 import { teammateReturnEffects } from "./teammate-return-run";
+import { outUntilFor, withContext } from "./context";
+import { storedContext } from "./context-run";
 
 /** How long each read is reused: rosters and matchups, live scores, slower feeds. */
 const LEAGUE_FETCH = memoFetch(20_000);
@@ -117,25 +119,41 @@ async function readLeague(scoringPeriodId: number, ymd: string) {
     leagueJson(scoringPeriodId),
     rostersAhead(scoringPeriodId),
   ]);
-  const [games, board, injuries, lineups, defense, leagueTotal, returns] = await Promise.all([
-    nbaSchedule(season),
-    fetchScoreboard(yyyymmdd, LIVE_FETCH).catch(() => []),
-    safeInjuries(),
-    // Published on game days only; any failure just means no lineup info yet.
-    fetchDailyLineups(yyyymmdd, LINEUPS_FETCH).catch(() => null),
-    defenseTable().catch(() => null),
-    leagueTeamTotal(ymd).catch(() => null),
-    teammateReturnEffects(),
-  ]);
+  const [games, board, injuries, lineups, defense, leagueTotal, returns, context] =
+    await Promise.all([
+      nbaSchedule(season),
+      fetchScoreboard(yyyymmdd, LIVE_FETCH).catch(() => []),
+      safeInjuries(),
+      // Published on game days only; any failure just means no lineup info yet.
+      fetchDailyLineups(yyyymmdd, LINEUPS_FETCH).catch(() => null),
+      defenseTable().catch(() => null),
+      leagueTeamTotal(ymd).catch(() => null),
+      teammateReturnEffects(),
+      storedContext(),
+    ]);
   // Each game's line carries this season's league-average team total (the projection's
   // game-environment factor divides by it).
   const scoreboard = board.map((g) => ({ ...g, leagueTotal }));
   const settings = parseSettings(raw);
-  // A fill-in's projection drops once the regular he replaced returns (ADR-064).
-  const attach = (roster: RosterPlayer[]) =>
-    withTeammateReturns(roster, returns, injuries.list, scoringPeriodId, everyone);
   const parsed = parseTeams(raw);
   const everyone = [...parsed.flatMap((t) => t.roster), ...[...(ahead?.values() ?? [])].flat()];
+  // A fill-in's projection drops once the regular he replaced returns (ADR-064, off), and the
+  // context-aware projection: who's out of his team and until when (ADR-069).
+  const outUntil =
+    context &&
+    outUntilFor(context, {
+      injuries: injuries.list,
+      lineups,
+      players: everyone,
+      today: scoringPeriodId,
+    });
+  const attach = (roster: RosterPlayer[]) =>
+    withContext(
+      withTeammateReturns(roster, returns, injuries.list, scoringPeriodId, everyone),
+      context,
+      outUntil ?? (() => null),
+      scoringPeriodId,
+    );
   const teams = parsed.map((t) => ({ ...t, roster: attach(t.roster) }));
   const me = teams.find((t) => t.id === teamId);
   if (!me) throw new Error(`team ${teamId} not found in the league`);
@@ -193,12 +211,21 @@ async function readFreeAgents(scoringPeriodId: number, limit = 250) {
     scoringPeriodId,
     fetchImpl: FEED_FETCH,
   });
-  const [returns, injuries] = await Promise.all([teammateReturnEffects(), safeInjuries()]);
+  const [returns, injuries, context] = await Promise.all([
+    teammateReturnEffects(),
+    safeInjuries(),
+    storedContext(),
+  ]);
   const free = parseFreeAgents(raw, cfg.season);
-  if (!returns.length) return free;
-  const fixed = withTeammateReturns(
-    free.map((f) => f.player),
-    returns,
+  if (!returns.length && !context) return free;
+  const fixed = withContextFor(
+    withTeammateReturns(
+      free.map((f) => f.player),
+      returns,
+      injuries.list,
+      scoringPeriodId,
+    ),
+    context,
     injuries.list,
     scoringPeriodId,
   );
@@ -214,7 +241,26 @@ export async function loadPlayersById(ids: number[], scoringPeriodId: number) {
     scoringPeriodId,
     fetchImpl: FEED_FETCH,
   });
-  return new Map(parsePlayerPool(raw, cfg.season).map((p) => [p.id, p]));
+  const [injuries, context] = await Promise.all([safeInjuries(), storedContext()]);
+  const players = withContextFor(
+    parsePlayerPool(raw, cfg.season),
+    context,
+    injuries.list,
+    scoringPeriodId,
+  );
+  return new Map(players.map((p) => [p.id, p]));
+}
+
+/** The context-aware projection for players loaded outside the league (no lineups read). */
+function withContextFor<T extends RosterPlayer>(
+  players: T[],
+  context: Awaited<ReturnType<typeof storedContext>>,
+  injuries: Awaited<ReturnType<typeof safeInjuries>>["list"],
+  today: number,
+): T[] {
+  if (!context) return players;
+  const outUntil = outUntilFor(context, { injuries, lineups: null, players, today });
+  return withContext(players, context, outUntil, today);
 }
 
 /**

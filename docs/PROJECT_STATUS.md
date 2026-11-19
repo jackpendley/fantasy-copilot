@@ -85,7 +85,9 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 
 ## Next tasks
 
-0. **Build the context-aware projection** (MODEL_CARD "teammate absences by impact", passed Nov 19): each player's past games de-inflated by which regulars were out, today's and future games boosted from the injury report. Needs every team's game logs nightly. Own PR with an ADR superseding ADR-031.
+0. **Context-aware projection (ADR-069), shipped Nov 20 with its switch on.** Who played per game and NBA.com's lineup log shipped first (ADR-068, #210). The re-run with environment and defense passed on the unseen 2010-17 seasons (#211).
+   - **Watch the first nights:** Settings → "Who played" fills, and the nightly's `results` step catches up the season (120 games a night, about three nights). Then the `context` step stores the context (`refresh_log`: players, adjusted games). Cards then show "+X% with … out".
+   - **Before Jan 15, 2027:** build the forward check's evaluation (MODEL_CARD, pre-registered Nov 20) as a Model-page job, and run it once on Jan 15.
 1. The two follow-ups above.
 2. **Watch the database daily for a week** against the budget: ≤ ~67 MB and ≤ 2 CU-hours a day.
 3. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker).

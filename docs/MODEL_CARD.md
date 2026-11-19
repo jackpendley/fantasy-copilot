@@ -1317,6 +1317,92 @@ The interval's top is just above 0, so **1 does not pass**, and 2 (minutes) is n
 - **The points gain is small:** −0.145 FP/G per affected big (MAE 5.09 → 4.94, 3%), about 40% of the explored seasons' effect, which the pre-registration flagged as optimistic. Part of the minutes drop doesn't reach points: these bigs score a little more per minute when they play less.
 - **What it means:** the direction Jack expects holds in 32 seasons of data, but the size is about 0.15 FP/G for one or two players on a team, for 10 games. That's too small for this test to confirm at 95%, and too small to change a decision. No unseen seasons are left; the 2026-27 forward checks continue.
 
+## Pre-registration: teammate absences by impact — a projection that knows who's missing (2026-11-19, before any held-out run)
+
+**Jack's theory (Nov 19):** when a player misses games, from 1 game to the whole season, his teammates produce more, and more so when he's a star (Curry, LeBron, Duren) than a role player. The return is the mirror image. Modern seasons are preferred, since the game has changed.
+
+**Why this isn't a repeat of what failed:** ADR-031 and the Oct 29 test A boosted tonight's projection for absent teammates' minutes, and both failed even in exploration. Tests 1–7 looked only at long absences and the games after. This candidate differs in three ways:
+
+- **Impact, not minutes:** an absent teammate counts by his share of the team's fantasy points, and only the part above a floor. Stars carry most of the weight; role players carry little or none.
+- **Regulars only:** players who left the rotation or the team no longer count as "absent" for the rest of the season, as they did in the exploration's first try.
+- **Both directions in one model:** each of the player's earlier games is divided by its own context factor, so his projection is built from full-strength games. Tonight's factor then multiplies it. A long absence is no longer counted twice: once in his inflated recent games and again in the boost. After the star returns, the factor is 1, so the inflated games are discounted (the Paul Reed case).
+
+**Model (`scripts/teammate-context.ts`, `scripts/backtest-teammate-context.ts`):**
+
+- **Context factor of a game for player P:** 1 + k × min(0.6, Σ over absent regulars T of max(0, share_T − floor) × (s if T is in P's position group, else 1)).
+- **Absent regular T:** 20+ minutes a game over his last 10 (5+ games this season), his latest game for this team, didn't play. A teammate whose next game is for another team was traded; in production the roster says so.
+- **share_T:** T's FP/G over his last 10 games ÷ the team's FP per game over its last 10.
+- **Prediction:** `perGameProjection` from P's earlier games, each game's FP and minutes divided by its factor, then × tonight's factor.
+- **Settings, frozen:** k 0.75, floor 0.10, s 2.
+
+**Baseline:** `perGameProjection` from his games as they were (minutes × rate, prior, minutes trend), as in tests 1–7. Game environment and opponent defense multiply the model and the baseline alike, so both leave them out. For an adjustment, CLAUDE.md's baseline is the production rule it changes.
+
+**Exploration (2017-18, 2018-19, 2025-26; disclosed):**
+
+- 2025-26 was already the Oct 27/29 exploration season for teammate absences.
+- About 40 settings were compared: boost only vs de-inflate and boost; FP only vs FP and minutes; all absences vs regulars only; floors 0 to 0.12; k 0.25 to 1.5; s 1 or 2. The lowest MAE was chosen. The grid was flat near the choice (−0.015 to −0.020), but choosing among 40 still flatters it.
+- What the exploration showed (actual − today's projection, FP): nobody out −0.4; a star's first game out (share ≥ 0.18) +2.7 (+19%), +3.8 for the same position; a star out 11+ games still +1.9. It rises with the absent player's share: under 12% 0.0, 12–16% +1.0, 16–20% +1.8, 20–25% +1.9, over 25% +3.0.
+- **The chosen model on the exploration seasons:** MAE −0.020 [−0.030, −0.010] per player-game; squared error −1.02 [−1.26, −0.78]; after a star's return −0.076 [−0.101, −0.052]. By season: −0.001, −0.020, −0.035.
+
+**Held out: 2019-20 to 2024-25** (priors 2018-19 to 2023-24, from the cache `fetch-history.ts` built).
+
+- **Disclosure:** tests 2–5 used these seasons for return events (a fill-in's rest-of-season FP/G). The Nov 17 exploration described fill-ins' FP/G during long absences in aggregate. 2024-25 was the held-out season of the Oct 29 projection tests (other questions).
+- **Never computed on them:** any game-by-game comparison of an absence-aware projection with today's.
+
+**Point in time:** past absences come from box scores. Tonight's absences come from who didn't play; production would read the injury report, which misses late scratches, so this is an upper bound. The "already ongoing" variant below, which counts only absences known the day before, is the lower bound.
+
+**Comparisons, in a fixed sequence, each at 95% (overall error 5%):** per player-season, the mean of model − today; the mean of those, with a normal 95% interval. A comparison passes if the whole interval is below 0, and a later one is tested only if every earlier one passed.
+
+1. **Absolute error, every player-game.** This decides shipping, as in every projection test.
+2. **Squared error, every player-game:** weekly totals and the simulator use the projection as a mean.
+3. **Absolute error, games after a star's return:** a teammate with share ≥ 0.18 missed 3+ of P's last 10 games and plays tonight. This is Jack's original question.
+
+**Described, not tested:** by season; a star's games 1–3 out, and 4+; star out, same position group; no regular out; only absences already ongoing; centers after a star's return; signed errors throughout.
+
+**Power:** about 3,000 player-seasons give an interval of about ±0.007. At the exploration effect (−0.020) it passes almost surely; at half of it, about 80%.
+
+**Consequence:**
+
+- **1 passes:** the projection becomes context-aware, in its own PR with an ADR (superseding ADR-031's "no teammate role boost"). Each player's past games are de-inflated by who was out. Today's and future games get the factor from the injury report: OUT players, through their estimated return. This applies to Today, Matchup, the week projection, `teamValue` and the simulator. It needs every team's game logs nightly, to know who was out in each past game. Test 4/7's event model stays off; this replaces it.
+- **1 fails:** nothing ships, and these seasons are used up for this question.
+
+**When:** pushed before anything else is run. Then `DRY=1` (counts only), then one evaluation. Nothing is tuned or re-run.
+
+### Result (2026-11-19): passed, all three; ships
+
+One evaluation (`scripts/backtest-teammate-context.ts`, pre-registration pushed at 43bcdc9). `DRY=1` first: 19,580 to 23,455 player-games a season (463–521 players), 132,968 in all. A star was out in 25,073 of them, and a star had just returned in 15,260.
+
+| Comparison                                     | n (player-seasons) | Model − today | 95% CI           |
+| ---------------------------------------------- | ------------------ | ------------- | ---------------- |
+| 1. Absolute error, every player-game           | 132,968 (2,998)    | −0.036        | [−0.044, −0.029] |
+| 2. Squared error, every player-game            | 132,968 (2,998)    | −1.388        | [−1.616, −1.160] |
+| 3. Absolute error, games after a star's return | 15,260 (1,677)     | −0.097        | [−0.114, −0.081] |
+
+All three intervals lie below 0. **The context-aware projection ships**, per the pre-registration.
+
+**Described, not tested:**
+
+| Games                                            | n      | MAE: model − today (95% CI) | Signed error today → model (FP) |
+| ------------------------------------------------ | ------ | --------------------------- | ------------------------------- |
+| 2019-20                                          | 19,580 | −0.028 [−0.043, −0.013]     | −0.49 → −0.35                   |
+| 2020-21                                          | 20,294 | −0.023 [−0.040, −0.006]     | −0.56 → −0.36                   |
+| 2021-22                                          | 23,160 | −0.045 [−0.064, −0.027]     | −0.52 → −0.34                   |
+| 2022-23                                          | 23,053 | −0.048 [−0.065, −0.030]     | −0.47 → −0.32                   |
+| 2023-24                                          | 23,426 | −0.020 [−0.042, +0.003]     | −0.59 → −0.36                   |
+| 2024-25                                          | 23,455 | −0.052 [−0.072, −0.032]     | −0.50 → −0.31                   |
+| Star out, his games 1–3                          | 13,799 | −0.033 [−0.078, +0.011]     | −2.57 → −1.06                   |
+| Star out, games 4+                               | 12,213 | −0.019 [−0.062, +0.024]     | −1.75 → −0.82                   |
+| Star out, same position group                    | 8,173  | −0.128 [−0.209, −0.047]     | −3.14 → −1.49                   |
+| No regular out                                   | 32,612 | −0.066 [−0.074, −0.057]     | +0.76 → +0.50                   |
+| Only absences already ongoing (known day before) | 84,748 | −0.031 [−0.041, −0.021]     | −0.96 → −0.64                   |
+| Centers after a star's return                    | 2,378  | −0.186 [−0.232, −0.140]     | +0.73 → +0.22                   |
+
+- **Jack's theory holds:** with a star out, teammates beat today's projection by 2.6 FP in his first three games out (3.1 at his position). Today's projection misses it, and the model takes away more than half of the miss. After the star returns, today's projection runs high, most of all for centers (+0.73). The model brings that to +0.22.
+- **Held up out of sample:** the held-out effect (−0.036) is larger than the exploration's (−0.020), and every season improves (5 of 6 intervals below 0).
+- **Size:** about as large as minutes × rate (−0.038 on its held-out season), the biggest projection change shipped so far; opponent defense gained −0.010. Most of it comes from games where it matters: stars out, stars back, full-strength nights.
+- **Still conservative:** the model removes about half of the bias in star-out games. A stronger factor might do better, but that would be a new test; nothing here is retuned.
+- **Production:** the lower bound (absences already known the day before) still gains −0.031, so most of the benefit doesn't depend on late scratches.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

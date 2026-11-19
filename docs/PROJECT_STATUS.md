@@ -85,6 +85,7 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 
 ## Next tasks
 
+0. **Build the context-aware projection** (MODEL_CARD "teammate absences by impact", passed Nov 19): each player's past games de-inflated by which regulars were out, today's and future games boosted from the injury report. Needs every team's game logs nightly. Own PR with an ADR superseding ADR-031.
 1. The two follow-ups above.
 2. **Watch the database daily for a week** against the budget: ≤ ~67 MB and ≤ 2 CU-hours a day.
 3. **PR 7:** the worker reads and writes Neon directly (ADR; `/api/worker/*` moves into the worker).

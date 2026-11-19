@@ -509,3 +509,71 @@ Jack's goal (Nov 17): after a trigger, the Outlook and the moves involving the c
 - **One league state:** a single morning.
 
 `scripts/replay-tiers.ts` (`DRY=1` lists the changes; the run prints each change and the verdict).
+
+## 12. Skipping unaffected moves
+
+Tiers (§11) change only the order of a job's work, so they can't shorten "all checks". The checks take 27 to 45 minutes because every trigger re-runs every move. Most triggers are about players most moves don't involve: a rival's add/drop, or news on one of Jack's players.
+
+**Design.**
+
+- **On a rival's move or injury news:** the job re-runs the Outlook plus only the moves the change touches or makes new. Every other move keeps its numbers from the last full sweep.
+- **Full sweeps** stay as today: the nightly run and Jack's own moves re-run everything.
+- **Busy days:** after several triggers, a job re-checks every move touched or made new since the last full sweep.
+
+**Expected gain** (from the dry run, before any simulation):
+
+- **League moves:** 0 to 3 of about 165 moves re-checked.
+- **Injury news:** 0 moves when the player is on Jack's Never-drop list (8 of the 10 replayed). 55 when the player can be dropped.
+- **On a busy day:** 21 of 159 after 10 rival moves, and 67 with 3 news items as well.
+
+Such a job would take about as long as the Outlook (3 to 5 minutes) instead of 27 to 45.
+
+### The replay test (pre-registered Nov 19, before its run)
+
+**Question.** Jack's best moves are shown from re-checked numbers for touched and new moves, and the last full sweep's numbers for the rest. Are they the same moves, with the same numbers within production's precision, as a full re-run would show?
+
+**Data:**
+
+- **Singles:** the tier guard's 21 changes and its simulated numbers (§11), each against its before job.
+- **Busy days,** two new jobs from a fresh read of the league (Nov 19, about 1:20 PM MST). The same seeded generator picked the changes, applied together:
+  - all 10 rival add/drops;
+  - the 10 add/drops plus the first 3 injury news items with different players.
+- **Saved locally:** `data/local/replay-tiers/skip-jobs-2026-11-19T2018.json` (private).
+- **Never drop:** Jack's 10 players, as the Players page lists them.
+
+**Simulation.** As in §11: 4,000 seasons per move on production's chunk seeds, and the number compared is each move's title change.
+
+**Re-checked,** for each change: moves with a touched player (the add, the drop or the injured player) and moves the before job didn't have.
+
+**Two views per change:**
+
+- **Full:** every move's numbers after the change.
+- **Skipping:** after-change numbers for the re-checked moves, before-change numbers for the rest.
+
+**Measures:**
+
+1. **Top 5:** the recommended top 5 (each add's best move, adds ranked by title change) has the same five moves and the same first move in both views.
+2. **Numbers:** every move in the full view's top 5 is shown within ±0.2 points of its full title change. That's the top tier's precision target, `TOP_TIER.target2se`.
+
+**Criterion,** for each trigger kind separately:
+
+- **League moves:** measure 1 holds in at least 9 of its 10 singles, and so does measure 2. Both hold on the busy day with 10 rival moves.
+- **Injury news:** measure 1 holds in at least 9 of its 10 singles, and so does measure 2. Both hold on the busy day with rival moves and news.
+- **Tip-off:** a single replayed change can't support it, so tip-off jobs keep re-running everything. Its result is reported, not used.
+
+**Fallback (set now).** If a kind fails, the same measures are applied with the before job's best 20 moves also re-checked, from the same simulations. That's a smaller saving. If that fails too, the kind keeps full re-runs, and Jack decides what's next.
+
+**What ships when a kind passes:** its triggered jobs re-check only those moves (plus the 20 if that's what passed). The Moves page then marks kept numbers as from the last full sweep.
+
+**Limits, disclosed:**
+
+- **Few cases:** with 10 singles per kind, passing 9 rules out only a high miss rate, not a small one. The busy days are the harder test.
+- **Two league states:** a morning and an afternoon of one day.
+- **Measures cover the top 5 only.** Kept numbers further down the list can drift more until the next full sweep. The nightly run sweeps everything.
+- **Precision:** every move gets 4,000 seasons here, but kept numbers in production come from sweeps with more seasons for contenders. Both views share chunk seeds, so the differences measured come from the change, not from new random draws.
+- **No recomputation:** fill-ins' projections (ADR-064) aren't recomputed after an injury, as in §11.
+
+`scripts/replay-skip.ts`:
+
+- `DRY=1` lists the changes and how many moves each re-checks.
+- `RESULT=<the guard's result file>` scores the singles from §11's simulations, then simulates the busy days and prints each change and the verdicts.

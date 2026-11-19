@@ -73,7 +73,7 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 
 ## Waiting on Jack
 
-- ~~Test 4 (teammate returns) doesn't pass on clean events.~~ **Decided:** the forward checks were amended to clean events (Nov 17), and the adjustment is **off** (Nov 19, ADR-064) because no passed test supports it.
+- ~~Test 4 (teammate returns) doesn't pass on clean events.~~ **Decided:** the forward checks were amended to clean events (Nov 17), and the adjustment is **off** (Nov 19, ADR-064) because no passed test supports it. Test 7 (Nov 19: every big beside a returning big, next 10 games, 1994-2017) just missed: −0.145 [−0.306, +0.004]; it stays off.
 - **Baselines (review finding):** the teammate tests compare only against today's projection. CLAUDE.md asks for ESPN's projection and a simple baseline too. Decide whether that rule covers adjustments to today's projection.
 - **Merge #194–#197** (CI green; this session couldn't merge).
 - **Neon, Dec 1 decision:** the Nov 30 push says whether a month at this rate fits Free. Then stay on Launch (about $6 a month at the budget) or switch back in Vercel.

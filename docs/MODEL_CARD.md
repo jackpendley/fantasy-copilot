@@ -1290,6 +1290,33 @@ Long absences were about half as common before 2017, and a backup big's minutes 
 
 **When:** pushed before anything else is run. Then `DRY=1` (counts only), then one evaluation. Nothing is tuned or re-run.
 
+### Result (2026-11-19): not passed (just); the adjustment stays off
+
+One evaluation (`scripts/backtest-teammate-return-7.ts`, pre-registration pushed at 948a1dd). `DRY=1` first: 79, 59 and 77 events (by era), **215** in all (183 player-seasons), none without a minutes estimate.
+
+| Comparison             | n         | MAE today | MAE model | Model − today | 95% CI (by player-season) |
+| ---------------------- | --------- | --------- | --------- | ------------- | ------------------------- |
+| 1. FP/G, next 10 games | 215 (183) | 5.09      | 4.94      | −0.145        | [−0.306, +0.004]          |
+
+The interval's top is just above 0, so **1 does not pass**, and 2 (minutes) is not tested. Per the pre-registration, the adjustment stays off and these seasons are used up for this question.
+
+**Described, not tested:**
+
+| Events                                 | n   | FP: model − today | Minutes: model − today | Signed FP today → model | Signed minutes today → model |
+| -------------------------------------- | --- | ----------------- | ---------------------- | ----------------------- | ---------------------------- |
+| All                                    | 215 | −0.145            | −0.261                 | +0.80 → +0.09           | +1.17 → +0.26                |
+| 1994-95 to 2002-03                     | 79  | +0.031            | −0.075                 | +1.38 → +0.90           | +1.00 → +0.36                |
+| 2003-04 to 2009-10                     | 59  | −0.273            | −0.241                 | +0.43 → −0.42           | +1.33 → +0.19                |
+| 2010-11 to 2016-17                     | 77  | −0.227            | −0.466                 | +0.49 → −0.35           | +1.21 → +0.21                |
+| Absences of 5+ games                   | 132 | −0.144            | −0.323                 | +1.31 → +0.51           | +1.56 → +0.56                |
+| Minutes up ≥ 6 during the absence      | 83  | −0.365            | −0.528                 | +0.40 → −0.89           | +0.97 → −0.68                |
+| Pairs ESPN labels C today (look-ahead) | 89  | −0.379            | −0.514                 | +0.46 → −0.46           | +1.48 → +0.32                |
+| Rest of season instead of next 10      | 215 | −0.142            | —                      | +0.48 → −0.23           | —                            |
+
+- **The mechanism shows up:** in every era, today's projection overstated these bigs' minutes over the next 10 games by 1.0–1.3 a game, and the model removed most of that. This matches 2017-26.
+- **The points gain is small:** −0.145 FP/G per affected big (MAE 5.09 → 4.94, 3%), about 40% of the explored seasons' effect, which the pre-registration flagged as optimistic. Part of the minutes drop doesn't reach points: these bigs score a little more per minute when they play less.
+- **What it means:** the direction Jack expects holds in 32 seasons of data, but the size is about 0.15 FP/G for one or two players on a team, for 10 games. That's too small for this test to confirm at 95%, and too small to change a decision. No unseen seasons are left; the 2026-27 forward checks continue.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

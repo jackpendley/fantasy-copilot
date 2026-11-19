@@ -1244,6 +1244,8 @@ Long absences were about half as common before 2017, and a backup big's minutes 
 
 **Consequence:** the pre-registration covers a pass and a fail, not a gate miss. No test supports a teammate-return adjustment: test 4 doesn't pass on clean events (erratum), and test 6 couldn't be run. Whether test 4's model stays in production is Jack's decision.
 
+- **Decided (Jack, Nov 19):** test 4's adjustment is turned off for everyone (ADR-064). Fill-ins keep today's projection. The 2026-27 forward checks still run as amended.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

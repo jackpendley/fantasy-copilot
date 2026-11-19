@@ -937,6 +937,7 @@
 - **Check:** MODEL_CARD's forward check (this season's returns, after Apr 20, 2027). Revised Nov 17 (Jack): its result feeds the between-seasons refit, not a mid- or post-season removal; models change deliberately from history and new data, not on a schedule.
 - **Shares refitted (Nov 17, Jack approved):** after test 5 (MODEL_CARD), the same model's shares fitted on all nine seasons, 2017-18 to 2025-26: guards 0.22, forwards 0.06, **centers 0.34** (from 0.49). On 2024-25 and 2025-26 backup centers kept more of their surge than the seven older seasons implied. Stored effects take the current shares when attached.
 - **Freshness:** the nightly computes the effects; a gameday run computes them when none are stored or they're over 26 hours old (the first day after a deploy, or a failed nightly), once per instance a day.
+- **Turned off (Nov 19, Jack):** no passed test supports the adjustment. Test 4 doesn't pass on clean events (MODEL_CARD erratum), and test 6 stopped at its gate. `ADJUSTING = false` in `lib/nba/teammate-return.ts`: the nightly and gameday runs don't compute effects, stored ones aren't attached, and every fill-in keeps today's projection (the card shows no "once … is back" line). The code and the 2026-27 forward checks stay; a later pre-registered test that passes can turn it back on.
 
 ## ADR-065: the season simulator streams by lineup fit (2026-11-17)
 

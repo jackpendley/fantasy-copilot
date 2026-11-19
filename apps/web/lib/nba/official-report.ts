@@ -3,7 +3,8 @@ import "server-only";
 // 2026-10-30). Each 5-minute run on a game day checks for the report published in the current
 // quarter hour (one request), and logs every status change for players it can match to ESPN
 // (stored every 30 minutes, with each report's time).
-// Nothing reads these chances yet: the test decides whether the app should.
+// Only a definite Out reaches the app (the gameday board: lib/nba/active.ts); the finer
+// statuses wait for the test.
 
 import { PRO_TEAM_BY_ID, type ProGame, type RosterPlayer } from "@fantasy-copilot/espn";
 import {
@@ -113,6 +114,16 @@ export async function logOfficialReport(input: {
   memo.file = file;
   memo.publishedAt = report.publishedAt;
   return { file, read: true, held: memo.held.length };
+}
+
+/** Players the reports this instance has read list Out on this game date (latest status). */
+export function officialOut(gameDate: string): Set<number> {
+  const out = new Set<number>();
+  for (const [key, status] of memo.status) {
+    const [id, date] = key.split("|");
+    if (date === gameDate && status === "Out") out.add(Number(id));
+  }
+  return out;
 }
 
 /** Whether this instance holds statuses not stored yet. */

@@ -969,3 +969,28 @@
   - **Fails open:** if the database can't be reached, the password is still checked but attempts aren't counted, so an outage never locks Jack out.
   - Rows older than a day are deleted as new failures come in.
 - **Not changed:** the session cookie is still one fixed HMAC valid for a year. Rotating `SESSION_SECRET` signs every device out; a per-device session table would allow signing out one device. Jack's call if wanted.
+
+## ADR-068: who played, per game, and who's active tonight (2026-11-20)
+
+- **Why:** the app had no record of who was active per game. `game_results` holds only players who played, only yesterday's games, with no retry, and a missing row can't be told from a failed fetch. Tonight's status came from ESPN plus NBA.com's inactive list, and only page loads fetched it. The context-aware projection (MODEL_CARD, teammate absences by impact) needs who was out in every past game of every team and who's out tonight, late scratches included.
+- **Who played** (`game_participation`, migration 0034):
+  - **What:** every player ESPN lists in a finished game's box score. Played, or dressed and didn't (DNP, with ESPN's reason). Inactive players aren't listed, so a team's regular missing from a recorded game was inactive.
+  - **Written with `game_results`** by `recordResults` / `recordFinished` (`lib/nba/market-data.ts`):
+    - the gameday runs record tonight's finished games at the half-hourly store (the database is awake then anyway);
+    - the nightly's new `results` step catches up any finished game this season without rows (at most 60 a night, oldest first; this also backfills 2026-27). It runs before the simulations and the defense table.
+  - `collectToday` no longer records results.
+- **NBA.com's lineups for every player** (`lineup_log`, `lib/nba/lineup-log.ts`):
+  - **What:** each state a player-game is seen in (active or inactive, starter, confirmed), with NBA.com's timestamp and when we saw it. Rows use NBA ids and names; they are matched to ESPN players when read.
+  - **When:** held by every gameday run that loads the league on a game day, and stored with the other held logs.
+  - **Late scratch:** listed active first, then inactive.
+- **Who's active tonight** (`lib/nba/active.ts`, pure), strongest first:
+  1. NBA.com's inactive list;
+  2. the official report's Out, read by the gameday instance;
+  3. ESPN's status.
+  - Only a definite Out overrides ESPN; the report's finer statuses still wait for their forward test (ADR-038).
+  - Used by the day board: Today, alerts, lineup apply. The official report reaches only the gameday board, which reads it.
+- **Settings:** a "Who played" card shows games recorded, DNPs, NBA.com inactives and late scratches over the last 7 days.
+- **Not changed:**
+  - play probabilities;
+  - `status_events` (its dedupe and forward tests stay as registered);
+  - the official report's read rate (one file per quarter hour).

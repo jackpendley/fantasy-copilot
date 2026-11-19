@@ -12,6 +12,7 @@ import {
   fetchPropBets,
   fetchScoreboard,
   parseBoxScore,
+  parseParticipation,
   type PropLine,
 } from "@fantasy-copilot/nba-data";
 import { db } from "@/lib/db";
@@ -247,32 +248,84 @@ async function storeProjections(
     : db()`insert into pregame_projections ${db()(rows, ...cols)} on conflict do nothing`);
 }
 
-/** Box scores of finished games, scored with the league's settings (bonuses included). */
+/**
+ * Box scores of finished games: each line scored with the league's settings (bonuses
+ * included), and who played or dressed and didn't (game_participation). A game ESPN doesn't
+ * call final, or whose summary fails, is left for a later run.
+ */
 export async function recordResults(games: ProGame[], scoring: Record<string, number>) {
   let rows = 0;
+  let recorded = 0;
   for (const g of games) {
     const summary = await fetchGameSummary(g.gameId).catch(() => null);
     if (summary?.header?.competitions?.[0]?.status?.type?.state !== "post") continue;
+    const listed = parseParticipation(summary);
+    if (!listed.length) continue;
     const lines = parseBoxScore(summary);
-    if (!lines.length) continue;
+    if (lines.length)
+      await db()`
+        insert into game_results ${db()(
+          lines.map((l) => ({
+            game_id: g.gameId,
+            player_id: l.playerId,
+            team_id: l.teamId,
+            line: db().json(l.line as never),
+            fp: fantasyPoints(withDerived(l.line), scoring),
+          })),
+          "game_id",
+          "player_id",
+          "team_id",
+          "line",
+          "fp",
+        )}
+        on conflict do nothing
+      `;
     await db()`
-      insert into game_results ${db()(
-        lines.map((l) => ({
+      insert into game_participation ${db()(
+        listed.map((p) => ({
           game_id: g.gameId,
-          player_id: l.playerId,
-          team_id: l.teamId,
-          line: db().json(l.line as never),
-          fp: fantasyPoints(withDerived(l.line), scoring),
+          player_id: p.playerId,
+          team_id: p.teamId,
+          played: p.played,
+          starter: p.starter,
+          minutes: p.minutes,
+          reason: p.reason,
         })),
         "game_id",
         "player_id",
         "team_id",
-        "line",
-        "fp",
+        "played",
+        "starter",
+        "minutes",
+        "reason",
       )}
       on conflict do nothing
     `;
     rows += lines.length;
+    recorded++;
   }
-  return { results: rows };
+  return { results: rows, gamesRecorded: recorded };
+}
+
+/**
+ * Of these games, the ones not recorded yet (no participation rows: never fetched, or a failed
+ * fetch), oldest first, at most `limit` of them. `left` counts what's still missing after.
+ */
+export async function recordFinished(
+  games: ProGame[],
+  scoring: Record<string, number>,
+  limit = Infinity,
+) {
+  if (!games.length) return { results: 0, gamesRecorded: 0, left: 0 };
+  const done = new Set(
+    (
+      await db()<{ game_id: string }[]>`
+        select distinct game_id from game_participation
+        where game_id in ${db()(games.map((g) => g.gameId))}
+      `
+    ).map((r) => Number(r.game_id)),
+  );
+  const todo = games.filter((g) => !done.has(g.gameId)).sort((a, b) => a.date - b.date);
+  const r = await recordResults(todo.slice(0, limit), scoring);
+  return { ...r, left: todo.length - r.gamesRecorded };
 }

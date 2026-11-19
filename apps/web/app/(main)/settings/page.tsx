@@ -125,8 +125,36 @@ const fmtBytes = (b: number) =>
       ? `${(b / 1e6).toFixed(1)} MB`
       : `${(b / 1e3).toFixed(0)} KB`;
 
+/**
+ * Who played (game_participation) and NBA.com's lineup log over the last 7 days: games recorded,
+ * DNPs, players NBA.com listed inactive, and late scratches (listed active first, then
+ * inactive). A few aggregates.
+ */
+async function participationUse() {
+  if (!dbConfigured()) return null;
+  const [[box], [lineups]] = await Promise.all([
+    db()<{ games: number; dnp: number; last: Date | null }[]>`
+      select count(distinct game_id)::int as games, count(*) filter (where not played)::int as dnp,
+        max(recorded_at) as last
+      from game_participation where recorded_at > now() - interval '7 days'
+    `,
+    db()<{ inactive: number; late: number }[]>`
+      select count(*) filter (where was_inactive)::int as inactive,
+        count(*) filter (where late)::int as late
+      from (
+        select bool_or(inactive) as was_inactive,
+          coalesce(min(observed_at) filter (where inactive)
+            > min(observed_at) filter (where not inactive), false) as late
+        from lineup_log where game_date > current_date - 7
+        group by nba_game_id, nba_person_id
+      ) g
+    `,
+  ]);
+  return { ...box!, ...lineups! };
+}
+
 export default async function SettingsPage() {
-  const [jobs, status, cpu, compute, rankingsAt, neon, storage] = await Promise.all([
+  const [jobs, status, cpu, compute, rankingsAt, neon, storage, played] = await Promise.all([
     recentJobs().catch(() => []),
     jobStatus().catch(() => []),
     simulationCpu().catch(() => null),
@@ -134,6 +162,7 @@ export default async function SettingsPage() {
     rankingsImportedAt().catch(() => null),
     neonUsage().catch(() => null),
     storageUse().catch(() => null),
+    participationUse().catch(() => null),
   ]);
   const pace = neon ? onPace(neon, new Date()) : null;
   const neonEnd = neon ? periodEnd(neon) : null;
@@ -227,6 +256,38 @@ export default async function SettingsPage() {
                 </span>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      )}
+      {played && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Who played</CardTitle>
+            <CardDescription>
+              Every finished game&apos;s box score, recorded the same night or by the next morning,
+              and NBA.com&apos;s lineups for every player before each game. Last 7 days.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm tabular-nums">
+            <div className="flex justify-between gap-2">
+              <span>Games recorded</span>
+              <span className="text-muted-foreground">
+                {played.games}
+                {played.last && ` · latest ${when(played.last)}`}
+              </span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>Dressed but didn&apos;t play</span>
+              <span className="text-muted-foreground">{played.dnp}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>Listed inactive by NBA.com</span>
+              <span className="text-muted-foreground">{played.inactive}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>Late scratches (active, then inactive)</span>
+              <span className="text-muted-foreground">{played.late}</span>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -11,6 +11,13 @@ import { perGameProjection } from "./projection";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
 
 /**
+ * Off (Jack, Nov 19; ADR-064): no passed test supports the adjustment. Test 4 doesn't pass on
+ * clean events (MODEL_CARD erratum) and test 6 couldn't be run. While off, the nightly doesn't
+ * compute effects and no player carries one; everyone keeps today's projection.
+ */
+export const ADJUSTING = false;
+
+/**
  * λ by position group: test 4's model, its shares refitted on 2017-18 to 2025-26 (MODEL_CARD
  * test 5's result; Jack, Nov 17). Test 4 fitted G 0.23, F 0.07, C 0.49 on seven seasons.
  */

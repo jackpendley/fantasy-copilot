@@ -73,9 +73,7 @@ Plan: `~/.claude/plans/i-m-playing-fantasy-basketball-rippling-fox.md`.
 
 ## Waiting on Jack
 
-- **Test 4 (teammate returns) doesn't pass on clean events** (#196, MODEL_CARD erratum). 28 of its 556 events had no games before the absence or none with the returning player. Without them, set 1 is −0.097 [−0.214, +0.014]: not passed. Production now skips those cases (a bug fix). Two decisions:
-  - whether test 4's model stays shipped (CLAUDE.md requires a passed test; the Nov 17 "no pulling mid-season" decision predates this);
-  - whether to amend test 3 part 2 and test 4's forward check to clean events, before their data exists.
+- ~~Test 4 (teammate returns) doesn't pass on clean events.~~ **Decided:** the forward checks were amended to clean events (Nov 17), and the adjustment is **off** (Nov 19, ADR-064) because no passed test supports it.
 - **Baselines (review finding):** the teammate tests compare only against today's projection. CLAUDE.md asks for ESPN's projection and a simple baseline too. Decide whether that rule covers adjustments to today's projection.
 - **Merge #194–#197** (CI green; this session couldn't merge).
 - **Neon, Dec 1 decision:** the Nov 30 push says whether a month at this rate fits Free. Then stay on Launch (about $6 a month at the budget) or switch back in Vercel.

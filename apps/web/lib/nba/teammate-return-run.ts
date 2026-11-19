@@ -11,6 +11,7 @@ import { dbConfigured } from "../db";
 import { readSinceNightly } from "../nightly-fresh";
 import { readView, viewStamp, writeView } from "../view-cache";
 import {
+  ADJUSTING,
   groupOf,
   latestAbsence,
   returnsStale,
@@ -31,7 +32,8 @@ let cached: { at: number; effects: Promise<TeammateEffect[]>; empty?: boolean } 
 
 /** The stored effects (none without a database, or before the first nightly run). */
 export function teammateReturnEffects(): Promise<TeammateEffect[]> {
-  if (!dbConfigured()) return Promise.resolve([]);
+  // Off: effects stored before the switch aren't applied either.
+  if (!ADJUSTING || !dbConfigured()) return Promise.resolve([]);
   // Computed nightly: read once after each nightly run (lib/nightly-fresh.ts).
   if (
     cached &&
@@ -70,7 +72,7 @@ let dueChecked: string | null = null;
  * (the first day after a deploy, or a nightly that failed). Looked at once per instance a day.
  */
 export async function teammateReturnsDue(ymd: string): Promise<boolean> {
-  if (!dbConfigured() || dueChecked === ymd) return false;
+  if (!ADJUSTING || !dbConfigured() || dueChecked === ymd) return false;
   dueChecked = ymd;
   return returnsStale((await viewStamp(KEY))?.computedAt ?? null);
 }

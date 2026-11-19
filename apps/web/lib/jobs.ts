@@ -45,6 +45,7 @@ import { pruneTasks } from "./nba/worker-tasks";
 import { fingerprintOf } from "./view-cache";
 import { forgetResponses } from "./fetch-memo";
 import { refreshTeammateReturns, teammateReturnsDue } from "./nba/teammate-return-run";
+import { ADJUSTING } from "./nba/teammate-return";
 
 async function log(job: string, status: "ok" | "error", detail: string) {
   await db()`insert into refresh_log (job, status, detail) values (${job}, ${status}, ${detail})`;
@@ -423,10 +424,13 @@ export async function nightlyJob(): Promise<Record<string, unknown>> {
     // Every league matchup's state, for calibrating the weekly win probability.
     const states = await metered("matchup-states", () => recordMatchupStates(), [20_000]);
     // Fill-ins whose regular is out or back (ADR-064), before the simulations read the league.
-    const returns = await metered("teammate-returns", async () => {
-      const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
-      return refreshReturns(sp, await loadLeague(sp, gameDate()));
-    });
+    // Not while the adjustment is off.
+    const returns = ADJUSTING
+      ? await metered("teammate-returns", async () => {
+          const sp = Math.min(Math.max(scoringPeriodForDate(gameDate()), 1), LAST_SCORING_PERIOD);
+          return refreshReturns(sp, await loadLeague(sp, gameDate()));
+        })
+      : null;
     // A job left running by runners that went quiet is closed first (the new one replaces it).
     if (workerEnabled()) await metered("quiet-jobs", () => closeQuietJobs());
     // The season simulations: on the GitHub Actions worker when it's set up (the Outlook and

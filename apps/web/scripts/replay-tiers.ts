@@ -20,6 +20,7 @@
 
 import { availableParallelism } from "node:os";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import type { ChunkResult, WireInput, WireMove } from "@fantasy-copilot/fantasy-core";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
@@ -41,18 +42,18 @@ const CHUNKS = SEASONS / CHUNK_SEASONS;
 const chunkFile = new URL("./replay-tiers-chunk.ts", import.meta.url).href;
 /** Tier B's contenders: the last sweep's best moves by title change (fallback 60, §11). */
 const CONTENDERS = [20, 60];
-const LEAGUE_MOVES = 10;
-const INJURY_NEWS = 10;
+export const LEAGUE_MOVES = 10;
+export const INJURY_NEWS = 10;
 /** Injury news: out this many days (cycled); a player already out comes back instead. */
 const OUT_DAYS = [2, 7, 21];
 /** Rival adds come from this many of the best free agents. */
 const ADD_POOL = 15;
 
-type Setup = Awaited<ReturnType<typeof outlookSetup>>;
-type Waiver = Awaited<ReturnType<typeof loadWaiverInputs>>;
+export type Setup = Awaited<ReturnType<typeof outlookSetup>>;
+export type Waiver = Awaited<ReturnType<typeof loadWaiverInputs>>;
 
-interface Job {
-  kind: "Before" | "League moves" | "Injury news" | "Tip-off";
+export interface Job {
+  kind: "Before" | "League moves" | "Injury news" | "Tip-off" | "Busy day";
   label: string;
   /** Players the change is about (tier B takes every move with one of them). */
   touched: number[];
@@ -64,7 +65,7 @@ interface Job {
 }
 
 /** A small seeded generator, so the same league picks the same changes. */
-function rng(seed: number) {
+export function rng(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) >>> 0;
     let t = seed;
@@ -101,7 +102,13 @@ function reabsent(s: Setup, w: Waiver) {
   );
 }
 
-function jobOf(kind: Job["kind"], label: string, touched: number[], s: Setup, w: Waiver): Job {
+export function jobOf(
+  kind: Job["kind"],
+  label: string,
+  touched: number[],
+  s: Setup,
+  w: Waiver,
+): Job {
   const { build } = simBuildOf(s, w, {
     extraKeys: [],
     ideas: [],
@@ -121,7 +128,13 @@ function jobOf(kind: Job["kind"], label: string, touched: number[], s: Setup, w:
   };
 }
 
-async function buildJobs(): Promise<Job[]> {
+/** A rival's add/drop or an injury news item on Jack's players, picked before any simulation. */
+export type Change =
+  | { kind: "League moves"; teamId: number; addId: number }
+  | { kind: "Injury news"; playerId: number; days: number };
+
+/** The league as read, with Jack's "Never drop" players. */
+export async function readLeague() {
   const [setup, w] = await Promise.all([outlookSetup(), loadWaiverInputs()]);
   // Jack's "Never drop" players as the Moves page lists them (NO_DROP="Name,Name"): kept in
   // production's database, which isn't readable here, and out of the code.
@@ -129,21 +142,22 @@ async function buildJobs(): Promise<Job[]> {
   const kept = w.inputs.roster.filter((p) => noDrop.has(p.name)).map((p) => p.id);
   if (kept.length) w.inputs.noDrop = new Set(kept);
   console.log(`never drop: ${kept.length} of Jack's players`);
-  // One clone per change, from the league as read (shared player objects stay shared).
-  const fresh = () => structuredClone({ s: setup, w });
-  const b0 = fresh();
-  const before = jobOf("Before", "the league as read", [], b0.s, b0.w);
+  return { setup, w };
+}
+
+/** Each player's points per game in a job, for picking changes. */
+export const valueOf = (job: Job) => {
   const fppg = new Map(
-    [...before.base.teams.flatMap((t) => t.roster), ...before.base.freeAgents].map((p) => [
-      p.id,
-      p.fppg,
-    ]),
+    [...job.base.teams.flatMap((t) => t.roster), ...job.base.freeAgents].map((p) => [p.id, p.fppg]),
   );
-  const value = (id: number) => fppg.get(id) ?? 0;
-  const jobs = [before];
+  return (id: number) => fppg.get(id) ?? 0;
+};
+
+/** The changes, from a seeded generator, so the same league picks the same changes. */
+export function pickChanges(setup: Setup, w: Waiver, value: (id: number) => number): Change[] {
+  const changes: Change[] = [];
   const pick = rng(20261119);
   const me = setup.data.me.id;
-
   // League moves: a rival drops his least valuable player for one of the best free agents.
   const rivals = setup.data.teams.filter((t) => t.id !== me);
   const healthy = (p: RosterPlayer) => !setup.injured.has(p.id);
@@ -155,60 +169,81 @@ async function buildJobs(): Promise<Job[]> {
   for (let i = 0; i < LEAGUE_MOVES && pool.length; i++) {
     const team = rivals[Math.floor(pick() * rivals.length)]!;
     const add = pool.splice(Math.floor(pick() * pool.length), 1)[0]!;
-    const { s, w: v } = fresh();
-    const t = s.data.teams.find((x) => x.id === team.id)!;
-    const drop = t.roster
-      .filter((p) => p.slot !== "IR")
-      .reduce((a, p) => (value(p.id) < value(a.id) ? p : a));
-    const added = s.freeAgents.find((p) => p.id === add.id)!;
-    t.roster = [...t.roster.filter((p) => p.id !== drop.id), { ...added, slot: "BE" }];
-    s.freeAgents = [...s.freeAgents.filter((p) => p.id !== add.id), { ...drop, slot: null }];
-    v.inputs.freeAgents = v.inputs.freeAgents.filter((f) => f.player.id !== add.id);
-    reabsent(s, v);
-    jobs.push(
-      jobOf(
-        "League moves",
-        `Team ${team.id} adds ${add.name}, drops ${drop.name}`,
-        [add.id, drop.id],
-        s,
-        v,
-      ),
-    );
+    changes.push({ kind: "League moves", teamId: team.id, addId: add.id });
   }
-
   // Injury news on Jack's players: one is ruled out (2, 7 or 21 days), or one who's out is back.
   const mine = setup.data.me.roster;
   for (let i = 0; i < INJURY_NEWS; i++) {
     const p = mine[Math.floor(pick() * mine.length)]!;
-    const { s, w: v } = fresh();
-    const out = setup.injured.has(p.id);
-    const feed = s.data.injuries.filter((r) => r.playerId !== p.id);
-    let label: string;
-    if (out) {
-      label = `${p.name} is back`;
-      for (const x of playersById(s, v, p.id)) x.injuryStatus = "ACTIVE";
-    } else {
-      const days = OUT_DAYS[i % OUT_DAYS.length]!;
-      const back = new Date(`${v.date}T12:00:00Z`);
-      back.setUTCDate(back.getUTCDate() + days);
-      const returnDate = back.toISOString().slice(0, 10);
-      const report: InjuryReport = {
-        playerId: p.id,
-        name: p.name,
-        teamId: p.proTeamId,
-        status: "Out",
-        short: "Replay",
-        long: "Replay",
-        date: new Date().toISOString(),
-        returnDate,
-      };
-      feed.push(report);
-      for (const x of playersById(s, v, p.id)) x.injuryStatus = "OUT";
-      label = `${p.name} out until ${returnDate}`;
-    }
-    s.data.injuries = feed;
+    changes.push({ kind: "Injury news", playerId: p.id, days: OUT_DAYS[i % OUT_DAYS.length]! });
+  }
+  return changes;
+}
+
+/** Applies a change to a copy of the league; returns its label and the players it's about. */
+export function applyChange(
+  c: Change,
+  s: Setup,
+  v: Waiver,
+  value: (id: number) => number,
+): { label: string; touched: number[] } {
+  if (c.kind === "League moves") {
+    const t = s.data.teams.find((x) => x.id === c.teamId)!;
+    const drop = t.roster
+      .filter((p) => p.slot !== "IR")
+      .reduce((a, p) => (value(p.id) < value(a.id) ? p : a));
+    const added = s.freeAgents.find((p) => p.id === c.addId)!;
+    t.roster = [...t.roster.filter((p) => p.id !== drop.id), { ...added, slot: "BE" }];
+    s.freeAgents = [...s.freeAgents.filter((p) => p.id !== c.addId), { ...drop, slot: null }];
+    v.inputs.freeAgents = v.inputs.freeAgents.filter((f) => f.player.id !== c.addId);
     reabsent(s, v);
-    jobs.push(jobOf("Injury news", label, [p.id], s, v));
+    return {
+      label: `Team ${c.teamId} adds ${added.name}, drops ${drop.name}`,
+      touched: [c.addId, drop.id],
+    };
+  }
+  const p = s.data.me.roster.find((x) => x.id === c.playerId)!;
+  const out = s.injured.has(p.id);
+  const feed = s.data.injuries.filter((r) => r.playerId !== p.id);
+  let label: string;
+  if (out) {
+    label = `${p.name} is back`;
+    for (const x of playersById(s, v, p.id)) x.injuryStatus = "ACTIVE";
+  } else {
+    const back = new Date(`${v.date}T12:00:00Z`);
+    back.setUTCDate(back.getUTCDate() + c.days);
+    const returnDate = back.toISOString().slice(0, 10);
+    const report: InjuryReport = {
+      playerId: p.id,
+      name: p.name,
+      teamId: p.proTeamId,
+      status: "Out",
+      short: "Replay",
+      long: "Replay",
+      date: new Date().toISOString(),
+      returnDate,
+    };
+    feed.push(report);
+    for (const x of playersById(s, v, p.id)) x.injuryStatus = "OUT";
+    label = `${p.name} out until ${returnDate}`;
+  }
+  s.data.injuries = feed;
+  reabsent(s, v);
+  return { label, touched: [p.id] };
+}
+
+async function buildJobs(): Promise<Job[]> {
+  const { setup, w } = await readLeague();
+  // One clone per change, from the league as read (shared player objects stay shared).
+  const fresh = () => structuredClone({ s: setup, w });
+  const b0 = fresh();
+  const before = jobOf("Before", "the league as read", [], b0.s, b0.w);
+  const value = valueOf(before);
+  const jobs = [before];
+  for (const c of pickChanges(setup, w, value)) {
+    const { s, w: v } = fresh();
+    const { label, touched } = applyChange(c, s, v, value);
+    jobs.push(jobOf(c.kind, label, touched, s, v));
   }
 
   // Today's first tip: moves count from tomorrow (as outlookSetup and the waiver view read
@@ -236,7 +271,7 @@ async function buildJobs(): Promise<Job[]> {
 }
 
 /** A move's title change and its standard error, from its summed chunks. */
-interface Effect {
+export interface Effect {
   key: string;
   n: number;
   d: number;
@@ -244,7 +279,7 @@ interface Effect {
 }
 
 /** Play every move of every job on chunks 0..CHUNKS-1, on all cores. */
-async function simulate(jobs: Job[]): Promise<Map<string, Effect>[]> {
+export async function simulate(jobs: Job[]): Promise<Map<string, Effect>[]> {
   const tasks = jobs.flatMap((j, ji) =>
     Array.from({ length: Math.ceil(j.moves.length / GROUP_SIZE) }, (_, g) =>
       Array.from({ length: CHUNKS }, (_, chunk) => ({
@@ -313,11 +348,11 @@ async function simulate(jobs: Job[]): Promise<Map<string, Effect>[]> {
   );
 }
 
-const ids = (key: string) => key.split(":").filter(Boolean).map(Number);
+export const ids = (key: string) => key.split(":").filter(Boolean).map(Number);
 const addOf = (key: string) => key.split(":")[0]!;
 
 /** The recommended top 5: each add's best move, adds ranked by its title change. */
-function top5(effects: Effect[]): string[] {
+export function top5(effects: Effect[]): string[] {
   const best = new Map<string, Effect>();
   for (const e of effects) {
     const b = best.get(addOf(e.key));
@@ -423,7 +458,9 @@ async function main() {
   );
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+// Run as a script; scripts/replay-skip.ts imports the league, the changes and the simulation.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href)
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

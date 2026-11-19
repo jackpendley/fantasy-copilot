@@ -1403,6 +1403,59 @@ All three intervals lie below 0. **The context-aware projection ships**, per the
 - **Still conservative:** the model removes about half of the bias in star-out games. A stronger factor might do better, but that would be a new test; nothing here is retuned.
 - **Production:** the lower bound (absences already known the day before) still gains −0.031, so most of the benefit doesn't depend on late scratches.
 
+### Pre-registration: re-run on the full shipped stack, on unseen seasons (2026-11-20, before any run on them)
+
+**Why:** two of Jack's caveats on the result above (Nov 19).
+
+- **The layers were left out:** game environment and opponent defense multiplied neither side. They might already capture part of what the context model does. A star's absence lowers his team's implied total and changes how opponents' defenses look, so the gain could shrink once both sides carry them.
+- **Fresh seasons:** tests 2–5 had used 2019-20 to 2024-25 for other questions.
+
+Jack chose (Nov 19) to decide on unseen seasons now, and to confirm on 2026-27 once the model ships.
+
+**Data: 2010-11 to 2016-17**, the box scores test 6 cached and cleaned (`backtest-boxscores`).
+
+- **Never used for a game-level comparison.** Test 7 used their big-for-big return events (77 events, bigs' next 10 games) and test 6 counted events. Both are disclosed.
+- **CHI and NO** are absent from 2012-13 on (no minutes in ESPN's box scores; test 6's rule).
+- **The prior** is each player's previous season from the same data, as in #208.
+- **Positions** are ESPN's current labels, guard/forward/center only (as in test 6). The context model's position groups and the defense table both use them; production keys defense by five positions.
+- **An older game** than 2019-25: slower pace, fewer threes, fewer rest days. Jack accepted the era.
+
+**Game lines:** ESPN's core API, the median closing line over the books it lists (`parseGameOdds`, which now skips the opening line, consensus and in-game books), fetched by `scripts/fetch-history-odds.ts`. ESPN has no lines for 2010-11 or 2011-12, so environment is 1 on both sides there. Coverage by season is reported with the result. Lines are pregame inputs, not outcomes.
+
+**Both sides carry the shipped layers (`scripts/backtest-teammate-context-2.ts`):**
+
+- **Environment:** (team's implied total ÷ the mean implied team total of earlier days)^0.75. The mean counts once 40+ team-games have a line. A game without a line gets 1.
+- **Opponent defense:** per opponent and position group, f = (n·r + 200) / (n + 200), where r = actual ÷ predicted-before-defense over earlier days' player-games. Same-day games don't see each other, and it starts at 1 each season.
+  - **Each side learns its own table from its own predictions:** today's from today's, the model's from the model's. That's how production would run once the model ships, since the nightly table divides only `matchup_factor` out of the logged projection.
+- **Not included:** the props blend (no player-prop history for these seasons) and DARKO (not wired into projections).
+
+**Model:** unchanged from the test above: k 0.75, floor 0.10, same position ×2, cap 0.6, regulars 20+ minutes. The code moved into `scripts/teammate-context.ts` and reproduces #208 exactly: the recorded script, and the new harness with no layers on 2019-25 (`CHECK=1`: −0.036 [−0.044, −0.029]).
+
+**Gate (counts only):** ≥ 60,000 player-games, or nothing is evaluated.
+
+**Comparisons, fixed sequence, each at 95%:** per player-season, the mean of model − today; the mean of those, with a normal 95% interval.
+
+1. **Absolute error, every player-game**, environment and defense on both sides. This decides.
+2. **Squared error,** the same.
+3. **Absolute error, games after a star's return,** the same.
+
+**Described, not tested:**
+
+- 2010-17 with no layers, environment only, and defense only;
+- by season, and games with a line;
+- star out (games 1–3), and same position group;
+- no regular out;
+- only absences already ongoing;
+- centers after a star's return;
+- 2019-25 under every set of layers (#208's seasons, already used).
+
+**Consequence (Jack, Nov 19):**
+
+- **1 passes:** the context-aware projection ships with its switch on, after the participation tracking (plan Phase 2) is in. The 2026-27 forward check is then pre-registered on logged pregame projections and real pregame statuses, judged once on Jan 15, 2027.
+- **1 fails:** it isn't switched on. The result goes to Jack. The participation tracking ships anyway.
+
+**When:** pushed before any run on 2010-17. Then `DRY=1` (counts only), then one evaluation. Nothing is tuned or re-run.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

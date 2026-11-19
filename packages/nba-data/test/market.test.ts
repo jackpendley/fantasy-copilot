@@ -122,4 +122,24 @@ describe("game lines", () => {
     expect(impliedTeamTotal(odds, false)).toBe(114.5);
     expect(parseGameOdds({ items: [] })).toBeNull();
   });
+
+  it("takes the median closing line, skipping the opening line, consensus and in-game books", () => {
+    const book = (name: string, overUnder: number, spread: number) => ({
+      provider: { name },
+      overUnder,
+      spread,
+    });
+    const odds = parseGameOdds({
+      items: [
+        book("Caesars Sportsbook (New Jersey) - Live Odds", 209.5, -10.5),
+        book("Opening", 209.5, -8.5),
+        { provider: { name: "consensus" }, spread: -8.5 },
+        book("5Dimes.eu", 205.5, -10.5),
+        book("BOVADA.lv", 206.0, -11.0),
+        book("Westgate", 205.5, -10.0),
+      ],
+    });
+    expect(odds).toEqual({ provider: "median of 3", total: 205.5, spread: -10.5 });
+    expect(parseGameOdds({ items: [book("Opening", 200, -2)] })).toBeNull();
+  });
 });

@@ -1,5 +1,6 @@
 // Teammate context (MODEL_CARD, teammate absences by impact, Nov 19): every player-game of a
-// cached season (scripts/fetch-history.ts), with today's projection as of that day, the
+// cached season (scripts/fetch-history.ts, or the box-score seasons of
+// scripts/fetch-history-boxscores.ts), with today's projection as of that day, the
 // regulars absent from it (each weighted by his share of the team's fantasy points), and the
 // same for each of the player's earlier games. Read-only.
 //
@@ -15,6 +16,7 @@ import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fa
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
 import { perGameProjection } from "../lib/nba/projection";
 
+/** The 2017-26 logs; the box-score seasons are read from their own cache. */
 const CACHE = new URL("../data/local/backtest/", import.meta.url);
 /** A player-game is scored once he has this many games this season. */
 const MIN_SO = 5;
@@ -37,6 +39,11 @@ export interface PlayerGame {
   season: number;
   player: number;
   group: string | null;
+  /** The game: ESPN id, tip time (ms), opponent's abbreviation, and whether he was home. */
+  gameId: number;
+  t: number;
+  opponent: string;
+  home: boolean;
   /** Today's projection (FP/G) as of the game's day, and the fantasy points he scored. */
   base: number;
   fp: number;
@@ -82,23 +89,26 @@ export function asPlayer(
 
 interface G {
   side: string;
+  game: number;
+  opponent: string;
+  home: boolean;
   t: number;
   fp: number;
   min: number;
 }
 
-export function playerGames(season: number, scoring: ScoringMap): PlayerGame[] {
+export function playerGames(season: number, scoring: ScoringMap, cache = CACHE): PlayerGame[] {
   const fpOf = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
-  const read = (f: string): GameLogEntry[] => JSON.parse(readFileSync(new URL(f, CACHE), "utf8"));
+  const read = (f: string): GameLogEntry[] => JSON.parse(readFileSync(new URL(f, cache), "utf8"));
   const positions = new Map(
     Object.entries(
-      JSON.parse(readFileSync(new URL(`positions-${season}.json`, CACHE), "utf8")) as Record<
+      JSON.parse(readFileSync(new URL(`positions-${season}.json`, cache), "utf8")) as Record<
         string,
         number
       >,
     ).map(([id, pos]) => [Number(id), pos]),
   );
-  const files = new Set(readdirSync(CACHE).filter((f) => /^\d+-\d+\.json$/.test(f)));
+  const files = new Set(readdirSync(cache).filter((f) => /^\d+-\d+\.json$/.test(f)));
   const ids = [...new Set([...files].map((f) => Number(f.split("-")[0])))].filter((id) =>
     files.has(`${id}-${season}.json`),
   );
@@ -123,6 +133,9 @@ export function playerGames(season: number, scoring: ScoringMap): PlayerGame[] {
     const gs = cur
       .map((g) => ({
         side: `${g.gameId}:${g.home ? "H" : "A"}`,
+        game: g.gameId,
+        opponent: g.opponent,
+        home: g.home,
         t: Date.parse(g.date),
         fp: fpOf(g),
         min: g.line.MIN ?? 0,
@@ -199,6 +212,10 @@ export function playerGames(season: number, scoring: ScoringMap): PlayerGame[] {
         season,
         player: p,
         group: groupOf(positions.get(p)),
+        gameId: g.game,
+        t: g.t,
+        opponent: g.opponent,
+        home: g.home,
         base,
         fp: g.fp,
         absent: absentAt.get(g.side) ?? [],
@@ -209,3 +226,64 @@ export function playerGames(season: number, scoring: ScoringMap): PlayerGame[] {
   }
   return rows;
 }
+
+// The model (MODEL_CARD, teammate absences by impact), as tested on Nov 19.
+
+/** Chosen on the exploration seasons (lowest MAE of the grid). */
+export const K = 0.75;
+export const SAME = 2;
+export const FLOOR = 0.1;
+export const CAP = 0.6;
+/** Regulars only: 20+ minutes a game over the last 10. */
+export const REGULAR_MIN = 20;
+/** Described: a star has this share or more. */
+export const STAR = 0.18;
+
+/** A game's context factor for a player in this group: 1 when no regular above the floor is out. */
+export const context = (absent: Absent[], group: string | null) =>
+  1 +
+  K *
+    Math.min(
+      CAP,
+      absent.reduce(
+        (t, a) =>
+          t +
+          (a.min10 >= REGULAR_MIN
+            ? Math.max(0, a.share - FLOOR) * (a.group === group ? SAME : 1)
+            : 0),
+        0,
+      ),
+    );
+
+/** The context model: full-strength games (each ÷ its factor), then × tonight's factor. */
+export function predict(r: PlayerGame) {
+  const full = r.past.map((g) => {
+    const x = context(g.absent, r.group);
+    return { fp: g.fp / x, min: g.min / x };
+  });
+  return perGameProjection(asPlayer(r.prior, full)).fppg * context(r.absent, r.group);
+}
+
+/** Mean of per-player-season mean differences, with a normal 95% interval. */
+export function judge(
+  rows: PlayerGame[],
+  pred: Map<PlayerGame, number>,
+  d: (p: number, r: PlayerGame) => number,
+) {
+  const by = new Map<string, number[]>();
+  for (const r of rows) {
+    const k = `${r.season}:${r.player}`;
+    by.set(k, [...(by.get(k) ?? []), d(pred.get(r)!, r)]);
+  }
+  const per = [...by.values()].map(mean);
+  const m = mean(per);
+  const half = (1.96 * Math.sqrt(mean(per.map((x) => (x - m) ** 2)))) / Math.sqrt(per.length);
+  return { n: rows.length, players: per.length, mean: m, lo: m - half, hi: m + half };
+}
+
+export const starOut = (r: PlayerGame, lo: number, hi: number) =>
+  r.absent.some((a) => a.min10 >= REGULAR_MIN && a.share >= STAR && a.idx >= lo && a.idx <= hi);
+/** A star missed 3+ of his last 10 games and plays tonight. */
+export const starBack = (r: PlayerGame) =>
+  r.past.slice(-10).filter((g) => g.absent.some((a) => a.min10 >= REGULAR_MIN && a.share >= STAR))
+    .length >= 3 && !starOut(r, 1, Infinity);

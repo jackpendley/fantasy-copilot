@@ -4,7 +4,7 @@ import type { SimInput, SimPlayer, SimTeam } from "../src/sim";
 import { runChunk, toWire, type WireMove } from "../src/sim-wire";
 import type { Position } from "../src/slots";
 
-// The simulator's exact output, fixed: speed work must leave every number as it was (ADR-070).
+// The simulator's output, fixed: speed work must leave every number as it was (ADR-070).
 // A synthetic league (not real data) that takes every path: streaming with and without fit,
 // managers who don't check daily, known injuries, an IR slot with its cut, a later waiver
 // claim, points that change mid-season, playoff replays, and a move.
@@ -95,20 +95,26 @@ const moveOf = (l: SimInput): WireMove => {
     faIn: [drop],
   };
 };
-const hash = (x: unknown) => createHash("sha256").update(JSON.stringify(x)).digest("hex");
+// Numbers to 10 significant digits: Math.log, exp and cos differ in the last bit between
+// platforms and Node versions (V8 on x64 and arm64), about 1 part in 10^16; a real change to
+// the simulation moves numbers far more than that.
+const hash = (x: unknown) =>
+  createHash("sha256")
+    .update(JSON.stringify(x, (_, v) => (typeof v === "number" ? Number(v.toPrecision(10)) : v)))
+    .digest("hex");
 
 describe("the simulator's numbers", { timeout: 120_000 }, () => {
   it("are exactly as fixed, with streaming by fit", () => {
     const l = league(true);
     expect(hash(runChunk(toWire(l), 1, [moveOf(l)], 3, 60, 3))).toBe(
-      "f3e4a7b4506021e1f5b36aacf98a39bfa2ff8f2c0a714bee6b3932a8ffa4c615",
+      "9b7c55a09780cd236e390d60cf9ab8be16ae235f51d4ca7d11d7b5f64398d663",
     );
   });
 
   it("are exactly as fixed, with the raw-value streaming rule", () => {
     const l = league(false);
     expect(hash(runChunk(toWire(l), 1, [moveOf(l)], 3, 60, 3))).toBe(
-      "06f5b186de8700d57ee0c707045568669adf15c6d7ff91abd301bbea2ab73e88",
+      "38ee239a95549d0bd1b68cb71eaa0b0d959f2393470ce391ba5449fff365571a",
     );
   });
 });

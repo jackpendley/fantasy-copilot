@@ -1041,7 +1041,10 @@
   | ------------------------------------------------ | ----------------------------: |
   | `ubuntu-latest` (EPYC 7763, 2 cores × 2 threads) |                        83–116 |
   | `ubuntu-24.04-arm` (Neoverse-N2, 4 cores)        |                           152 |
-  - **Identical numbers:** the same chunk's results hashed identically on x64, arm64 and a Mac (`18395254d659d605`).
+  - **The same numbers, to the last bit or so:**
+    - In the benchmark, the same chunk's results hashed identically on x64, arm64 and a Mac (`18395254d659d605`).
+    - Not in general (corrected Nov 19, night): V8's `Math.log`, `exp` and `cos` differ in the last bit between x64 and arm64 for some inputs, and `log` between Node 22.14 and 22.23. That moves a result by about 1 part in 10^16, far below any decision.
+    - Within a job every chunk now comes from arm64 runners, so moves are compared on the same platform.
   - **Free:** arm64 runners are free for public repositories, like x64.
 
 - **Changes:**
@@ -1054,13 +1057,13 @@
   - Settings' "all checks" by trigger;
   - the Neon pace at the next reading.
 - **Next, if needed:**
-  - play each chunk's base season once per runner instead of once per group (bit-identical, ~1.2×);
+  - play each chunk's base season once per runner instead of once per group (same numbers; at most ~1.12× by the database's row counts, held Nov 19);
   - profile-guided simulator work, checked by an identical result hash.
 - **Addendum (Nov 19, evening): concurrency per runner slot.**
   - **The problem:** the whole run shared one concurrency group. A new trigger's run, and with it the task runner that builds its job, waited for the run before it to end. That was at most 25 minutes before this ADR, and up to the whole job after it.
   - **The fix:** each simulate runner slot (`simulate-1` to `simulate-18`) and the task runner (`simulate-tasks`) queue on their own. A new build starts at once, and runners already up take the new job when they next ask. Task claims are atomic (`for update skip locked`).
 - **Addendum (Nov 19, night): the simulator, 1.18× faster with the same numbers.**
-  - **Guard:** `test/sim-golden.test.ts` fixes the exact output (a SHA-256 of `runChunk`'s result) on a synthetic league that takes every path. Any change to a number fails CI.
+  - **Guard:** `test/sim-golden.test.ts` fixes the output (a SHA-256 of `runChunk`'s result, numbers to 10 significant digits) on a synthetic league that takes every path. It passes on x64 and arm64. A change to any number beyond last-bit platform noise fails CI.
   - **Locally:** three real-league chunks hashed identically before and after, and so did a copy with a third of players' points changing mid-season.
   - **Changes**, from a line-level profile:
     - each roster is ranked once by points (a stable insertion sort), and each lineup takes its players in that order instead of sorting them (the sort was 11% of the time);

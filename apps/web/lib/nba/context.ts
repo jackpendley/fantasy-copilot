@@ -12,10 +12,15 @@ import {
   type LineupEntry,
 } from "@fantasy-copilot/nba-data";
 import { absenceOf } from "./availability";
-import type { PlayerContext } from "./context-factor";
+import type { OutTeammate, PlayerContext, SkippedTeammate } from "./context-factor";
 import { groupOf } from "./teammate-return";
 
-export { factorOn, type PlayerContext } from "./context-factor";
+export {
+  factorOn,
+  type OutTeammate,
+  type PlayerContext,
+  type SkippedTeammate,
+} from "./context-factor";
 
 /** As tested (frozen on the exploration seasons). */
 export const K = 0.75;
@@ -204,41 +209,135 @@ export function pastAdjustments(
 }
 
 /**
+ * A regular who is out: until the day he's expected back (a scoring period, Infinity for the
+ * season), what says so today, and ESPN's estimated return date.
+ */
+export interface OutStatus {
+  until: number;
+  source: OutTeammate["source"];
+  back: string | null;
+}
+
+/**
  * A player's factor from each day on (from `today`): his team's regulars who are out, each
- * until the day he's expected back (`outUntil`: a scoring period, Infinity for the season,
- * null when he plays). Consecutive days with the same factor merge. Pure.
+ * until the day he's expected back (`outUntil`: null when he plays). Consecutive days with the
+ * same factor merge. Each day names the regulars who count, with what says they're out: today's
+ * source (NBA.com, the official report or ESPN) today, ESPN's estimate after. Pure.
  */
 export function factorDays(
   player: number,
   group: string | null,
   regulars: readonly (Regular & { name: string })[],
-  outUntil: (player: number) => number | null,
+  outUntil: (player: number) => OutStatus | null,
   today: number,
 ): PlayerContext["days"] {
   const out = regulars
     .filter((r) => r.player !== player)
-    .map((r) => ({ r, until: outUntil(r.player) }))
+    .map((r) => ({ r, o: outUntil(r.player) }))
     .filter(
-      (x): x is { r: Regular & { name: string }; until: number } =>
-        x.until != null && x.until > today,
+      (x): x is { r: Regular & { name: string }; o: OutStatus } => x.o != null && x.o.until > today,
     );
   const days: PlayerContext["days"] = [];
   const breaks = [
     today,
-    ...new Set(out.map((x) => x.until).filter((d) => Number.isFinite(d))),
+    ...new Set(out.map((x) => x.o.until).filter((d) => Number.isFinite(d))),
   ].sort((a, b) => a - b);
   for (const day of breaks) {
-    const now = out.filter((x) => x.until > day);
+    const now = out.filter((x) => x.o.until > day);
     const factor = contextFactor(
       now.map((x) => ({ share: x.r.share, idx: 1, group: x.r.group, min10: x.r.min10 })),
       group,
     );
     const names = now
-      .filter((x) => x.r.min10 >= REGULAR_MIN && x.r.share > FLOOR)
-      .map((x) => x.r.name);
+      .filter((x) => counts(x.r))
+      .map((x) => ({
+        name: x.r.name,
+        source: day === today ? x.o.source : ("ESPN" as const),
+        back: x.o.back,
+      }));
     if (days.at(-1)?.factor !== factor) days.push({ day, factor, out: names });
   }
   return days;
+}
+
+/** A regular whose absence moves his teammates' factor. */
+const counts = (r: Pick<Regular, "min10" | "share">) => r.min10 >= REGULAR_MIN && r.share > FLOOR;
+
+/** A player who played for a team this season but isn't one of its regulars now. */
+export interface Other {
+  player: number;
+  games: number;
+  min10: number;
+}
+
+/**
+ * Each team's other players as of `now`: their latest game was for it, but they have fewer than
+ * 5 games or under 10 minutes a game over their last 10 (for the card's "not counted" note).
+ */
+export function othersNow(
+  logs: ReadonlyMap<number, readonly Appearance[]>,
+  regulars: ReadonlyMap<string, readonly Regular[]>,
+  now: number,
+): Map<string, Other[]> {
+  const isRegular = new Set([...regulars.values()].flat().map((r) => r.player));
+  const out = new Map<string, Other[]>();
+  for (const [id, gs] of logs) {
+    const before = gs.filter((g) => g.t < now);
+    const team = before.at(-1)?.team;
+    if (!team || isRegular.has(id)) continue;
+    const list = out.get(team) ?? [];
+    list.push({
+      player: id,
+      games: before.length,
+      min10: mean(before.slice(-LAST).map((g) => g.min)),
+    });
+    out.set(team, list);
+  }
+  return out;
+}
+
+/**
+ * Teammates listed out today who don't move his factor, and why: a regular under 20 minutes a
+ * game or with 10% or less of the team's points, or a player ESPN rules out who isn't a regular
+ * (fewer than 5 games this season, under 10 minutes a game, or no game for the team yet). Pure.
+ */
+export function skippedToday(
+  player: number,
+  team: string,
+  payload: Pick<ContextPayload, "regulars" | "others">,
+  outUntil: (player: number) => OutStatus | null,
+  listedOut: readonly Pick<InjuryReport, "playerId" | "name" | "teamId">[],
+  today: number,
+): SkippedTeammate[] {
+  const regulars = payload.regulars[team] ?? [];
+  const skipped: SkippedTeammate[] = [];
+  for (const r of regulars) {
+    if (r.player === player || counts(r) || !((outUntil(r.player)?.until ?? 0) > today)) continue;
+    skipped.push({
+      name: r.name,
+      reason:
+        r.min10 < REGULAR_MIN
+          ? `${Math.round(r.min10)} min a game over his last 10; needs ${REGULAR_MIN}`
+          : `${Math.round(r.share * 100)}% of the team's points; needs over ${FLOOR * 100}%`,
+    });
+  }
+  const isRegular = new Set(regulars.map((r) => r.player));
+  const others = new Map((payload.others?.[team] ?? []).map((o) => [o.player, o]));
+  for (const i of listedOut) {
+    if (i.playerId === player || String(i.teamId) !== team || isRegular.has(i.playerId)) continue;
+    const o = others.get(i.playerId);
+    skipped.push({
+      name: i.name,
+      reason: !payload.others
+        ? `not a regular yet (${MIN_GAMES}+ games and ${ROTATION_MIN}+ min a game needed)`
+        : !o
+          ? "no game for his team this season"
+          : o.games < MIN_GAMES
+            ? `${o.games} game${o.games === 1 ? "" : "s"} this season; needs ${MIN_GAMES}`
+            : `${Math.round(o.min10)} min a game over his last 10; needs ${ROTATION_MIN}`,
+    });
+  }
+  return skipped;
 }
 
 /** What the nightly step stores (lib/nba/context-run.ts). */
@@ -249,23 +348,29 @@ export interface ContextPayload {
   adj: Record<string, PlayerContext["adj"]>;
   /** Per pro team id: its regulars now, with names to match NBA.com's lineups. */
   regulars: Record<string, (Regular & { name: string })[]>;
+  /** Per pro team id: its other players this season (stored from Nov 20; absent before). */
+  others?: Record<string, Other[]>;
 }
 
 /**
- * When each regular is expected back (scoring period; Infinity for the season; null when he
- * plays): an ESPN absence (ruled out, with its estimated return), or NBA.com listing him
- * inactive today (back tomorrow at the latest). Pure.
+ * Whether each regular is out, until when (scoring period; Infinity for the season) and on
+ * whose word, strongest first as the Today board (lib/nba/active.ts): NBA.com listing him
+ * inactive today, the official report's Out today, then an ESPN absence (ruled out, with its
+ * estimated return). Today's sources carry him to tomorrow at least; ESPN's estimate beyond.
+ * Null when he plays. Pure.
  */
 export function outUntilFor(
   payload: ContextPayload,
   input: {
     injuries: Pick<InjuryReport, "playerId" | "status" | "returnDate">[];
     lineups: LineupEntry[] | null;
+    /** Players the official report lists Out today (ESPN ids). */
+    officialOut?: ReadonlySet<number>;
     /** Players with ESPN's fantasy status (when there's no injury-feed entry). */
     players: Pick<RosterPlayer, "id" | "injuryStatus">[];
     today: number;
   },
-): (player: number) => number | null {
+): (player: number) => OutStatus | null {
   const reports = new Map(input.injuries.map((i) => [i.playerId, i]));
   const status = new Map(input.players.map((p) => [p.id, p.injuryStatus]));
   const regs = Object.entries(payload.regulars).flatMap(([team, rs]) =>
@@ -280,22 +385,41 @@ export function outUntilFor(
     }
   return (id) => {
     const a = absenceOf({ id, injuryStatus: status.get(id) ?? null }, reports.get(id), input.today);
-    if (a) return a.season ? Infinity : a.outUntil;
-    return inactive.has(id) ? input.today + 1 : null;
+    const espn = a ? (a.season ? Infinity : a.outUntil) : null;
+    const back = a?.returnDate ?? null;
+    const tonight = (source: OutStatus["source"]) => ({
+      until: Math.max(espn ?? 0, input.today + 1),
+      source,
+      back,
+    });
+    if (inactive.has(id)) return tonight("NBA.com");
+    if (input.officialOut?.has(id)) return tonight("official report");
+    return espn != null ? { until: espn, source: "ESPN", back } : null;
   };
 }
 
-/** Players with their context attached (none without a stored context). */
+/**
+ * Players with their context attached (none without a stored context). `listedOut`: ESPN's
+ * injury feed, for the teammates it rules out who don't count.
+ */
 export function withContext<T extends RosterPlayer>(
   players: T[],
   payload: ContextPayload | null,
-  outUntil: (player: number) => number | null,
+  outUntil: (player: number) => OutStatus | null,
   today: number,
+  listedOut: Pick<InjuryReport, "playerId" | "name" | "teamId" | "status" | "returnDate">[] = [],
 ): T[] {
   if (!payload) return players;
+  const ruledOut = listedOut.filter((i) =>
+    absenceOf({ id: i.playerId, injuryStatus: null }, i, today),
+  );
   return players.map((p) => {
     const adj = payload.adj[p.id] ?? [];
-    const days = factorDays(p.id, groupOf(p), payload.regulars[p.proTeamId] ?? [], outUntil, today);
-    return adj.length || days.some((d) => d.factor !== 1) ? { ...p, context: { adj, days } } : p;
+    const team = String(p.proTeamId);
+    const days = factorDays(p.id, groupOf(p), payload.regulars[team] ?? [], outUntil, today);
+    const skipped = skippedToday(p.id, team, payload, outUntil, ruledOut, today);
+    return adj.length || days.some((d) => d.factor !== 1) || skipped.length
+      ? { ...p, context: { adj, days, ...(skipped.length ? { skipped } : {}) } }
+      : p;
   });
 }

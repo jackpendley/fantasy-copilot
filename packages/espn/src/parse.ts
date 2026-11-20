@@ -79,11 +79,17 @@ export interface RosterPlayer {
    * The context-aware projection (set by the app; MODEL_CARD, teammate absences by impact):
    * what each of his games loses at full strength ([game id, scoring period, factor, FP,
    * minutes], games with a factor above 1), and his factor from each day on, with the
-   * regulars out that set it.
+   * regulars out that set it (each with what says he's out and ESPN's estimated return), and the
+   * teammates listed out today who don't count, with why.
    */
   context?: {
     adj: [number, number, number, number, number][];
-    days: { day: number; factor: number; out: string[] }[];
+    days: {
+      day: number;
+      factor: number;
+      out: { name: string; source: "NBA.com" | "official report" | "ESPN"; back: string | null }[];
+    }[];
+    skipped?: { name: string; reason: string }[];
   };
   /** Current lineup slot name, e.g. "UTIL", "BE", "IR". */
   slot: string | null;

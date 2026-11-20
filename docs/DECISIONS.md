@@ -1028,6 +1028,14 @@
 - **Logged:** `pregame_projections` gets `context_factor` and `context_free_fppg` (migration 0035), the whole projection without the model, for the forward check. Defense keeps dividing out only `matchup_factor`: its table learns from the model's own predictions, as in the re-run.
 - **Switch:** `CONTEXT_ON` in `lib/nba/context-run.ts`. Off means no player carries a context; the nightly still computes it.
 - **Forward check:** 2026-27's logged pregame projections, judged once on Jan 15, 2027 (MODEL_CARD). Its result feeds the between-seasons refit, not a mid-season removal (Jack, Nov 17).
+- **Amended Nov 19 (the card says why; no model change):**
+  - **Who's out uses the Today board's order:** NBA.com inactive, then the official report's Out, then ESPN (`lib/nba/active.ts`).
+    - Today's sources carry a regular to tomorrow at least; ESPN's estimate carries him beyond.
+    - Cards outside the league (search, Free agents, players by id) now read NBA.com's lineups too (the same 5-minute cache).
+    - **Limitation, as on the Today board:** the official report's statuses live in the memory of the server instance that read it.
+  - **The card names each teammate with what says he's out**, e.g. "+0%: Duncan Robinson out, ESPN estimates back Nov 27". A 0% effect is still listed (Jack: a complete report).
+  - **"Not counted":** teammates ESPN rules out who don't move the factor, with why: under 20 minutes a game, 10% or less of the team's points, fewer than 5 games this season, or no game for the team yet. The context stores each team's other players for this (`others`).
+  - **Defense:** the card shows the player-games behind the opponent factor (`DefenseSetting.games`), since early in the season the 200-game shrinkage keeps factors near 1.
 
 ## ADR-070: simulation runners on arm64, staying until the work is done (2026-11-19)
 

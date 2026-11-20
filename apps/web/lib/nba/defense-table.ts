@@ -16,7 +16,7 @@ export interface DefenseSetting {
   games: Record<string, number>;
 }
 
-let cached: { at: number; value: DefenseTable | null } | null = null;
+let cached: { at: number; value: DefenseTable | null; games: Record<string, number> } | null = null;
 
 /** The stored factors (null without a database or before the first nightly run). */
 export async function defenseTable(): Promise<DefenseTable | null> {
@@ -26,8 +26,18 @@ export async function defenseTable(): Promise<DefenseTable | null> {
   const rows = await db()<{ value: DefenseSetting }[]>`
     select value from model_settings where key = ${DEFENSE_KEY}
   `.catch(() => []);
-  cached = { at: Date.now(), value: rows[0]?.value.factors ?? null };
+  cached = {
+    at: Date.now(),
+    value: rows[0]?.value.factors ?? null,
+    games: rows[0]?.value.games ?? {},
+  };
   return cached.value;
+}
+
+/** Player-games behind each stored factor (the same read as the factors). */
+export async function defenseGames(): Promise<Record<string, number>> {
+  await defenseTable();
+  return cached?.games ?? {};
 }
 
 export function forgetDefenseTable() {

@@ -39,6 +39,7 @@ import { withTeammateReturns } from "./teammate-return";
 import { teammateReturnEffects } from "./teammate-return-run";
 import { outUntilFor, withContext } from "./context";
 import { storedContext } from "./context-run";
+import { officialOut } from "./official-report";
 
 /** How long each read is reused: rosters and matchups, live scores, slower feeds. */
 const LEAGUE_FETCH = memoFetch(20_000);
@@ -144,6 +145,7 @@ async function readLeague(scoringPeriodId: number, ymd: string) {
     outUntilFor(context, {
       injuries: injuries.list,
       lineups,
+      officialOut: officialOut(ymd),
       players: everyone,
       today: scoringPeriodId,
     });
@@ -153,6 +155,7 @@ async function readLeague(scoringPeriodId: number, ymd: string) {
       context,
       outUntil ?? (() => null),
       scoringPeriodId,
+      injuries.list,
     );
   const teams = parsed.map((t) => ({ ...t, roster: attach(t.roster) }));
   const me = teams.find((t) => t.id === teamId);
@@ -218,7 +221,7 @@ async function readFreeAgents(scoringPeriodId: number, limit = 250) {
   ]);
   const free = parseFreeAgents(raw, cfg.season);
   if (!returns.length && !context) return free;
-  const fixed = withContextFor(
+  const fixed = await withContextFor(
     withTeammateReturns(
       free.map((f) => f.player),
       returns,
@@ -242,7 +245,7 @@ export async function loadPlayersById(ids: number[], scoringPeriodId: number) {
     fetchImpl: FEED_FETCH,
   });
   const [injuries, context] = await Promise.all([safeInjuries(), storedContext()]);
-  const players = withContextFor(
+  const players = await withContextFor(
     parsePlayerPool(raw, cfg.season),
     context,
     injuries.list,
@@ -251,16 +254,24 @@ export async function loadPlayersById(ids: number[], scoringPeriodId: number) {
   return new Map(players.map((p) => [p.id, p]));
 }
 
-/** The context-aware projection for players loaded outside the league (no lineups read). */
-function withContextFor<T extends RosterPlayer>(
+/** The context-aware projection for players loaded outside the league (the same sources). */
+async function withContextFor<T extends RosterPlayer>(
   players: T[],
   context: Awaited<ReturnType<typeof storedContext>>,
   injuries: Awaited<ReturnType<typeof safeInjuries>>["list"],
   today: number,
-): T[] {
+): Promise<T[]> {
   if (!context) return players;
-  const outUntil = outUntilFor(context, { injuries, lineups: null, players, today });
-  return withContext(players, context, outUntil, today);
+  const ymd = dateForScoringPeriod(today);
+  const lineups = await fetchDailyLineups(ymd.replace(/-/g, ""), LINEUPS_FETCH).catch(() => null);
+  const outUntil = outUntilFor(context, {
+    injuries,
+    lineups,
+    officialOut: officialOut(ymd),
+    players,
+    today,
+  });
+  return withContext(players, context, outUntil, today, injuries);
 }
 
 /**

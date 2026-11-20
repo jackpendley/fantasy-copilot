@@ -49,7 +49,8 @@ import { marketContext, marketValue } from "./market";
 import { propsForGames } from "./market-data";
 import { scoreGames, summarize } from "./player";
 import { loadPlayer, loadPlayerPool } from "./pool";
-import { factorOn } from "./context-factor";
+import { factorOn, type OutTeammate, type SkippedTeammate } from "./context-factor";
+import { defenseGames } from "./defense-table";
 import { gameEnvironment, matchupFactor, perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
 import { teamValue, valueContext } from "./trade";
@@ -119,8 +120,13 @@ export interface PlayerCardData {
     environment: number;
     /** The opponent's defense against his position (1 = average). */
     matchup: number;
-    /** Teammates out for the next game (the context-aware projection; 1 = none). */
-    context: { factor: number; out: string[] };
+    /** Player-games behind that factor so far (0 before the first nightly run). */
+    matchupGames: number;
+    /**
+     * Teammates out for the next game (the context-aware projection; 1 = none), each with what
+     * says so, and those listed out today who don't count, with why.
+     */
+    context: { factor: number; out: OutTeammate[]; skipped: SkippedTeammate[] };
     /** Minutes our model expects (minutes x rate), when it has them. */
     minutes: number | null;
   };
@@ -272,16 +278,20 @@ export async function loadPlayerCard(
   const nextHome = nextGame?.homeProTeamId === pl.proTeamId;
   const environment = nextGame ? gameEnvironment(nextLine ?? null, nextHome) : 1;
   // The opponent's defense against his position (1 before the first nightly run).
-  const matchup = nextGame
-    ? matchupFactor(
-        data.defense,
-        nextHome ? nextGame.awayProTeamId : nextGame.homeProTeamId,
-        pl.positions,
-      )
-    : 1;
+  const opponentId = nextGame && (nextHome ? nextGame.awayProTeamId : nextGame.homeProTeamId);
+  const matchup = opponentId ? matchupFactor(data.defense, opponentId, pl.positions) : 1;
+  const matchupGames = opponentId
+    ? ((await defenseGames().catch((): Record<string, number> => ({})))[
+        `${opponentId}|${pl.positions[0]}`
+      ] ?? 0)
+    : 0;
   // Regulars out of his team for that game (the context-aware projection).
   const contextDay = pl.context?.days.findLast((d) => d.day <= (nextGame?.scoringPeriodId ?? sp));
-  const context = { factor: contextDay?.factor ?? 1, out: contextDay?.out ?? [] };
+  const context = {
+    factor: contextDay?.factor ?? 1,
+    out: contextDay?.out ?? [],
+    skipped: pl.context?.skipped ?? [],
+  };
   const nextProps =
     nextGame && nextGame.scoringPeriodId === sp
       ? ((await propsForGames([nextGame.gameId]).catch(() => new Map())).get(id) ?? [])
@@ -450,6 +460,7 @@ export async function loadPlayerCard(
       })),
       environment,
       matchup,
+      matchupGames,
       context,
       minutes: ours.minutes ?? null,
     },
@@ -605,9 +616,10 @@ function contextReturn(p: RosterPlayer, sp: number, fppg: number) {
   const now = days.findLast((d) => d.day <= sp);
   const next = days.find((d) => d.day > sp);
   if (!now || !next) return null;
-  const back = now.out.filter((name) => !next.out.includes(name));
+  const later = new Set(next.out.map((o) => o.name));
+  const back = now.out.map((o) => o.name).filter((name) => !later.has(name));
   return {
-    teammate: back.join(" and ") || now.out.join(" and "),
+    teammate: back.join(" and ") || now.out.map((o) => o.name).join(" and "),
     date: shortDate(next.day),
     now: fppg * now.factor,
     after: fppg * next.factor,

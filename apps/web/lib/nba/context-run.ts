@@ -12,6 +12,7 @@ import { readSinceNightly } from "../nightly-fresh";
 import { readView, viewStamp, writeView } from "../view-cache";
 import {
   absencesByGame,
+  othersNow,
   pastAdjustments,
   regularsNow,
   type Appearance,
@@ -86,9 +87,11 @@ export async function computeContext(
   for (const [id, list] of pastAdjustments(logs, absencesByGame(logs, group), group))
     adj[id] = list.map((a) => [a.game, sp.get(a.game)!, a.factor, a.fp, a.min]);
   const regulars: ContextPayload["regulars"] = {};
-  for (const [team, regs] of regularsNow(logs, group, Date.now()))
+  const now = regularsNow(logs, group, Date.now());
+  for (const [team, regs] of now)
     regulars[team] = regs.map((r) => ({ ...r, name: players.get(r.player)?.name ?? "" }));
-  return { asOf: today, adj, regulars };
+  const others = Object.fromEntries(othersNow(logs, now, Date.now()));
+  return { asOf: today, adj, regulars, others };
 }
 
 /** Recompute and store the context; returns counts for the job log. */

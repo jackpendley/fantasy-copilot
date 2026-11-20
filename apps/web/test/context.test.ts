@@ -9,9 +9,11 @@ import {
   outUntilFor,
   pastAdjustments,
   regularsNow,
+  skippedToday,
   withContext,
   type Appearance,
   type ContextPayload,
+  type OutStatus,
   type PlayerContext,
 } from "@/lib/nba/context";
 import { perGameProjection } from "@/lib/nba/projection";
@@ -137,18 +139,35 @@ describe("the context-aware projection in production", () => {
     { player: 4, share: 0.3, group: "G", min10: 15, name: "Test Sixth" },
   ];
 
+  const espnOut = (until: number, back: string | null = null): OutStatus => ({
+    until,
+    source: "ESPN",
+    back,
+  });
+
   it("sets his factor from each day on by who's out and until when", () => {
-    const until = new Map<number, number | null>([
-      [1, 30],
-      [3, Infinity],
-      [4, 40],
+    const until = new Map<number, OutStatus>([
+      [1, { until: 30, source: "NBA.com", back: "2026-12-01" }],
+      [3, espnOut(Infinity)],
+      [4, espnOut(40)],
     ]);
     const days = factorDays(2, "C", regulars, (id) => until.get(id) ?? null, 20);
     // Both out: 2 × (0.4 − 0.1) + (0.2 − 0.1), capped at 0.6; then the wing alone. The sixth
-    // man (under 20 minutes) never counts.
+    // man (under 20 minutes) never counts. Today's source is today's only: ESPN's after.
     expect(days).toEqual([
-      { day: 20, factor: 1 + 0.75 * 0.6, out: ["Test Star", "Test Wing"] },
-      { day: 30, factor: 1 + 0.75 * 0.1, out: ["Test Wing"] },
+      {
+        day: 20,
+        factor: 1 + 0.75 * 0.6,
+        out: [
+          { name: "Test Star", source: "NBA.com", back: "2026-12-01" },
+          { name: "Test Wing", source: "ESPN", back: null },
+        ],
+      },
+      {
+        day: 30,
+        factor: 1 + 0.75 * 0.1,
+        out: [{ name: "Test Wing", source: "ESPN", back: null }],
+      },
     ]);
     const p = { context: { adj: [], days } };
     expect(factorOn(p, 19)).toBe(1);
@@ -157,47 +176,95 @@ describe("the context-aware projection in production", () => {
     expect(factorDays(2, "C", regulars, () => null, 20)).toEqual([{ day: 20, factor: 1, out: [] }]);
   });
 
-  it("reads who's out from ESPN's injury feed and NBA.com's inactive list", () => {
+  const inactive = (name: string) => ({
+    nbaPersonId: 9,
+    name,
+    team: "NYK",
+    gameId: "x",
+    lineupStatus: "Confirmed",
+    rosterStatus: "Inactive",
+    position: "",
+    starter: false,
+    timestamp: null,
+  });
+
+  it("reads who's out from NBA.com, the official report and ESPN, strongest first", () => {
     const today = 20;
+    const back = dateForScoringPeriod(30);
     const payload: ContextPayload = { asOf: today, adj: {}, regulars: { "18": regulars } };
     const outUntil = outUntilFor(payload, {
       injuries: [
-        { playerId: 1, status: "Out", returnDate: dateForScoringPeriod(30) },
+        { playerId: 1, status: "Out", returnDate: back },
         { playerId: 4, status: "Day-To-Day", returnDate: null },
       ],
-      lineups: [
-        {
-          nbaPersonId: 9,
-          name: "Test Wing",
-          team: "NYK",
-          gameId: "x",
-          lineupStatus: "Confirmed",
-          rosterStatus: "Inactive",
-          position: "",
-          starter: false,
-          timestamp: null,
-        },
-      ],
+      lineups: [inactive("Test Wing"), inactive("Test Star")],
+      officialOut: new Set([4]),
       players: [],
       today,
     });
-    expect(outUntil(1)).toBe(30);
-    expect(outUntil(3)).toBe(today + 1);
-    expect(outUntil(4)).toBeNull();
+    // NBA.com first, and ESPN's estimate still carries him past tonight.
+    expect(outUntil(1)).toEqual({ until: 30, source: "NBA.com", back });
+    expect(outUntil(3)).toEqual({ until: today + 1, source: "NBA.com", back: null });
+    // The official report's Out over ESPN's day-to-day.
+    expect(outUntil(4)).toEqual({ until: today + 1, source: "official report", back: null });
     expect(outUntil(99)).toBeNull();
+    const espnOnly = outUntilFor(payload, {
+      injuries: [{ playerId: 1, status: "Out", returnDate: back }],
+      lineups: null,
+      players: [],
+      today,
+    });
+    expect(espnOnly(1)).toEqual({ until: 30, source: "ESPN", back });
   });
 
   it("attaches a context only to players it changes, and nothing without one", () => {
     const players = [player(), { ...player(), id: 5, proTeamId: 20 }];
-    expect(withContext(players, null, () => 30, 20)).toBe(players);
+    expect(withContext(players, null, () => espnOut(30), 20)).toBe(players);
     const payload: ContextPayload = {
       asOf: 20,
       adj: { "2": [[105, 6, 1.5, 10, 11]] },
       regulars: { "18": regulars },
     };
-    const [backup, other] = withContext(players, payload, (id) => (id === 1 ? 30 : null), 20);
+    const [backup, other] = withContext(
+      players,
+      payload,
+      (id) => (id === 1 ? espnOut(30) : null),
+      20,
+    );
     expect(backup!.context?.adj).toEqual([[105, 6, 1.5, 10, 11]]);
-    expect(backup!.context?.days[0]).toMatchObject({ day: 20, out: ["Test Star"] });
+    expect(backup!.context?.days[0]).toMatchObject({
+      day: 20,
+      out: [{ name: "Test Star", source: "ESPN" }],
+    });
+    expect(backup!.context?.skipped).toBeUndefined();
     expect(other).toBe(players[1]);
+  });
+
+  it("names the teammates listed out who don't count, and why", () => {
+    const payload: ContextPayload = {
+      asOf: 20,
+      adj: {},
+      regulars: { "18": [...regulars, { ...regulars[1]!, player: 6, share: 0.08, name: "Low" }] },
+      others: { "18": [{ player: 7, games: 1, min10: 30 }] },
+    };
+    const out = new Set([4, 6]);
+    const skipped = skippedToday(
+      2,
+      "18",
+      payload,
+      (id) => (out.has(id) ? espnOut(30) : null),
+      [
+        { playerId: 7, name: "Big Back", teamId: 18 },
+        { playerId: 8, name: "New Guy", teamId: 18 },
+        { playerId: 9, name: "Elsewhere", teamId: 3 },
+      ],
+      20,
+    );
+    expect(skipped).toEqual([
+      { name: "Test Sixth", reason: "15 min a game over his last 10; needs 20" },
+      { name: "Low", reason: "8% of the team's points; needs over 10%" },
+      { name: "Big Back", reason: "1 game this season; needs 5" },
+      { name: "New Guy", reason: "no game for his team this season" },
+    ]);
   });
 });

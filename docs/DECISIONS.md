@@ -977,7 +977,8 @@
   - **What:** every player ESPN lists in a finished game's box score. Played, or dressed and didn't (DNP, with ESPN's reason). Inactive players aren't listed, so a team's regular missing from a recorded game was inactive.
   - **Written with `game_results`** by `recordResults` / `recordFinished` (`lib/nba/market-data.ts`):
     - the gameday runs record tonight's finished games at the half-hourly store (the database is awake then anyway);
-    - the nightly's new `results` step catches up any finished game this season without rows (at most 60 a night, oldest first; this also backfills 2026-27). It runs before the simulations and the defense table.
+    - the nightly's new `results` step catches up any finished game this season without rows (at most 120 a night, oldest first; this also backfills 2026-27). It runs before the simulations and the defense table.
+    - **Amended Nov 19:** the gameday runs also catch up earlier games, at most 60 per store, until none are left on that instance. The batch that finishes then computes the context right away. The 2026-27 backfill finishes the night of the deploy instead of over two nightlies.
   - `collectToday` no longer records results.
 - **NBA.com's lineups for every player** (`lineup_log`, `lib/nba/lineup-log.ts`):
   - **What:** each state a player-game is seen in (active or inactive, starter, confirmed), with NBA.com's timestamp and when we saw it. Rows use NBA ids and names; they are matched to ESPN players when read.

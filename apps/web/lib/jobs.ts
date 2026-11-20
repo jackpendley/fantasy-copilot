@@ -303,6 +303,18 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
             }),
         )
       : null;
+  // Earlier finished games not recorded yet (the season before the ledger, or a missed nightly),
+  // a batch at each store until none are left; then the context they held back, without waiting
+  // for the next nightly.
+  const catchup =
+    !caughtUp && (plan.store || dbUse.queries > queries)
+      ? await m.step("catchup", () =>
+          catchUp(data, sp, date).catch(async (e: Error) => {
+            await log("results", "error", errorText(e)).catch(() => {});
+            return null;
+          }),
+        )
+      : null;
 
   // Today's win-chance point, if the nightly job couldn't record it (before the first tip only,
   // so it's still a pregame snapshot).
@@ -350,6 +362,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
       returns,
       timeline,
       results,
+      catchup,
       lineups,
       availability,
       stored,
@@ -430,6 +443,7 @@ async function gamedayRun(now: Date, m: CpuMeter): Promise<Record<string, unknow
     returns,
     timeline,
     results,
+    catchup,
     lineups,
     closingProps: market?.props ?? 0,
     tradesRefreshed: trades,
@@ -628,6 +642,24 @@ async function collectToday(snapshot: Snapshot, darko = false): Promise<Record<s
 const recordedGames = new Set<number>();
 /** The nightly's catch-up: at most this many box scores a night (about half a second each). */
 const RESULTS_PER_NIGHT = 120;
+/** The gameday catch-up: at most this many box scores a store (about 30 seconds). */
+const CATCHUP_PER_STORE = 60;
+/** No earlier game is left to record (per server instance; a recycled one asks again). */
+let caughtUp = false;
+
+/** Record a batch of earlier unrecorded games; the last batch also refreshes the context. */
+async function catchUp(data: Awaited<ReturnType<typeof loadLeague>>, sp: number, ymd: string) {
+  const r = await recordFinished(
+    data.games.filter((g) => g.scoringPeriodId < sp),
+    data.settings.scoring,
+    CATCHUP_PER_STORE,
+  );
+  if (r.left) return r;
+  caughtUp = true;
+  return r.gamesRecorded
+    ? { ...r, context: await step("context", () => contextStep(ymd, data)) }
+    : r;
+}
 
 /** Scoring periods whose win-chance snapshot is known to exist (per server instance). */
 const snapshotted = new Set<number>();

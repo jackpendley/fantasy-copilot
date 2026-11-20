@@ -8,7 +8,9 @@
 # from the app until every move's title change is known to its tier's precision
 # (ADR-058: every candidate move, most important first). Arm runners (ADR-070): four real
 # cores each, 1.3 to 1.8 times an x64 runner's seasons, with bit-identical results; a runner
-# stays until no work is left (up to two hours), so a job doesn't stall between runs.
+# stays until no work is left (up to two hours), so a job doesn't stall between runs. Each
+# runner slot and the task runner queue on their own (not the whole run): a new trigger's
+# build starts at once, and the runners already up take the new job when they next ask.
 # Secrets: WORKER_SECRET only (the app's /api/worker key). No ESPN or database credentials.
 
 name: Simulate
@@ -19,10 +21,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: simulate
-  cancel-in-progress: false
-
 env:
   APP_URL: ${{ vars.APP_URL || 'https://fantasycopilot.vercel.app' }}
 
@@ -30,6 +28,10 @@ jobs:
   simulate:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
+    # One runner per slot at a time: a newer run's runner waits for the one before it.
+    concurrency:
+      group: simulate-${{ matrix.runner }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:
@@ -55,6 +57,10 @@ jobs:
     # Other computation the app hands off (docs/COMPUTE.md), e.g. the trade idea search.
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
+    # One task runner at a time (claims are atomic either way); not behind the simulate runners.
+    concurrency:
+      group: simulate-tasks
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

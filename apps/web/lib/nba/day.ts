@@ -21,7 +21,7 @@ import {
   type ScoreboardGame,
 } from "@fantasy-copilot/nba-data";
 import { activeStatus } from "./active";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 import {
   gameEnvironment,
   matchupFactor,

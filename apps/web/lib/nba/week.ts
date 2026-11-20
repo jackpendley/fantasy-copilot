@@ -5,7 +5,7 @@ import type { ProGame, RosterPlayer } from "@fantasy-copilot/espn";
 import { optimizeLineup, playProbability, type Position } from "@fantasy-copilot/fantasy-core";
 import type { InjuryReport } from "@fantasy-copilot/nba-data";
 import { afterReturn } from "./teammate-return";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 import {
   gameEnvironment,
   matchupFactor,

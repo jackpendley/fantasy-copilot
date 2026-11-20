@@ -47,3 +47,13 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://postgres@localhost:5432/fantasy_copilot_test
       - run: pnpm --filter @fantasy-copilot/web build
+      # simulate.yml bundles the worker and the task runner from a sparse checkout with no
+      # node_modules, so an import of another package fails only there (Nov 19: the task runner
+      # broke on lib/nba/context.ts). Bundle both the same way here.
+      - name: Worker bundles, as simulate.yml builds them
+        run: |
+          d=$(mktemp -d)
+          rsync -aR --exclude node_modules packages/fantasy-core apps/web/lib apps/web/worker .nvmrc "$d"/
+          cd "$d"
+          npx --yes esbuild@0.24.0 packages/fantasy-core/worker/worker.ts --bundle --platform=node --format=esm --outfile=worker.mjs
+          npx --yes esbuild@0.24.0 apps/web/worker/tasks.ts --bundle --platform=node --format=esm --outfile=tasks.mjs --alias:@fantasy-copilot/fantasy-core=./packages/fantasy-core/src/index.ts

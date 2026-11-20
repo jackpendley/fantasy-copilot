@@ -7,7 +7,7 @@ import type { LeagueSettings, ProGame, RosterPlayer } from "@fantasy-copilot/esp
 import type { ScoreboardGame } from "@fantasy-copilot/nba-data";
 import { bestProjection, blendSetting } from "./accuracy";
 import { propsForGames } from "./market-data";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 import { gameEnvironment, matchupFactor, perGameProjection, type DefenseTable } from "./projection";
 import { vegasProjection } from "./vegas";
 

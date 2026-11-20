@@ -19,7 +19,7 @@ import { matchupPeriodOf } from "./calendar";
 import { acceptance, marketValue, type Acceptance, type MarketContext } from "./market";
 import { perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 
 export interface ValueContext {
   /** proTeamId -> days with a game, from `fromDay` to `lastDay`. */

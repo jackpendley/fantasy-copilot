@@ -1667,6 +1667,49 @@ Test 1: **93,334** affected (gate 10,000: met). Test 2: **78,901** (gate 20,000:
 
 - **Why test 1 touches so many games:** its window reaches into last season for every player with fewer than 10 games this season, so nearly every game in the first weeks moves a little, plus every game of a team with a long-injured regular.
 
+### Result (2026-11-20): both pass comparison 1; test 2 fails comparison 2
+
+One evaluation (`K_OPP=-0.1 S_OPP=1`, after 465f9df).
+
+| Comparison (2019-20 to 2024-25, environment + defense on both sides) | n (player-seasons) | Change − shipped | 95% CI                                 |
+| -------------------------------------------------------------------- | ------------------ | ---------------- | -------------------------------------- |
+| **Test 1, last season's games:** 1. absolute error, affected         | 93,334 (1,957)     | −0.003           | [−0.005, −0.000] (upper bound below 0) |
+| Test 1: 2. squared error, affected                                   | 93,334 (1,957)     | −0.020           | [−0.082, +0.043]                       |
+| **Test 2, opponents' absences:** 1. absolute error, affected         | 78,901 (2,984)     | −0.004           | [−0.005, −0.002]                       |
+| Test 2: 2. squared error, affected                                   | 78,901 (2,984)     | **+0.159**       | [+0.113, +0.205]                       |
+
+- **Test 1:** comparison 1 passes, just: the upper bound is below 0 but rounds to −0.000. Comparison 2 is not separable from 0.
+- **Test 2:** comparison 1 passes. Comparison 2 is **worse**, with its whole interval above 0.
+
+**Described, not tested** (MAE: change − shipped, 95% CI; signed error shipped → change):
+
+| Games                                        | n       | MAE                                            | Signed        |
+| -------------------------------------------- | ------- | ---------------------------------------------- | ------------- |
+| Test 1, every player-game                    | 132,968 | −0.002 [−0.004, −0.000]                        | −0.22 → −0.24 |
+| Test 1, tonight's factor changes             | 48,132  | +0.005 [−0.001, +0.010]                        | −0.31 → −0.29 |
+| Test 1, only earlier games change (returns)  | 55,838  | −0.010 [−0.014, −0.005]                        | −0.14 → −0.20 |
+| Test 1, his first 10 games                   | 8,661   | +0.013 [−0.000, +0.027]                        | −0.09 → +0.14 |
+| Test 1, same position group tonight          | 36,392  | +0.008 [+0.002, +0.013]                        | −0.52 → −0.49 |
+| Test 1 by season, 2019-20 … 2024-25          | 12–18k  | −0.003, −0.005, −0.001, −0.006, +0.002, −0.003 | —             |
+| Test 2, every player-game                    | 132,968 | −0.001 [−0.002, −0.000]                        | −0.22 → −0.29 |
+| Test 2, an opposing star out                 | 26,439  | −0.004 [−0.008, −0.001]                        | −0.73 → −0.98 |
+| Test 2, an opposing regular in his group out | 40,368  | −0.003 [−0.006, −0.000]                        | −0.63 → −0.78 |
+| Test 2 by season                             | 10–15k  | −0.008, −0.004, −0.001, −0.005, −0.003, −0.002 | —             |
+| Both changes together, every player-game     | 132,968 | −0.003 [−0.005, −0.002]                        | −0.22 → −0.31 |
+
+**Reading:**
+
+- **Test 1's gain is in the returns, not the boosts.**
+  - **Returns:** games where only earlier games change, i.e. a long-absent regular back and his teammates' past games de-inflated, are −0.010.
+  - **Boosts:** games where tonight's factor changes, i.e. a Duren-type regular out, are not better (+0.005). In the same position group they are slightly worse (+0.008).
+  - So for players like Duren, the data supports "his teammates drop when he returns", not "they rise while he's out". A likely reason: a team long without a regular has already reshaped its rotation, and last season's share overstates what his absence frees up now.
+- **Test 2 looks like a shift, not a signal.**
+  - k is negative, so it lowers projections when an opposing regular sits. Fantasy points are skewed right, so lowering projections can cut absolute error while adding bias.
+  - That's what happened: squared error is clearly worse (+0.159), and the signed error grows from −0.73 to −0.98 for an opposing star out.
+  - The exploration grid was also almost flat (−0.0004 at best).
+
+**Consequence:** as registered, a test passes on comparison 1. Comparison 2 failing for test 2, and the boost side of test 1 not helping, are new information, so the decision goes to Jack before anything ships (pre-registered consequence: "Jack is told, with the described rows"). Not shipping is always allowed under CLAUDE.md's rule.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

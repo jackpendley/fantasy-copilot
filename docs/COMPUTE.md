@@ -638,3 +638,43 @@ Run from 3:45 PM to 4:24 PM MST. The singles came from the tier guard's simulati
 - the best moves are close enough that any shift changes the top 5.
 
 Showing a full re-run's numbers, with the last numbers marked "updating" until then (ADR-058), is what both tests support.
+
+## 14. A shorter race on triggered jobs (pre-registered Nov 19, before its run)
+
+**Why.** On the Players page (Nov 19), the 9 moves checked deepest had 132,000 to 160,000 seasons each. That's about half of all the seasons shown. They're the decision race (ADR-063): Jack's best move and up to three moves not clearly behind it, run to ±0.1 title points. Their title changes were all within about 0.2 points of each other.
+
+**Candidate.** On triggered jobs, the race stops at the top tier's precision: ±0.2 points and up to 40,000 seasons, which every card's opening move already gets. The nightly run keeps the full race.
+
+**Question.** Does Jack's #1 change? If so, by how much, measured in the full race's own numbers?
+
+**Data.** 12 league states from Nov 19's saved jobs (`data/local/replay-tiers`, private):
+
+- **The morning (`jobs-2026-11-19T1652.json`):** the league as read, the first 4 league moves and the first 4 injury news items of §11.
+- **The afternoon (`skip-jobs-2026-11-19T2018.json`):** the league as read and both busy days of §12.
+
+**Method** (`scripts/replay-race.ts`):
+
+- **Moves:** in each state, the 20 best waiver moves by title change after 4,000 seasons, from §11 and §12's runs.
+- **Rules:** each move is checked by production's own logic (`lib/nba/deep-check.ts`): `effectsFromSums`, `promotions`, `racingTargets`, and head to head from per-chunk means. Production's chunk seeds, 500 seasons a chunk, 10 playoff replays.
+- **Rounds:** all 20 moves start with chunks 0–7, at the top tier. After each refresh, every move still getting seasons takes its next 16 chunks.
+- **Two runs per state:** today's race (decision tier: ±0.1, to 160,000 seasons), and the candidate (racers promoted to the top tier only). A chunk's numbers depend only on its index, so both runs share them.
+
+**Measures:**
+
+1. **Loss:** the full race's #1 title change minus the full race's number for the candidate's #1. Zero when they pick the same move.
+2. **Reported:** seasons used in each run, and whether #1 is the same.
+
+**Criterion:**
+
+- The loss is at most 0.1 points (the full race's own ±0.1) in at least 11 of the 12 states;
+- and at most 0.2 points in all 12.
+
+**If it passes,** Jack decides whether triggered jobs get the shorter race. The seasons saved come with it. **If it fails,** the race stays as it is.
+
+**Limits, disclosed:**
+
+- **Truth is itself an estimate:** the full race's numbers are ±0.1.
+- **Contenders only:** moves outside the 20 best at 4,000 seasons aren't checked. Every move starts at the top tier, though in production only cards' opening moves do.
+- **Candidate's elimination:** its racers are lowered by the card race's rule (out only when clearly behind on their own card), since the decision tier's rule applies to moves checked to 160,000.
+- **Inputs:** the snapshots predate ADR-069's context projection.
+- **League states:** one day, two times of day.

@@ -1059,3 +1059,15 @@
 - **Addendum (Nov 19, evening): concurrency per runner slot.**
   - **The problem:** the whole run shared one concurrency group. A new trigger's run, and with it the task runner that builds its job, waited for the run before it to end. That was at most 25 minutes before this ADR, and up to the whole job after it.
   - **The fix:** each simulate runner slot (`simulate-1` to `simulate-18`) and the task runner (`simulate-tasks`) queue on their own. A new build starts at once, and runners already up take the new job when they next ask. Task claims are atomic (`for update skip locked`).
+- **Addendum (Nov 19, night): the simulator, 1.18× faster with the same numbers.**
+  - **Guard:** `test/sim-golden.test.ts` fixes the exact output (a SHA-256 of `runChunk`'s result) on a synthetic league that takes every path. Any change to a number fails CI.
+  - **Locally:** three real-league chunks hashed identically before and after, and so did a copy with a third of players' points changing mid-season.
+  - **Changes**, from a line-level profile:
+    - each roster is ranked once by points (a stable insertion sort), and each lineup takes its players in that order instead of sorting them (the sort was 11% of the time);
+    - no snapshot and restore around each placement: a failed augmenting path assigns no slot;
+    - the day's team order uses an insertion sort, stable like the sort it replaces;
+    - a manager who doesn't check that day plays the standing lineup by per-player marks instead of a new `Set`.
+  - **Measured:** new/old time 0.82–0.88 (median 0.85) on the real league, alternating runs in the same window.
+  - **Left as is:**
+    - the random draws (13%), since a different formula changes the numbers;
+    - re-solving only the teams whose players' points changed. The golden test caught that it changes results with fit streaming, because `restand` (the standing lineup after a stream) isn't always what a full solve gives, though its comment says it is. A full solve after each change re-syncs it. That's a model detail of the pre-registered fit streaming, kept as tested.

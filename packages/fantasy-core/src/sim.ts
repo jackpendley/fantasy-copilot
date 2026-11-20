@@ -233,6 +233,8 @@ interface P {
   left: Uint8Array;
   /** Starting slots he can fill, as a bitmask over the open slots. */
   elig: number;
+  /** Marked available for a lineup (`availMark`). */
+  avail: number;
 }
 
 /** One season per step, yielding the summary so far (as a function); returns the summary. */
@@ -321,7 +323,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       OPEN.forEach((slot, j) => {
         if (slotAccepts(slot, sp.eligible)) elig |= 1 << j;
       });
-      x = { src: sp, fppg: sp.fppg, h, ...tablesOf(sp.proTeamId), elig };
+      x = { src: sp, fppg: sp.fppg, h, ...tablesOf(sp.proTeamId), elig, avail: 0 };
       wrapped.set(sp, x);
       if (sp.changes?.length) changing.push(x);
     }
@@ -355,15 +357,14 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     }
     return false;
   };
-  const bestLineup = (players: P[]): P[] => {
-    sorted = [...players].sort((a, b) => b.fppg - a.fppg);
+  /** The best lineup from players best first (a failed augmenting path changes no slot). */
+  const seat = (best: P[]): P[] => {
+    sorted = best;
     owner.fill(-1);
     const seated: P[] = [];
     for (let i = 0; i < sorted.length && seated.length < OPEN.length; i++) {
-      snap.set(owner);
       seen = 0;
       if (tryPlace(i)) seated.push(sorted[i]!);
-      else owner.set(snap);
     }
     return seated;
   };
@@ -410,6 +411,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const pickups: number[][] = teams.map(() => []);
   let stamp = 0;
   let day = 0;
+  let availMark = 0;
 
   /** His health this season, set up the first time he's looked at. */
   const H = (x: P): number => {
@@ -460,6 +462,8 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   type TeamState = {
     roster: P[];
     lineups: Map<number, P[]>;
+    /** The roster's indices, best first: by points, ties in roster order (`rankOf`). */
+    ranked?: Int32Array;
     /**
      * The best lineup from the whole roster, ignoring schedule and health (fitStreams): every
      * player best first, and which of them holds each open slot (-1: empty).
@@ -473,6 +477,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
   const setRoster = (x: TeamState, r: P[]) => {
     x.roster = r;
     x.lineups.clear();
+    x.ranked = undefined;
   };
   /** Which roster players pass `keep`, as a bitmask over the roster. */
   const maskOf = (x: TeamState, keep: (r: P) => boolean) => {
@@ -480,8 +485,27 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     for (let k = 0; k < x.roster.length; k++) if (keep(x.roster[k]!)) mask |= 1 << k;
     return mask;
   };
+  /**
+   * The roster's indices best first, ranked once per roster: by points, ties in roster order (an
+   * insertion sort, stable).
+   */
+  const rankOf = (x: TeamState) => {
+    if (x.ranked) return x.ranked;
+    const r = x.roster;
+    const ranked = new Int32Array(r.length);
+    for (let i = 0; i < r.length; i++) {
+      const v = r[i]!.fppg;
+      let j = i;
+      for (; j > 0 && r[ranked[j - 1]!]!.fppg < v; j--) ranked[j] = ranked[j - 1]!;
+      ranked[j] = i;
+    }
+    return (x.ranked = ranked);
+  };
   const solve = (x: TeamState, mask: number) => {
-    const l = bestLineup(x.roster.filter((_, k) => (mask >> k) & 1));
+    // The players passing, kept in the roster's ranking: the order sorting them would give.
+    const best: P[] = [];
+    for (const k of rankOf(x)) if ((mask >> k) & 1) best.push(x.roster[k]!);
+    const l = seat(best);
     x.lineups.set(mask, l);
     return l;
   };
@@ -515,7 +539,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
    * games he'd start (1 with none left).
    */
   /**
-   * The standing lineup after one swap, from the one before it, exactly as `bestLineup` would
+   * The standing lineup after one swap, from the one before it, exactly as `seat` would
    * choose it (same order, ties by roster position): without `gone` the lineup keeps the other
    * starters and refills his slot from the bench if it can (as in `dayOf`); `pick` then takes a
    * slot by an augmenting path, or replaces the weakest starter whose removal lets him in, if
@@ -580,7 +604,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     if (st && sw && sw.from === st.roster && sw.to === x.roster)
       x.stand = restand(st, x.roster, sw.gone, sw.pick);
     else {
-      bestLineup(x.roster);
+      seat(Array.from(rankOf(x), (k) => x.roster[k]!));
       x.stand = { roster: x.roster, sorted, owner: Int32Array.from(owner) };
     }
     return x.stand;
@@ -589,7 +613,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
    * Day `d`'s lineup from the standing one, exactly as a full solve would make it: the best
    * lineup from a subset keeps every standing starter in it (greedy on a matroid), so the
    * standing starters who play stay, and the others who play are added best first by the same
-   * augmenting paths as `bestLineup`.
+   * augmenting paths as `seat`.
    */
   const dayOf = (st: { sorted: P[]; owner: Int32Array }, d: number, into: Day) => {
     sorted = st.sorted;
@@ -843,6 +867,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         streamer: teams[i]!.addsPerWeek >= 0.25,
         /** Lineups by availability bitmask, for the roster as it stands. */
         lineups: new Map<number, P[]>(),
+        ranked: undefined as Int32Array | undefined,
         swapped: undefined as TeamState["swapped"],
         stand: undefined as TeamState["stand"],
         week: undefined as TeamState["week"],
@@ -853,6 +878,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
     for (const list of pickups) list.length = 0;
     let curP = 0;
     const orderKey = new Float64Array(n);
+    const order = new Int32Array(n);
     const rosterIds = () =>
       st.map((x) => [...x.roster, ...(x.ir ? [x.ir.player] : [])].map((r) => r.src.id));
 
@@ -915,8 +941,13 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
       // Players in the IR slot keep healing (their injury counts down on their team's games).
       for (const x of st) if (x.ir) isHealthy(x.ir.player);
 
-      for (let i = 0; i < n; i++) orderKey[i] = draw(teamKey[i]!, d, DRAW.order);
-      const order = [...Array(n).keys()].sort((a, b) => orderKey[a]! - orderKey[b]!);
+      // Teams in order of their keys (an insertion sort: stable, like the sort it replaces).
+      for (let i = 0; i < n; i++) {
+        const k = (orderKey[i] = draw(teamKey[i]!, d, DRAW.order));
+        let j = i;
+        for (; j > 0 && orderKey[order[j - 1]!]! > k; j--) order[j] = order[j - 1]!;
+        order[j] = i;
+      }
       for (const ti of order) {
         const t = teams[ti]!;
         const x = st[ti]!;
@@ -1018,8 +1049,10 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
         let lineup: P[];
         if (checks) lineup = lineupOf(x, isHealthy);
         else {
-          const avail = new Set(x.roster.filter(isHealthy));
-          lineup = x.standing.filter((r) => avail.has(r));
+          // The standing lineup's players still on the roster and healthy today.
+          const mark = ++availMark;
+          for (const r of x.roster) if (isHealthy(r)) r.avail = mark;
+          lineup = x.standing.filter((r) => r.avail === mark);
         }
         const pts = weekPts[ti]!;
         for (const r of lineup) {
@@ -1129,6 +1162,7 @@ function* simulation(input: SimInput): Generator<() => SimTeamResult[], SimTeamR
           st.forEach((x, i) =>
             Object.assign(x, saved.st[i], {
               lineups: new Map(),
+              ranked: undefined,
               stand: undefined,
               swapped: undefined,
               week: undefined,

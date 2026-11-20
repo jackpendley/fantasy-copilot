@@ -1624,6 +1624,49 @@ Two tests, each deciding only its own change.
 
 **When:** this is pushed first. Then the test 2 fit (exploration seasons), recorded. Then `DRY=1` (counts only). Then one evaluation. Nothing is tuned or re-run on 2019-25.
 
+### Test 2 fit (2026-11-20, exploration seasons only; pre-registration pushed at c2bf67c)
+
+`FIT=1` on 2017-18, 2018-19 and 2025-26: 67,109 player-games, shipped stack × the opponent factor. MAE against k = 0 (9.2468):
+
+| k     | s = 1   | s = 2   |
+| ----- | ------- | ------- |
+| −0.50 | +0.0113 | +0.0217 |
+| −0.30 | +0.0029 | +0.0064 |
+| −0.20 | +0.0006 | +0.0019 |
+| −0.15 | −0.0001 | +0.0005 |
+| −0.10 | −0.0004 | −0.0002 |
+| −0.05 | −0.0004 | −0.0004 |
+| 0     | 0       | 0       |
+| +0.05 | +0.0006 | +0.0008 |
+| +0.10 | +0.0014 | +0.0020 |
+| +0.20 | +0.0038 | +0.0059 |
+| +0.30 | +0.0072 | +0.0115 |
+| +0.50 | +0.0171 | +0.0280 |
+
+(Every 0.05 step was run; the rows left out lie between their neighbours.)
+
+**Frozen: k = −0.10, s = 1.**
+
+- **The sign:** an opposing regular sitting slightly lowers a player's output; a slower or less competitive game outweighs the weaker opponent.
+- **The size:** the best gain over k = 0 is −0.0004 FP/game, so the grid is nearly flat around 0. The test runs as registered.
+
+**Order slip:** `DRY=1` ran right after the fit, before this record was committed (a failed edit). The fit had already printed, and DRY's counts don't depend on k or s (affected = an opposing regular out). So the counts couldn't have informed the fit, nor the fit the counts.
+
+**`DRY=1` (counts only):**
+
+| Season  | Player-games | Test 1 affected (tonight's factor changes) | Test 2 affected (opposing star out) |
+| ------- | ------------ | ------------------------------------------ | ----------------------------------- |
+| 2019-20 | 19,580       | 11,668 (7,085)                             | 10,419 (3,301)                      |
+| 2020-21 | 20,294       | 13,001 (8,289)                             | 12,681 (4,045)                      |
+| 2021-22 | 23,160       | 16,402 (8,146)                             | 13,850 (5,365)                      |
+| 2022-23 | 23,053       | 17,664 (8,130)                             | 13,449 (4,861)                      |
+| 2023-24 | 23,426       | 17,076 (6,939)                             | 13,932 (4,523)                      |
+| 2024-25 | 23,455       | 17,523 (9,543)                             | 14,570 (4,344)                      |
+
+Test 1: **93,334** affected (gate 10,000: met). Test 2: **78,901** (gate 20,000: met).
+
+- **Why test 1 touches so many games:** its window reaches into last season for every player with fewer than 10 games this season, so nearly every game in the first weeks moves a little, plus every game of a team with a long-injured regular.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

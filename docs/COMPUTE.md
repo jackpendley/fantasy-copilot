@@ -430,6 +430,7 @@ Not yet cut, small this early in the season and measured with the traffic log be
 - **Box scores** (`game_participation` with `game_results`):
   - The gameday runs write them only at the half-hourly store, when the held logs wake the database anyway.
   - The nightly catches up any finished game without rows: one check of the season's game ids, then at most 120 summaries (ESPN, not the database).
+  - The gameday store does the same, at most 60 summaries each time (about 30 seconds while the database is awake anyway), until nothing is left. After that, the instance stops checking.
 - **NBA.com's lineups** (`lineup_log`): held with the other logs, stored at the same moments.
 - **The context step:**
   - **Nightly:** reads the season's played rows once (game, player, team, FP, minutes: about 1 MB at season's end) and writes one gzipped `view_cache` row.

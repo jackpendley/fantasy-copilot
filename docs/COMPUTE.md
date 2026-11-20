@@ -678,3 +678,31 @@ Showing a full re-run's numbers, with the last numbers marked "updating" until t
 - **Candidate's elimination:** its racers are lowered by the card race's rule (out only when clearly behind on their own card), since the decision tier's rule applies to moves checked to 160,000.
 - **Inputs:** the snapshots predate ADR-069's context projection.
 - **League states:** one day, two times of day.
+
+## 15. Result: the shorter race (Nov 20)
+
+**It does not pass.** The loss was within 0.1 points in 10 of the 12 states (11 needed) and within 0.2 in all 12. So the race stays as it is, on triggered jobs too (§14).
+
+| State                              | Same #1 | Loss (points) | Seasons, full → shorter    |
+| ---------------------------------- | ------- | ------------- | -------------------------- |
+| Morning: the league as read        | yes     | 0             | 1,304,000 → 720,000 (−45%) |
+| League move 1                      | yes     | 0             | 1,112,000 → 704,000 (−37%) |
+| League move 2                      | yes     | 0             | 848,000 → 704,000 (−17%)   |
+| League move 3                      | no      | 0.048         | 1,592,000 → 720,000 (−55%) |
+| League move 4                      | yes     | 0             | 944,000 → 704,000 (−25%)   |
+| Injury news 1                      | no      | 0.003         | 1,224,000 → 704,000 (−42%) |
+| Injury news 2                      | yes     | 0             | 1,032,000 → 712,000 (−31%) |
+| Injury news 3                      | no      | 0.047         | 1,272,000 → 704,000 (−45%) |
+| Injury news 4                      | yes     | 0             | 1,256,000 → 720,000 (−43%) |
+| Afternoon: the league as read      | no      | **0.105**     | 1,112,000 → 720,000 (−35%) |
+| Busy day: 10 rival add/drops       | no      | **0.153**     | 1,072,000 → 720,000 (−33%) |
+| Busy day: plus 3 injury news items | yes     | 0             | 1,656,000 → 720,000 (−57%) |
+
+**What it shows:**
+
+- **The saving is real:** a median of about 40% of the seasons for these 20 moves.
+- **The shorter race picks a different #1 in 5 of 12 states.** Three of those are near-ties, where it costs under 0.05 points.
+- **The two failures are not near-ties.** In the full race's numbers, the move it missed led by 0.105 and 0.153 points. At 36,000 seasons, each move's title change is still ±0.2, so the two looked level and the shorter race stopped on the wrong one.
+- **So the decision tier earns its seasons** in exactly the cases Jack would care about: a close-looking pair that is not really close.
+
+Run: `race-result-2026-11-20T0715.json` (private), 6.5 hours on a Mac (12 cores).

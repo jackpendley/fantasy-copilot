@@ -39,6 +39,19 @@ const CardContext = createContext<CardApi | null>(null);
 /** Open a player's card from anywhere inside the provider (null outside it). */
 export const usePlayerCard = () => useContext(CardContext);
 
+/** "Duncan Robinson out, ESPN estimates back Nov 27": a teammate out and what says so. */
+function outLabel(o: PlayerCardData["projection"]["context"]["out"][number]): string {
+  if (o.source === "NBA.com") return `${o.name} inactive tonight per NBA.com`;
+  if (o.source === "official report") return `${o.name} out tonight per the official report`;
+  if (!o.back) return `${o.name} out per ESPN, no return date`;
+  const day = new Date(`${o.back.slice(0, 10)}T12:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+  return `${o.name} out, ESPN estimates back ${day}`;
+}
+
 const FRESH_MS = 60_000;
 const LIVE_FRESH_MS = 15_000;
 const LIVE_POLL_MS = 20_000;
@@ -513,12 +526,15 @@ function NextTab({ card }: { card: PlayerCardData }) {
           opponent defends his position
           {p.matchup !== 1 &&
             card.next &&
-            ` (${card.next.opponent} ×${p.matchup.toFixed(2)} for ${card.positions[0]}s)`}
+            ` (${card.next.opponent} ×${p.matchup.toFixed(2)} for ${card.positions[0]}s, ${p.matchupGames} player-games so far)`}
           , and which of his team&apos;s regulars are out
-          {p.context.factor !== 1 &&
-            ` (+${Math.round((p.context.factor - 1) * 100)}% with ${p.context.out.join(" and ")} out)`}
-          . Vegas posts player lines a few hours before tip and reflects late news. DARKO is a
-          public daily projection, shown for comparison.{" "}
+          {p.context.out.length > 0 &&
+            ` (+${Math.round((p.context.factor - 1) * 100)}%: ${p.context.out.map(outLabel).join("; ")})`}
+          .
+          {p.context.skipped.length > 0 &&
+            ` Not counted: ${p.context.skipped.map((s) => `${s.name} (${s.reason})`).join(", ")}.`}{" "}
+          Vegas posts player lines a few hours before tip and reflects late news. DARKO is a public
+          daily projection, shown for comparison.{" "}
           <Link href="/nba/model" className="text-primary hover:underline">
             Accuracy so far
           </Link>

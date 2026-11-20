@@ -1028,3 +1028,31 @@
 - **Logged:** `pregame_projections` gets `context_factor` and `context_free_fppg` (migration 0035), the whole projection without the model, for the forward check. Defense keeps dividing out only `matchup_factor`: its table learns from the model's own predictions, as in the re-run.
 - **Switch:** `CONTEXT_ON` in `lib/nba/context-run.ts`. Off means no player carries a context; the nightly still computes it.
 - **Forward check:** 2026-27's logged pregame projections, judged once on Jan 15, 2027 (MODEL_CARD). Its result feeds the between-seasons refit, not a mid-season removal (Jack, Nov 17).
+
+## ADR-070: simulation runners on arm64, staying until the work is done (2026-11-19)
+
+- **Why:**
+  - Jack (Nov 19): "27-45 minutes is far too long", and he asked for speed without losing accuracy.
+  - The Neon follow-up: Nov 19 read 9.0 CU-hours. Since the #203 reading (3.6–3.7, Nov 17 5:10 PM) the pace is about 81 a month, against a budget of 60. Nights and game windows are short wakes now. The days aren't: a simulation job keeps the database awake for its whole run, because runners post every couple of minutes. Simulate runs were about 3.5 of the ~8 awake hours in the 24 hours to Nov 19, 5:17 PM.
+  - Jobs are bound by compute: about 3 million move-seasons each, at 1,500–2,100 a second across 18 x64 runners.
+- **Measured** (a synthetic league shaped like production's, simulator as of #213):
+
+  | Machine                                          | Seasons per second, all cores |
+  | ------------------------------------------------ | ----------------------------: |
+  | `ubuntu-latest` (EPYC 7763, 2 cores × 2 threads) |                        83–116 |
+  | `ubuntu-24.04-arm` (Neoverse-N2, 4 cores)        |                           152 |
+  - **Identical numbers:** the same chunk's results hashed identically on x64, arm64 and a Mac (`18395254d659d605`).
+  - **Free:** arm64 runners are free for public repositories, like x64.
+
+- **Changes:**
+  - **`simulate.yml`:** both jobs run on `ubuntu-24.04-arm`. The simulate job's timeout goes from 30 to 120 minutes.
+  - **`worker.ts`:** a runner's deadline goes from 25 to 110 minutes. It still leaves as soon as the app has no work for it (204, or "wait" past 3 minutes).
+  - **Before:** jobs averaged 55 minutes and crossed 25-minute boundaries. At each boundary, runners finished 1,511–1,737 s in, and the next run waited for the slowest and then set up again.
+- **Expected:** jobs 1.3–1.8× faster, and the database awake that much less during them.
+- **Checks:**
+  - the next job's worker logs show arm runners;
+  - Settings' "all checks" by trigger;
+  - the Neon pace at the next reading.
+- **Next, if needed:**
+  - play each chunk's base season once per runner instead of once per group (bit-identical, ~1.2×);
+  - profile-guided simulator work, checked by an identical result hash.

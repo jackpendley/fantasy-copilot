@@ -62,7 +62,9 @@ async function main() {
       w.once("error", onError);
       w.postMessage(t);
     });
-  const deadline = Date.now() + 25 * 60_000;
+  // A runner leaves once the app has no work for it (204, or "wait" past WAIT_MS); this only
+  // bounds a run (ADR-070: a job no longer stalls at a 25-minute boundary between runs).
+  const deadline = Date.now() + 110 * 60_000;
   let job: { id: number; setup: WireInput; moves: WireMove[] } | null = null;
   let posted = 0;
   const t0 = Date.now();

@@ -12,7 +12,10 @@ import {
   type LineupEntry,
 } from "@fantasy-copilot/nba-data";
 import { absenceOf } from "./availability";
+import type { PlayerContext } from "./context-factor";
 import { groupOf } from "./teammate-return";
+
+export { factorOn, type PlayerContext } from "./context-factor";
 
 /** As tested (frozen on the exploration seasons). */
 export const K = 0.75;
@@ -200,12 +203,6 @@ export function pastAdjustments(
   return out;
 }
 
-/** A player's context as attached (RosterPlayer.context). */
-export interface PlayerContext {
-  adj: [number, number, number, number, number][];
-  days: { day: number; factor: number; out: string[] }[];
-}
-
 /**
  * A player's factor from each day on (from `today`): his team's regulars who are out, each
  * until the day he's expected back (`outUntil`: a scoring period, Infinity for the season,
@@ -242,13 +239,6 @@ export function factorDays(
     if (days.at(-1)?.factor !== factor) days.push({ day, factor, out: names });
   }
   return days;
-}
-
-/** His factor on scoring period `sp` (1 without a context, or before its first day). */
-export function factorOn(p: { context?: PlayerContext }, sp: number): number {
-  let f = 1;
-  for (const d of p.context?.days ?? []) if (d.day <= sp) f = d.factor;
-  return f;
 }
 
 /** What the nightly step stores (lib/nba/context-run.ts). */

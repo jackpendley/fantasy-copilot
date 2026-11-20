@@ -26,7 +26,7 @@ import {
   type GameLine,
 } from "./projection";
 import { vegasProjection } from "./vegas";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 
 export type Snapshot = "morning" | "pregame" | "close";
 

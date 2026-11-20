@@ -49,7 +49,7 @@ import { marketContext, marketValue } from "./market";
 import { propsForGames } from "./market-data";
 import { scoreGames, summarize } from "./player";
 import { loadPlayer, loadPlayerPool } from "./pool";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 import { gameEnvironment, matchupFactor, perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
 import { teamValue, valueContext } from "./trade";

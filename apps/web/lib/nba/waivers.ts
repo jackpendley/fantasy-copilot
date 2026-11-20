@@ -19,7 +19,7 @@ import {
 } from "@fantasy-copilot/fantasy-core";
 import { etDate, matchupPeriodOf, scoringPeriodForDate } from "./calendar";
 import { perGameProjection } from "./projection";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 import { teamValue, weighted, type Holes, type ValueContext } from "./trade";
 import { projectTeamWeek, winProbability, type WeekInputs } from "./week";
 

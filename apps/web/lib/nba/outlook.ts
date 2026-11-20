@@ -6,7 +6,7 @@ import type { Position, SimInput, SimPlayer, SimTeam } from "@fantasy-copilot/fa
 import { LAST_SCORING_PERIOD, matchupPeriodOf } from "./calendar";
 import { perGameProjection } from "./projection";
 import { afterReturn } from "./teammate-return";
-import { factorOn } from "./context";
+import { factorOn } from "./context-factor";
 import { teamValue, valueContext, type ValueContext } from "./trade";
 
 /** A daily manager makes ~2.5 lineup moves per day (2025-26: ~400 over the season). */

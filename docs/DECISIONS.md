@@ -1056,3 +1056,6 @@
 - **Next, if needed:**
   - play each chunk's base season once per runner instead of once per group (bit-identical, ~1.2×);
   - profile-guided simulator work, checked by an identical result hash.
+- **Addendum (Nov 19, evening): concurrency per runner slot.**
+  - **The problem:** the whole run shared one concurrency group. A new trigger's run, and with it the task runner that builds its job, waited for the run before it to end. That was at most 25 minutes before this ADR, and up to the whole job after it.
+  - **The fix:** each simulate runner slot (`simulate-1` to `simulate-18`) and the task runner (`simulate-tasks`) queue on their own. A new build starts at once, and runners already up take the new job when they next ask. Task claims are atomic (`for update skip locked`).

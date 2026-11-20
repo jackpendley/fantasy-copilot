@@ -76,14 +76,32 @@ export function contextFactor(absent: readonly Absent[], group: string | null): 
 }
 
 /**
+ * A player's games before a moment, for a team's window: with `prior` (last season's games),
+ * his last 10 of them for this team come first, so a player with few games this season (back
+ * from injury, or not back yet) is measured on last season's. Without it, this season's only.
+ */
+function gamesBefore(
+  gs: readonly Appearance[],
+  t: number,
+  team: string,
+  prior: readonly Appearance[] | undefined,
+): Appearance[] {
+  const now = gs.filter((g) => g.t < t);
+  return prior ? [...prior.filter((g) => g.team === team).slice(-LAST), ...now] : now;
+}
+
+/**
  * Who was absent from each team-game (keyed by side), from every player's games this season
  * (sorted by tip). Absent: 5+ games before it, his latest for this team, 10+ minutes a game
  * over his last 10, and he didn't play; a teammate whose next game is for another team was
  * traded. His share: FP/G over his last 10 ÷ the team's FP per game over its last 10.
+ * `prior` (MODEL_CARD, last season's games): each player's last-season games, which his window
+ * may reach back into (`gamesBefore`); a player with prior games for a team is one of its own.
  */
 export function absencesByGame(
   logs: ReadonlyMap<number, readonly Appearance[]>,
   groupOf: (player: number) => string | null,
+  prior?: ReadonlyMap<number, readonly Appearance[]>,
 ): Map<string, Absent[]> {
   const sideFp = new Map<string, number>();
   for (const gs of logs.values())
@@ -102,9 +120,10 @@ export function absencesByGame(
       schedules.set(g.team, [...(schedules.get(g.team) ?? []), { side: g.side, t: g.t }]);
     }
   for (const list of schedules.values()) list.sort((a, b) => a.t - b.t);
+  for (const [id, gs] of prior ?? [])
+    for (const g of gs) if (g.team && members.has(g.team)) members.get(g.team)!.add(id);
   const played = new Map([...logs].map(([id, gs]) => [id, new Set(gs.map((g) => g.side))]));
-  const teamBefore = (id: number, t: number) => logs.get(id)!.findLast((x) => x.t < t)?.team;
-  const teamAfter = (id: number, t: number) => logs.get(id)!.find((x) => x.t > t)?.team;
+  const teamAfter = (id: number, t: number) => logs.get(id)?.find((x) => x.t > t)?.team;
 
   const out = new Map<string, Absent[]>();
   for (const [team, schedule] of schedules)
@@ -115,16 +134,16 @@ export function absencesByGame(
       if (last.length < MIN_GAMES) return;
       const teamFp = mean(last.map((x) => sideFp.get(x.side) ?? 0));
       for (const id of members.get(team)!) {
-        if (played.get(id)!.has(tg.side)) continue;
-        const before = logs.get(id)!.filter((g) => g.t < tg.t);
-        if (before.length < MIN_GAMES || teamBefore(id, tg.t) !== team) continue;
+        if (played.get(id)?.has(tg.side)) continue;
+        const before = gamesBefore(logs.get(id) ?? [], tg.t, team, prior?.get(id));
+        if (before.length < MIN_GAMES || before.at(-1)!.team !== team) continue;
         const next = teamAfter(id, tg.t);
         if (next && next !== team) continue;
         const recent = before.slice(-LAST);
         const min10 = mean(recent.map((g) => g.min));
         if (min10 < ROTATION_MIN) continue;
         let idx = 0;
-        for (let j = k; j >= 0 && !played.get(id)!.has(schedule[j]!.side); j--) idx++;
+        for (let j = k; j >= 0 && !played.get(id)?.has(schedule[j]!.side); j--) idx++;
         absent.push({
           share: mean(recent.map((g) => g.fp)) / teamFp,
           idx,
@@ -144,12 +163,14 @@ export interface Regular extends Omit<Absent, "idx"> {
 /**
  * Each team's rotation players as of `now`, for its next game: the same rules as an absence
  * (5+ games, his latest for this team, 10+ minutes over his last 10), measured over the team's
- * last 10 games. Whether he plays is decided elsewhere (injury report, NBA.com).
+ * last 10 games. Whether he plays is decided elsewhere (injury report, NBA.com). `prior` as in
+ * `absencesByGame`.
  */
 export function regularsNow(
   logs: ReadonlyMap<number, readonly Appearance[]>,
   groupOf: (player: number) => string | null,
   now: number,
+  prior?: ReadonlyMap<number, readonly Appearance[]>,
 ): Map<string, Regular[]> {
   const sideFp = new Map<string, number>();
   const teamSides = new Map<string, Map<string, number>>();
@@ -169,8 +190,8 @@ export function regularsNow(
     out.set(team, regs);
     if (last.length < MIN_GAMES) continue;
     const teamFp = mean(last.map(([side]) => sideFp.get(side) ?? 0));
-    for (const [id, gs] of logs) {
-      const before = gs.filter((g) => g.t < now);
+    for (const id of new Set([...logs.keys(), ...(prior?.keys() ?? [])])) {
+      const before = gamesBefore(logs.get(id) ?? [], now, team, prior?.get(id));
       if (before.length < MIN_GAMES || before.at(-1)!.team !== team) continue;
       const recent = before.slice(-LAST);
       const min10 = mean(recent.map((g) => g.min));

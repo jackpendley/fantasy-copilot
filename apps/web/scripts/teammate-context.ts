@@ -14,7 +14,15 @@ import { readdirSync, readFileSync } from "node:fs";
 import type { RosterPlayer } from "@fantasy-copilot/espn";
 import { fantasyPoints, withDerived, type ScoringMap } from "@fantasy-copilot/fantasy-core";
 import type { GameLogEntry } from "@fantasy-copilot/nba-data";
-import { absencesByGame, contextFactor, REGULAR_MIN, type Absent } from "../lib/nba/context";
+import {
+  absencesByGame,
+  CAP,
+  contextFactor,
+  FLOOR,
+  REGULAR_MIN,
+  type Absent,
+  type Appearance,
+} from "../lib/nba/context";
 import { perGameProjection } from "../lib/nba/projection";
 
 /** The 2017-26 logs; the box-score seasons are read from their own cache. */
@@ -40,6 +48,8 @@ export interface PlayerGame {
   fp: number;
   /** Teammates absent tonight. */
   absent: Absent[];
+  /** The opponent's players absent tonight (the same rules, from its side). */
+  oppAbsent: Absent[];
   /** His earlier games this season, each with the teammates absent from it. */
   past: { fp: number; min: number; absent: Absent[] }[];
   prior: { fp: number; min: number; gp: number } | null;
@@ -88,7 +98,17 @@ interface G {
   min: number;
 }
 
-export function playerGames(season: number, scoring: ScoringMap, cache = CACHE): PlayerGame[] {
+/**
+ * Every player-game of a season. `withPrior` (MODEL_CARD, last season's games, Nov 20): each
+ * player's last-season games, with the team he played them for, are passed to the absence
+ * rules, so his window may reach back into them (`lib/nba/context.ts`, `gamesBefore`).
+ */
+export function playerGames(
+  season: number,
+  scoring: ScoringMap,
+  cache = CACHE,
+  withPrior = false,
+): PlayerGame[] {
   const fpOf = (g: GameLogEntry) => fantasyPoints(withDerived(g.line), scoring);
   const read = (f: string): GameLogEntry[] => JSON.parse(readFileSync(new URL(f, cache), "utf8"));
   const positions = new Map(
@@ -136,6 +156,37 @@ export function playerGames(season: number, scoring: ScoringMap, cache = CACHE):
     for (const g of gs) sideFp.set(g.side, (sideFp.get(g.side) ?? 0) + g.fp);
     if (gs.length) logs.set(id, gs);
   }
+  // Last season's games of this season's players, each with his team then (what the other
+  // side lists as its opponent, from every player's last-season log).
+  let prior: Map<number, Appearance[]> | undefined;
+  if (withPrior) {
+    const prevTeam = new Map<string, string>();
+    const prevLogs = new Map<number, GameLogEntry[]>();
+    for (const f of files) {
+      if (!f.endsWith(`-${season - 1}.json`)) continue;
+      const gs = read(f).filter((g) => g.part === "regular" && (g.line.MIN ?? 0) > 0);
+      for (const g of gs) prevTeam.set(`${g.gameId}:${g.home ? "A" : "H"}`, g.opponent);
+      const id = Number(f.split("-")[0]);
+      if (logs.has(id)) prevLogs.set(id, gs);
+    }
+    prior = new Map(
+      [...prevLogs].map(([id, gs]) => [
+        id,
+        gs
+          .map((g) => {
+            const side = `${g.gameId}:${g.home ? "H" : "A"}`;
+            return {
+              side,
+              team: prevTeam.get(side),
+              t: Date.parse(g.date),
+              fp: fpOf(g),
+              min: g.line.MIN ?? 0,
+            };
+          })
+          .sort((a, b) => a.t - b.t),
+      ]),
+    );
+  }
   // Who was absent from each team-game (lib/nba/context.ts, shared with production).
   const absentAt = absencesByGame(
     new Map(
@@ -145,6 +196,7 @@ export function playerGames(season: number, scoring: ScoringMap, cache = CACHE):
       ]),
     ),
     (id) => groupOf(positions.get(id)),
+    prior,
   );
 
   const rows: PlayerGame[] = [];
@@ -167,6 +219,7 @@ export function playerGames(season: number, scoring: ScoringMap, cache = CACHE):
         base,
         fp: g.fp,
         absent: absentAt.get(g.side) ?? [],
+        oppAbsent: absentAt.get(`${g.game}:${g.home ? "A" : "H"}`) ?? [],
         past: so.map((x) => ({ fp: x.fp, min: x.min, absent: absentAt.get(x.side) ?? [] })),
         prior,
       });
@@ -188,6 +241,26 @@ export function predict(r: PlayerGame) {
     return { fp: g.fp / x, min: g.min / x };
   });
   return perGameProjection(asPlayer(r.prior, full)).fppg * contextFactor(r.absent, r.group);
+}
+
+/**
+ * Opponents' absences (MODEL_CARD, Nov 20): 1 + k × min(cap, Σ over the opponent's regulars
+ * out of max(0, share − floor) × (`same` in his position group, else 1)). Its k may be
+ * negative (a missing star can slow the game down).
+ */
+export function opponentFactor(
+  absent: readonly Absent[],
+  group: string | null,
+  k: number,
+  same: number,
+) {
+  const sum = absent.reduce(
+    (t, a) =>
+      t +
+      (a.min10 >= REGULAR_MIN ? Math.max(0, a.share - FLOOR) * (a.group === group ? same : 1) : 0),
+    0,
+  );
+  return 1 + k * Math.min(CAP, sum);
 }
 
 /** Mean of per-player-season mean differences, with a normal 95% interval. */

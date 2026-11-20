@@ -1520,6 +1520,110 @@ All three intervals lie below 0. **Per the pre-registration, the context-aware p
 
 **Consequence (Jack, Nov 17):** the result feeds the between-seasons refit of k, floor and same-position weight (with 2026-27 added to the history). The model isn't pulled mid-season. If it fails, Jack is told, with the described rows.
 
+## Pre-registration: the context model, last season's games and opponents' absences (2026-11-20, before any run)
+
+**Why:** two gaps Jack found on Paul Reed's card (Nov 19).
+
+- **Last season's games.** Jalen Duren has played about one game this season. A teammate counts only after 5 games, so the model ignores him completely:
+  - no boost for Reed while Duren is out;
+  - Reed's past games aren't de-inflated;
+  - no drop when Duren returns.
+
+  Jack: use last season's data for players like him.
+
+- **Opponents' absences.** Kawhi Leonard or Scottie Barnes sitting changes nothing for Toronto's opponents. A missing opposing star might raise a player's output (a weaker opponent) or lower it (a slower game).
+
+Two tests, each deciding only its own change.
+
+**Data: 2019-20 to 2024-25** (Jack, Nov 19: the best data without the era bias of 2003-10).
+
+- **Disclosure:**
+  - these seasons judged the current model (#208 held out, #211 described);
+  - the current model was chosen on the exploration seasons next to them (2017-18, 2018-19, 2025-26);
+  - tests 2–5 used them for return events.
+- **Neither question has been computed on any season.** Each compares the change with the current model on the same games.
+- **Priors:** last season's logs from the same cache (2018-19 to 2023-24).
+- **Lines and the rest:** game lines `odds-2020..2025.json`; positions `positions-{season}.json`; league scoring from the anonymized fixture.
+
+**Baseline for both: the shipped stack**, i.e. the context model as frozen × environment × opponent defense, each side learning its own defense table from its own predictions (#211's harness). New script: `scripts/backtest-teammate-context-3.ts`.
+
+**Harness check (done before this was pushed):** with neither change, the script reproduces #208 on 2019-25 with no layers (−0.036) and #211's described row with both layers (−0.045). Those are recorded results, not the new questions.
+
+### Test 1: last season's games
+
+**The change:** a player's last-10 window (his share, his minutes, the 5-game minimum) reaches back into his last-season games **for the same team** (`gamesBefore` in `lib/nba/context.ts`). Everything else is unchanged:
+
+- k 0.75, floor 0.10, same position ×2, cap 0.6, rotation 10+ minutes, regulars 20+;
+- the team side: 5+ team games this season, and the team's last 10 this season;
+- **nothing is fitted.**
+
+**Point in time:**
+
+- Last season's games are before every game.
+- Who counts uses the box scores' future roster information only as the current model already does: a teammate whose next game is for another team was traded. A player with no game yet this season appears only if he plays for the team later in the season.
+- **Disclosed:** production uses ESPN's roster instead, so it also counts players out for the whole season, whom the backtest can't see.
+
+**Affected player-games:** where the change moves the raw projection (tonight's factor, or an earlier game's).
+
+**Gate (`DRY=1`, counts only):** ≥ 10,000 affected player-games, or it isn't evaluated.
+
+**Comparisons, fixed sequence, each at 95%:** per player-season, the mean of change − shipped; the mean of those, with a normal 95% interval.
+
+1. **Absolute error, affected player-games** (environment and defense on both sides). This decides.
+2. **Squared error,** the same.
+
+**Described, not tested:**
+
+- every player-game;
+- games where tonight's factor changes;
+- games where only earlier games change (de-inflation, and the returns);
+- his first 10 games of the season;
+- same position group tonight;
+- by season.
+
+### Test 2: opponents' absences
+
+**The change:** the projection × `1 + k × min(0.6, Σ over the opponent's regulars out of max(0, share − 0.10) × (s if in his position group, else 1))`.
+
+- The opponent's regulars and absences use the same rules and code as teammates' (`absencesByGame`, the opponent's side).
+- **k may be negative.**
+
+**Fitted before the test, on the exploration seasons only** (2017-18, 2018-19, 2025-26; `FIT=1`):
+
+- **Grid:** k from −0.50 to +0.50 in steps of 0.05; s 1 or 2.
+- **Measure:** the overall MAE of the shipped stack × the factor, each grid point learning its own defense table.
+- **Choice:** the lowest MAE, then frozen.
+- **The full grid is recorded** with the result, before `DRY=1`. If the best k is 0, test 2 is recorded as "no effect found" and not evaluated.
+
+**Affected player-games:** an opponent's regular above the floor (20+ minutes, share over 0.10) is out.
+
+**Gate (`DRY=1`, counts only):** ≥ 20,000 affected player-games.
+
+**Comparisons, fixed sequence, each at 95%:**
+
+1. **Absolute error, affected player-games.** This decides.
+2. **Squared error,** the same.
+
+**Described, not tested:**
+
+- every player-game;
+- an opposing star out (share ≥ 0.18);
+- an opposing regular in his group out;
+- by season;
+- both changes together, every player-game.
+
+### Consequences (Jack, Nov 19)
+
+- **A test passes** (its comparison 1): the change ships behind the context model, with production's own data:
+  - **test 1:** last season's game logs for players with fewer than 10 games this season, fetched by the nightly;
+  - **test 2:** the opponent's regulars and statuses, already loaded.
+
+  The 2026-27 forward check gains it as a described row, written before any 2026-27 outcome is computed for it.
+
+- **A test fails:** that change doesn't ship. The card keeps saying why a player isn't counted (#220). Jack is told, with the described rows.
+
+**When:** this is pushed first. Then the test 2 fit (exploration seasons), recorded. Then `DRY=1` (counts only). Then one evaluation. Nothing is tuned or re-run on 2019-25.
+
 ## Draft-day projection accuracy (baseline for the projection-model work; method set 2026-11-06)
 
 **What:** our pre-draft FP/G projections (`apps/draft-nba/dist/rankings.csv`, uploaded in Settings, stored privately) against this season's actual FP/G. The comparison is shown live on Players → Draft.

@@ -76,6 +76,41 @@ describe("the context-aware projection's pieces", () => {
     });
     expect(regs.map((r) => r.player).sort()).toEqual([1, 2, 3, 4, 5]);
   });
+
+  it("with last season's games, counts a regular who has played only once this season", () => {
+    // Player 6: 10 games for AAA last season (30 minutes, 40 FP), then game 1 only this season.
+    // Player 7's last-season games were for another team: they never count for AAA.
+    const last = (id: number, team: string) =>
+      range(1, 10).map((n) => ({
+        side: `p${n}:${team}`,
+        team,
+        t: (n - 100) * day,
+        fp: 40,
+        min: 30,
+      }));
+    const withSix = new Map([...logs, [6, games(6, [1], 30, 40)], [7, games(7, [1], 30, 40)]]);
+    const prior = new Map([
+      [6, last(6, "AAA")],
+      [7, last(7, "BBB")],
+    ]);
+    const without = absencesByGame(withSix, groupOf).get("8:AAA")!;
+    const withPrior = absencesByGame(withSix, groupOf, prior).get("8:AAA")!;
+    // Without: nobody is out of game 8 (the star plays). With: player 6, from his 10 games
+    // (9 last season, 1 this one), measured against the team's last 7 games this season.
+    expect(without).toEqual([]);
+    expect(withPrior).toHaveLength(1);
+    expect(withPrior[0]).toMatchObject({ group: "G", min10: 30, idx: 7 });
+    expect(
+      regularsNow(withSix, groupOf, 13 * day, prior)
+        .get("AAA")!
+        .map((r) => r.player),
+    ).toContain(6);
+    expect(
+      regularsNow(withSix, groupOf, 13 * day)
+        .get("AAA")!
+        .map((r) => r.player),
+    ).not.toContain(6);
+  });
 });
 
 describe("the context-aware projection in production", () => {

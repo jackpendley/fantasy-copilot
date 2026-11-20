@@ -7,7 +7,8 @@
 # (GitHub Free runs 20 jobs at once: these and the task runner) take chunks of seasons
 # from the app until every move's title change is known to its tier's precision
 # (ADR-058: every candidate move, most important first). Arm runners (ADR-070): four real
-# cores each, 1.3 to 1.8 times an x64 runner's seasons, with bit-identical results; a runner
+# cores each, 1.3 to 1.8 times an x64 runner's seasons, with the same results to about 1 part in
+# 10^16 (Math.log, exp and cos differ in the last bit by platform); a runner
 # stays until no work is left (up to two hours), so a job doesn't stall between runs. Each
 # runner slot and the task runner queue on their own (not the whole run): a new trigger's
 # build starts at once, and the runners already up take the new job when they next ask.
